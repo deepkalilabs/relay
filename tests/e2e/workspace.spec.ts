@@ -44,6 +44,23 @@ test("keeps the desktop workspace within the viewport at its minimum width", asy
   await expect(page.locator(".workspace")).toHaveCSS("height", "768px");
 });
 
+test("shows a centered, dismissible undo toast after deleting a step", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Or add a step manually" }).click();
+  await page.getByRole("button", { name: "Insert step", exact: true }).click();
+  await page.getByRole("button", { name: "Delete Click element" }).click();
+
+  const toast = page.locator(".undo-toast");
+  await expect(toast).toBeVisible();
+  await expect(toast.getByRole("button", { name: "Undo", exact: true })).toBeVisible();
+  const bounds = await toast.boundingBox();
+  expect(bounds).not.toBeNull();
+  expect((bounds?.x ?? 0) + (bounds?.width ?? 0) / 2).toBeCloseTo(720, 0);
+
+  await toast.getByRole("button", { name: "Dismiss undo notification" }).click();
+  await expect(toast).toBeHidden();
+});
+
 test("shows the desktop-only guard below 1024px", async ({ page }) => {
   await page.setViewportSize({ width: 900, height: 800 });
   await page.goto("/");

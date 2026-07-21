@@ -68,4 +68,14 @@ describe("workflow reducer", () => {
     expect(state.workflow.steps[1].id).not.toBe(step.id);
     expect(state.workflow.steps[1].metadata.origin).toBe("duplicate");
   });
+
+  it("dismisses a pending delete without restoring the step", () => {
+    let state = initialWorkflowState();
+    const step = makeStep("Navigate", 0);
+    state = workflowReducer(state, { type: "append", step });
+    state = workflowReducer(state, { type: "delete", id: step.id });
+    state = workflowReducer(state, { type: "dismissDelete" });
+    expect(state.deletedStep).toBeNull();
+    expect(state.workflow.steps).toHaveLength(0);
+  });
 });

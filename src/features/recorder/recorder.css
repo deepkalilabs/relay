@@ -51,7 +51,12 @@
 .recorder-controls-rail { width: 43px; flex-direction: column; gap: 0; border-bottom: 1px solid var(--line); }
 .recorder-controls-rail .recorder-status { width: 43px; height: 25px; justify-content: center; }
 .recorder-controls-rail .recorder-action { width: 43px; min-width: 43px; height: 44px; min-height: 44px; padding: 0; border: 0; border-radius: 0; box-shadow: none; }
-.undo-toast { position: fixed; z-index: 30; left: 340px; bottom: 20px; min-height: 44px; padding: 0 8px 0 14px; display: flex; align-items: center; gap: 16px; border-radius: 10px; color: white; background: #263244; box-shadow: var(--shadow-md); font-size: 12px; }.undo-toast button { min-height: 36px; padding: 0 8px; border: 0; display: flex; align-items: center; gap: 5px; color: #bcd0ff; background: transparent; font-weight: 700; }
+.undo-toast { position: fixed; z-index: 40; left: 50%; bottom: 24px; min-height: 52px; padding: 4px 4px 4px 16px; display: flex; align-items: center; gap: 20px; transform: translateX(-50%); border-radius: 12px; color: white; background: #263244; box-shadow: var(--shadow-md); font-size: 13px; animation: undo-toast-in .2s ease-out; }
+.undo-toast-actions { display: flex; align-items: center; gap: 2px; }
+.undo-toast button { min-width: 44px; min-height: 44px; padding: 0 10px; border: 0; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; color: #c8d7ff; background: transparent; font-weight: 700; }
+.undo-toast button:hover { color: white; background: rgb(255 255 255 / 10%); }
+.undo-toast-close { padding: 0 !important; color: #d5dbe5 !important; }
+@keyframes undo-toast-in { from { opacity: 0; transform: translate(-50%, 8px); } }
 
 @media (min-width: 1024px) and (max-width: 1439px) {
   .workspace { grid-template-columns: var(--timeline-width) minmax(0, 1fr); }

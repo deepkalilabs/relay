@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useMemo, useReducer, useState } from "react";
-import { AlertTriangle, ChevronLeft, RotateCcw } from "lucide-react";
+import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
+import { AlertTriangle, ChevronLeft, RotateCcw, X } from "lucide-react";
 import { BrowserPanel } from "@/features/browser/BrowserPanel";
 import { Modal } from "@/components/ui/Modal";
 import { useRecorderSession } from "@/features/recorder/useRecorderSession";
@@ -35,6 +35,12 @@ export function RecorderWorkspace() {
     selectedStepId: workflowState.selectedStepId,
     overlayOpen: Boolean(confirmation || manualOpen),
   });
+
+  useEffect(() => {
+    if (!workflowState.deletedStep) return;
+    const timeout = window.setTimeout(() => dispatch({ type: "dismissDelete" }), 5000);
+    return () => window.clearTimeout(timeout);
+  }, [workflowState.deletedStep]);
 
   const beginRecording = () => {
     if (workflowState.dirty && workflowState.workflow.steps.length) {
@@ -175,7 +181,19 @@ export function RecorderWorkspace() {
             )}
           </aside>
         </main>
-        {workflowState.deletedStep ? <div className="undo-toast" role="status"><span>Step deleted</span><button type="button" onClick={() => dispatch({ type: "undoDelete" })}><RotateCcw size={14} /> Undo</button></div> : null}
+        {workflowState.deletedStep ? (
+          <div className="undo-toast">
+            <span role="status" aria-live="polite">Step deleted</span>
+            <div className="undo-toast-actions">
+              <button className="undo-toast-action" type="button" onClick={() => dispatch({ type: "undoDelete" })}>
+                <RotateCcw size={16} aria-hidden="true" /> Undo
+              </button>
+              <button className="undo-toast-close" type="button" onClick={() => dispatch({ type: "dismissDelete" })} aria-label="Dismiss undo notification" title="Dismiss">
+                <X size={16} aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+        ) : null}
         <div className="sr-only" aria-live="polite">{announcement}</div>
       </div>
       <ManualStepDialog open={manualOpen} order={workflowState.workflow.steps.length} page={activePage} onClose={() => setManualOpen(false)} onInsert={(step) => dispatch({ type: "insert", step, afterId: workflowState.selectedStepId ?? undefined })} />

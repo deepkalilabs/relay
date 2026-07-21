@@ -20,6 +20,7 @@ export type WorkflowAction =
   | { type: "update"; step: WorkflowStep }
   | { type: "delete"; id: string }
   | { type: "undoDelete" }
+  | { type: "dismissDelete" }
   | { type: "duplicate"; id: string }
   | { type: "insert"; step: WorkflowStep; afterId?: string }
   | { type: "reorder"; activeId: string; overId: string }
@@ -100,6 +101,8 @@ export function workflowReducer(state: WorkflowState, action: WorkflowAction): W
         deletedStep: null,
       });
     }
+    case "dismissDelete":
+      return state.deletedStep ? { ...state, deletedStep: null } : state;
     case "duplicate": {
       const index = state.workflow.steps.findIndex((step) => step.id === action.id);
       if (index < 0) return state;
