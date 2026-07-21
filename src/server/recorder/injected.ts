@@ -4,7 +4,7 @@ export const RECORDER_SCRIPT = String.raw`(() => {
   if (window.__browserMemoryRecorderInstalled) return;
   window.__browserMemoryRecorderInstalled = true;
 
-  const timers = new WeakMap();
+  const dirtyFields = new Set();
   const normalize = (value) => String(value ?? "").replace(/\s+/g, " ").trim();
   const clip = (value, size = 180) => normalize(value).slice(0, size);
   const escapeCss = (value) => window.CSS?.escape ? CSS.escape(value) : value.replace(/[^a-zA-Z0-9_-]/g, "\\$&");
@@ -129,84 +129,38 @@ export const RECORDER_SCRIPT = String.raw`(() => {
     return /(password|current-password|new-password|one-time-code|cc-|credit|card|token|secret)/i.test(identity);
   };
 
+  const isEditableField = (element) => {
+    if (element instanceof HTMLTextAreaElement || element.isContentEditable) return true;
+    if (!(element instanceof HTMLInputElement)) return false;
+    return !["button", "submit", "reset", "image", "checkbox", "radio", "file", "hidden"].includes(element.type);
+  };
+
   const flushInput = (element) => {
-    const timer = timers.get(element);
-    if (timer) clearTimeout(timer);
-    timers.delete(element);
+    if (!dirtyFields.has(element)) return;
+    dirtyFields.delete(element);
     let value = "";
-    if (element instanceof HTMLInputElement && element.type === "file") {
-      value = [...(element.files || [])].map((file) => file.name).join(", ");
-    } else if ("value" in element) value = element.value;
+    if ("value" in element) value = element.value;
     else value = element.textContent || "";
     emit({ type: "fill", name: actionName("Fill", element), target: describe(element), payload: { value }, sensitive: sensitive(element) });
   };
 
   document.addEventListener("input", (event) => {
     const element = event.target;
-    if (!(element instanceof HTMLElement)) return;
-    const prior = timers.get(element);
-    if (prior) clearTimeout(prior);
-    timers.set(element, setTimeout(() => flushInput(element), 400));
+    if (!(element instanceof HTMLElement) || !isEditableField(element)) return;
+    dirtyFields.add(element);
   }, true);
 
   document.addEventListener("focusout", (event) => {
     const element = event.target;
-    if (element instanceof HTMLElement && timers.has(element)) flushInput(element);
-  }, true);
-
-  document.addEventListener("change", (event) => {
-    const element = event.target;
-    if (!(element instanceof HTMLElement)) return;
-    if (timers.has(element)) flushInput(element);
-    if (element instanceof HTMLSelectElement) {
-      const selected = element.selectedOptions[0];
-      emit({ type: "select", name: actionName("Select", element), target: describe(element), payload: { value: element.value, label: selected?.textContent || undefined }, sensitive: sensitive(element) });
-    } else if (element instanceof HTMLInputElement && ["checkbox", "radio"].includes(element.type)) {
-      emit({ type: element.checked ? "check" : "uncheck", name: actionName(element.checked ? "Check" : "Uncheck", element), target: describe(element), sensitive: sensitive(element) });
-    } else if (element instanceof HTMLInputElement && element.type === "file") {
-      flushInput(element);
-    }
+    if (element instanceof HTMLElement) flushInput(element);
   }, true);
 
   document.addEventListener("click", (event) => {
-    const element = event.target instanceof Element ? event.target.closest("a,button,[role='button'],[role='link'],summary,[tabindex],input") : null;
+    const element = event.target instanceof Element
+      ? event.target.closest("button,[role='button'],input[type='button'],input[type='submit'],input[type='reset'],input[type='image']")
+      : null;
     if (!(element instanceof HTMLElement)) return;
-    if (element instanceof HTMLInputElement && ["checkbox", "radio", "file", "submit", "reset"].includes(element.type)) return;
-    if (element instanceof HTMLButtonElement && element.type === "submit") return;
+    [...dirtyFields].forEach((field) => flushInput(field));
     emit({ type: "click", name: actionName("Click", element), target: describe(element), sensitive: false });
   }, true);
-
-  document.addEventListener("submit", (event) => {
-    const form = event.target;
-    if (!(form instanceof HTMLFormElement)) return;
-    form.querySelectorAll("input,textarea,[contenteditable='true']").forEach((element) => {
-      if (timers.has(element)) flushInput(element);
-    });
-    emit({ type: "submit", name: actionName("Submit", form), target: describe(form), sensitive: false });
-  }, true);
-
-  document.addEventListener("keydown", (event) => {
-    const meaningful = event.metaKey || event.ctrlKey || event.altKey || ["Enter", "Escape", "Tab", "Backspace", "Delete"].includes(event.key) || event.key.startsWith("F");
-    if (!meaningful) return;
-    const element = event.target instanceof HTMLElement ? event.target : document.body;
-    const modifiers = [];
-    if (event.altKey) modifiers.push("Alt");
-    if (event.ctrlKey) modifiers.push("Control");
-    if (event.metaKey) modifiers.push("Meta");
-    if (event.shiftKey) modifiers.push("Shift");
-    emit({ type: "keypress", name: "Press " + [...modifiers, event.key].join("+"), target: describe(element), payload: { key: event.key, modifiers }, sensitive: sensitive(element) });
-  }, true);
-
-  const emitNavigation = () => emit({ type: "navigate", name: "Navigate to " + location.href, payload: { url: location.href }, sensitive: false });
-  ["pushState", "replaceState"].forEach((method) => {
-    const original = history[method];
-    history[method] = function(...args) {
-      const result = original.apply(this, args);
-      queueMicrotask(emitNavigation);
-      return result;
-    };
-  });
-  addEventListener("popstate", emitNavigation);
-  addEventListener("hashchange", emitNavigation);
-  if (location.href !== "about:blank") queueMicrotask(emitNavigation);
 })();`;

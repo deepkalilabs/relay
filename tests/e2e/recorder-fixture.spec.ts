@@ -1,25 +1,50 @@
 import { expect, test } from "@playwright/test";
 import { RECORDER_SCRIPT } from "../../src/server/recorder/injected";
 
-test("injected recorder captures semantic interaction types and sensitive values", async ({ page }) => {
+test("injected recorder captures completed fills and semantic button clicks only", async ({ page }) => {
   const actions: Array<Record<string, unknown>> = [];
   await page.exposeFunction("__browserMemoryEmit", (action: Record<string, unknown>) => { actions.push(action); });
   await page.addInitScript({ content: RECORDER_SCRIPT });
   await page.goto("/fixture");
   await page.getByLabel("Email").fill("person@example.com");
+
+  await page.waitForTimeout(450);
+  expect(actions).toHaveLength(0);
+
   await page.getByLabel("Password").fill("secret-value");
   await page.getByLabel("Plan").selectOption("pro");
   await page.getByLabel("Accept terms").check();
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByRole("button", { name: "Open details" }).click();
-  await page.waitForTimeout(500);
+  await page.getByRole("button", { name: "Input action" }).click();
+  await page.getByRole("button", { name: "Role action" }).click();
+  await page.getByRole("link", { name: "Fixture help" }).click();
+  await page.keyboard.press("Control");
+  await page.waitForTimeout(50);
 
-  expect(actions.some((action) => action.type === "fill" && (action.payload as { value?: string })?.value === "person@example.com")).toBe(true);
-  expect(actions.some((action) => action.type === "fill" && (action.payload as { value?: string })?.value === "secret-value" && action.sensitive === true)).toBe(true);
-  expect(actions.some((action) => action.type === "select")).toBe(true);
-  expect(actions.some((action) => action.type === "check")).toBe(true);
-  expect(actions.some((action) => action.type === "submit")).toBe(true);
-  expect(actions.some((action) => action.type === "navigate" && String((action.payload as { url?: string })?.url).includes("view=details"))).toBe(true);
+  expect(actions.map((action) => action.type)).toEqual(["fill", "fill", "click", "click", "click", "click"]);
   const emailFill = actions.find((action) => action.type === "fill" && (action.payload as { value?: string })?.value === "person@example.com");
   expect((emailFill?.target as { candidates: Array<{ kind: string }> }).candidates[0].kind).toBe("testId");
+  const passwordFill = actions.find((action) => action.type === "fill" && (action.payload as { value?: string })?.value === "secret-value");
+  expect(passwordFill?.sensitive).toBe(true);
+  expect(actions[2]?.name).toBe('Click “Continue”');
+});
+
+test("completed fills preserve an intentionally cleared value", async ({ page }) => {
+  const actions: Array<Record<string, unknown>> = [];
+  await page.exposeFunction("__browserMemoryEmit", (action: Record<string, unknown>) => { actions.push(action); });
+  await page.addInitScript({ content: RECORDER_SCRIPT });
+  await page.goto("/fixture");
+
+  const email = page.getByLabel("Email");
+  await email.focus();
+  await page.getByRole("button", { name: "Input action" }).click();
+  expect(actions.map((action) => action.type)).toEqual(["click"]);
+
+  await email.fill("remove-me@example.com");
+  await email.clear();
+  await page.getByRole("button", { name: "Open details" }).click();
+
+  expect(actions.map((action) => action.type)).toEqual(["click", "fill", "click"]);
+  expect((actions[1]?.payload as { value?: string })?.value).toBe("");
 });

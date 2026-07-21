@@ -27,6 +27,10 @@ export function normalizeBrowserUrl(input: string): string {
   return url.toString();
 }
 
+export function isAutomaticallyRecordableAction(action: RecordedAction): boolean {
+  return action.type === "fill" || action.type === "click";
+}
+
 export class RecordingRuntime {
   socket: WebSocket | null = null;
   graceTimer: NodeJS.Timeout | null = null;
@@ -162,6 +166,7 @@ export class RecordingRuntime {
   }
 
   private async forwardAction(action: RecordedAction): Promise<void> {
+    if (!isAutomaticallyRecordableAction(action)) return;
     const normalized = action.target
       ? { ...action, target: { ...action.target, candidates: orderLocatorCandidates(action.target.candidates) } }
       : action;

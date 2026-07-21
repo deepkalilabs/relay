@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { RecordedAction } from "@/lib/workflow/recorded-action";
 import { ActionDeduplicator, actionFingerprint } from "@/server/recorder/deduplicate";
 import { RECORDER_SCRIPT } from "@/server/recorder/injected";
+import { isAutomaticallyRecordableAction } from "@/server/recorder/runtime";
 
 const action: RecordedAction = {
   type: "navigate", name: "Navigate", payload: { url: "https://example.com" }, sensitive: false,
@@ -21,10 +22,22 @@ describe("recorder normalization", () => {
     expect(actionFingerprint(fill)).not.toBe(actionFingerprint({ ...fill, payload: { value: "two" } }));
   });
 
-  it("installs debounce, navigation, form, and locator capture", () => {
-    expect(RECORDER_SCRIPT).toContain("setTimeout(() => flushInput(element), 400)");
-    expect(RECORDER_SCRIPT).toContain('"pushState", "replaceState"');
+  it("captures completed fields and semantic buttons only", () => {
+    expect(RECORDER_SCRIPT).toContain("const dirtyFields = new Set()");
+    expect(RECORDER_SCRIPT).toContain('document.addEventListener("focusout"');
+    expect(RECORDER_SCRIPT).toContain("input[type='submit']");
     expect(RECORDER_SCRIPT).toContain('kind: "testId"');
-    expect(RECORDER_SCRIPT).toContain('type: "submit"');
+    expect(RECORDER_SCRIPT).not.toContain('document.addEventListener("keydown"');
+    expect(RECORDER_SCRIPT).not.toContain('document.addEventListener("submit"');
+    expect(RECORDER_SCRIPT).not.toContain('"pushState", "replaceState"');
+  });
+
+  it("allows only fill and click actions through the automatic recorder", () => {
+    const withType = (type: RecordedAction["type"]): RecordedAction => ({ ...action, type });
+    expect(isAutomaticallyRecordableAction(withType("fill"))).toBe(true);
+    expect(isAutomaticallyRecordableAction(withType("click"))).toBe(true);
+    for (const type of ["navigate", "select", "check", "uncheck", "keypress", "submit"] as const) {
+      expect(isAutomaticallyRecordableAction(withType(type))).toBe(false);
+    }
   });
 });

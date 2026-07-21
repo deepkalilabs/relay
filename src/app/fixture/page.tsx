@@ -21,6 +21,9 @@ export default function RecorderFixture() {
       {submitted ? <p role="status">Submitted</p> : null}
       <button type="button" onClick={navigateSpa}>Open details</button>
       <button type="button" onClick={() => window.open("/fixture?popup=1", "_blank")}>Open popup</button>
+      <input type="button" value="Input action" />
+      <div role="button" tabIndex={0}>Role action</div>
+      <a href="#fixture-help">Fixture help</a>
       <iframe title="Payment frame" src="/fixture/frame" style={{ width: "100%", height: 120, marginTop: 20 }} />
     </main>
   );
