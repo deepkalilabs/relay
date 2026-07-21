@@ -13,6 +13,20 @@ interface PageState {
   index: number;
 }
 
+export function normalizeBrowserUrl(input: string): string {
+  const trimmed = input.trim();
+  if (!trimmed) throw new Error("Enter a web address to navigate.");
+  const hasHttpScheme = /^https?:\/\//i.test(trimmed);
+  const hasUnsupportedScheme = /^[a-zA-Z][a-zA-Z\d+.-]*:/.test(trimmed) && !hasHttpScheme && !/^[^/:]+:\d+(?:[/?#]|$)/.test(trimmed);
+  if (hasUnsupportedScheme) throw new Error("Use an HTTP or HTTPS web address.");
+  const candidate = hasHttpScheme ? trimmed : `https://${trimmed}`;
+  const url = new URL(candidate);
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error("Use an HTTP or HTTPS web address.");
+  }
+  return url.toString();
+}
+
 export class RecordingRuntime {
   socket: WebSocket | null = null;
   graceTimer: NodeJS.Timeout | null = null;
@@ -94,6 +108,7 @@ export class RecordingRuntime {
       if (!first) throw new Error("Browserbase opened without a page.");
       this.activePageId = first.id;
       this.emit({ type: "session.started", sessionId: created.id, liveViewUrl: liveView.liveViewUrl, pageId: first.id });
+      await this.emitPageState(first);
       this.emit({ type: "session.status", status: "recording" });
     } catch (error) {
       const failedSessionId = this.sessionId;
@@ -114,7 +129,9 @@ export class RecordingRuntime {
     if (active || !this.activePageId) this.activePageId = state.id;
 
     page.on("framenavigated", (frame) => {
-      if (frame !== page.mainFrame() || state.id !== this.activePageId || page.url() === "about:blank") return;
+      if (frame !== page.mainFrame() || state.id !== this.activePageId) return;
+      void this.emitPageState(state);
+      if (page.url() === "about:blank") return;
       void this.forwardAction({
         type: "navigate",
         name: `Navigate to ${page.url()}`,
@@ -123,6 +140,9 @@ export class RecordingRuntime {
         page: { id: state.id, url: page.url() },
         recordedAt: new Date().toISOString(),
       });
+    });
+    page.on("domcontentloaded", () => {
+      if (state.id === this.activePageId) void this.emitPageState(state);
     });
     page.on("close", () => {
       this.pages.delete(page);
@@ -149,6 +169,60 @@ export class RecordingRuntime {
     this.emit({ type: "recorded.action", action: normalized });
   }
 
+  private async emitPageState(state: PageState): Promise<void> {
+    this.emit({
+      type: "browser.page",
+      pageId: state.id,
+      title: await state.page.title().catch(() => "Browser"),
+      url: state.page.url(),
+    });
+  }
+
+  private activePage(): PageState {
+    const state = [...this.pages.values()].find((candidate) => candidate.id === this.activePageId);
+    if (!state) throw new Error("The active browser page is not available.");
+    return state;
+  }
+
+  private async runNavigation(operation: (page: Page) => Promise<unknown>): Promise<void> {
+    try {
+      const state = this.activePage();
+      await operation(state.page);
+      await this.emitPageState(state);
+    } catch (error) {
+      this.emit({
+        type: "browser.navigation.error",
+        message: error instanceof Error ? error.message : "The browser could not complete that navigation.",
+      });
+    }
+  }
+
+  async navigate(url: string): Promise<void> {
+    let normalized: string;
+    try {
+      normalized = normalizeBrowserUrl(url);
+    } catch (error) {
+      this.emit({
+        type: "browser.navigation.error",
+        message: error instanceof Error ? error.message : "Enter a valid web address.",
+      });
+      return;
+    }
+    await this.runNavigation((page) => page.goto(normalized, { waitUntil: "domcontentloaded", timeout: 30_000 }));
+  }
+
+  async goBack(): Promise<void> {
+    await this.runNavigation((page) => page.goBack({ waitUntil: "domcontentloaded", timeout: 30_000 }));
+  }
+
+  async goForward(): Promise<void> {
+    await this.runNavigation((page) => page.goForward({ waitUntil: "domcontentloaded", timeout: 30_000 }));
+  }
+
+  async reload(): Promise<void> {
+    await this.runNavigation((page) => page.reload({ waitUntil: "domcontentloaded", timeout: 30_000 }));
+  }
+
   async switchPage(pageId: string): Promise<void> {
     if (!this.sessionId) return;
     const state = [...this.pages.values()].find((candidate) => candidate.id === pageId);
@@ -156,6 +230,7 @@ export class RecordingRuntime {
     this.activePageId = pageId;
     const liveView = await this.provider.getLiveView(this.sessionId, state.index);
     this.emit({ type: "popup.switched", pageId, liveViewUrl: liveView.liveViewUrl });
+    await this.emitPageState(state);
   }
 
   async release(): Promise<void> {

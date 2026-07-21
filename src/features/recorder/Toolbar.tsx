@@ -1,17 +1,7 @@
 "use client";
 
 import { CircleStop, Download, LoaderCircle, Plus, Radio } from "lucide-react";
-import type { TransportStatus } from "@/hooks/use-recorder-socket";
-
-export type RecordingStatus =
-  | "configurationMissing"
-  | "idle"
-  | "starting"
-  | "recording"
-  | "reconnecting"
-  | "stopping"
-  | "stopped"
-  | "error";
+import type { RecordingStatus, TransportStatus } from "@/lib/recorder-session";
 
 const labels: Record<RecordingStatus, string> = {
   configurationMissing: "Setup required",
@@ -52,10 +42,10 @@ export function Toolbar({
   return (
     <header className="toolbar">
       <a className="skip-link" href="#workspace-main">Skip to workspace</a>
-      <div className="brand" aria-label="Browser Memory Recorder">
+      <h1 className="brand" aria-label="Browser Memory Recorder">
         <span className="brand-mark"><Radio size={18} aria-hidden="true" /></span>
         <span>Memory Recorder</span>
-      </div>
+      </h1>
       <label className="workflow-name">
         <span className="sr-only">Workflow name</span>
         <input value={workflowName} onChange={(event) => onNameChange(event.target.value)} aria-label="Workflow name" />

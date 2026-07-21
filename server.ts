@@ -60,7 +60,10 @@ webSockets.on("connection", (socket: WebSocket) => {
     }
     const parsed = ClientMessageSchema.safeParse(json);
     if (!parsed.success) {
-      sendUnsequencedError("The recorder received an invalid command.");
+      const commandType = typeof json === "object" && json !== null && "type" in json && typeof json.type === "string"
+        ? ` ${json.type}`
+        : "";
+      sendUnsequencedError(`The recorder received an invalid${commandType} command. Refresh the app and try again.`);
       return;
     }
 
@@ -101,6 +104,14 @@ webSockets.on("connection", (socket: WebSocket) => {
         runtime.emit({ type: "server.ready", configured: true });
       } else if (message.type === "popup.switch") {
         await runtime.switchPage(message.pageId);
+      } else if (message.type === "browser.navigate") {
+        await runtime.navigate(message.url);
+      } else if (message.type === "browser.back") {
+        await runtime.goBack();
+      } else if (message.type === "browser.forward") {
+        await runtime.goForward();
+      } else if (message.type === "browser.reload") {
+        await runtime.reload();
       }
     } catch (error) {
       runtime?.emit({

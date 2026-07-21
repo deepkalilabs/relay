@@ -6,8 +6,9 @@ import {
   type ClientMessage,
   type ServerMessage,
 } from "@/lib/protocol";
+import type { TransportStatus } from "@/lib/recorder-session";
 
-export type TransportStatus = "connecting" | "connected" | "reconnecting" | "offline";
+export type { TransportStatus } from "@/lib/recorder-session";
 
 export function useRecorderSocket(onMessage: (message: ServerMessage) => void) {
   const [transportStatus, setTransportStatus] = useState<TransportStatus>("connecting");

@@ -7,6 +7,10 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("session.restart") }),
   z.object({ type: z.literal("session.stop") }),
   z.object({ type: z.literal("popup.switch"), pageId: z.string() }),
+  z.object({ type: z.literal("browser.navigate"), url: z.string().trim().min(1).max(2_048) }),
+  z.object({ type: z.literal("browser.back") }),
+  z.object({ type: z.literal("browser.forward") }),
+  z.object({ type: z.literal("browser.reload") }),
 ]);
 
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
@@ -25,6 +29,8 @@ export const SequencedServerMessageSchema = z.object({
     z.object({ type: z.literal("recorded.action"), action: RecordedActionSchema }),
     z.object({ type: z.literal("popup.detected"), pageId: z.string(), title: z.string(), url: z.string() }),
     z.object({ type: z.literal("popup.switched"), pageId: z.string(), liveViewUrl: z.string() }),
+    z.object({ type: z.literal("browser.page"), pageId: z.string(), title: z.string(), url: z.string() }),
+    z.object({ type: z.literal("browser.navigation.error"), message: z.string() }),
     z.object({ type: z.literal("buffer.gap"), earliestSequence: z.number().int() }),
     z.object({
       type: z.literal("server.error"),

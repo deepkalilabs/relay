@@ -1,0 +1,51 @@
+.timeline-panel { min-width: 0; height: 100%; display: flex; flex-direction: column; background: var(--surface); border-right: 1px solid var(--line); }
+.panel-heading { min-height: 72px; padding: 14px 12px 12px 18px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--line); }
+.panel-heading-actions { display: flex; align-items: center; }
+.eyebrow { display: block; margin-bottom: 3px; color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+.panel-heading h2 { margin: 0; font-size: 14px; }
+.panel-heading h2 span { margin-left: 4px; color: var(--subtle); font-weight: 600; }
+.timeline-list { list-style: none; margin: 0; padding: 10px 8px 80px; overflow-y: auto; }
+.timeline-step { min-height: 58px; margin-bottom: 4px; display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; border: 1px solid transparent; border-radius: 10px; background: white; transition: background-color .18s ease, border-color .18s ease, box-shadow .18s ease, opacity .18s ease; }
+.timeline-step:hover { background: var(--surface-muted); }
+.timeline-step.selected { background: var(--primary-soft); border-color: #cddcff; }
+.timeline-step.dragging { z-index: 50; box-shadow: var(--shadow-md); }
+.timeline-step.disabled-step { opacity: .58; }
+.drag-handle { width: 28px; height: 44px; border: 0; background: transparent; color: var(--subtle); border-radius: 7px; touch-action: none; }
+.drag-handle:hover { color: var(--ink); background: #e8edf4; }
+.step-main { min-width: 0; min-height: 50px; padding: 5px 4px; display: flex; align-items: center; gap: 9px; text-align: left; border: 0; background: transparent; }
+.step-icon { width: 28px; height: 28px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 8px; color: var(--primary); background: white; border: 1px solid var(--line); }
+.step-copy { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.step-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 700; color: var(--ink); }
+.step-meta { color: var(--subtle); font-size: 10px; text-transform: capitalize; }
+.step-actions { display: flex; padding-right: 4px; }
+.enabled-indicator { width: 10px; height: 10px; border: 1px solid var(--subtle); border-radius: 50%; display: block; }
+.enabled-indicator.on { background: var(--success); border-color: var(--success); box-shadow: inset 0 0 0 2px white; }
+.timeline-empty { margin: auto; padding: 32px; text-align: center; max-width: 270px; }
+.empty-illustration { width: 48px; height: 48px; margin: auto; display: grid; place-items: center; border-radius: 14px; color: var(--primary); background: var(--primary-soft); }
+.timeline-empty h3 { margin: 14px 0 5px; font-size: 14px; }
+.timeline-empty p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
+
+.step-editor-content { min-width: 0; height: 100%; display: flex; flex-direction: column; background: var(--surface); }
+.inspector-header { min-height: 72px; padding: 12px 10px 12px 18px; flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); }
+.inspector-header h2 { margin: 0; font-size: 14px; }.inspector-header h2 span { margin-left: 7px; color: var(--subtle); font-size: 10px; font-weight: 700; text-transform: capitalize; }
+.inspector-scroll { min-height: 0; padding: 14px 16px 28px; overflow-y: auto; }
+.editor-empty { min-height: 0; flex: 1; padding: 24px; display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--subtle); text-align: left; }
+.editor-empty div { display: flex; flex-direction: column; gap: 3px; }.editor-empty strong { color: var(--muted); font-size: 12px; }.editor-empty span { color: var(--muted); font-size: 11px; }
+.editor-section { min-width: 0; }
+.editor-section-title { height: 28px; display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; }
+.editor-section-title small { padding: 2px 6px; border-radius: 99px; background: #eef2f7; font-size: 9px; }
+.editor-divider { height: 1px; margin: 18px 0 14px; background: var(--line); }
+.editor-fields { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: end; }
+.field { min-width: 0; display: flex; flex-direction: column; gap: 5px; color: var(--muted); font-size: 10px; font-weight: 700; }
+.field-wide { grid-column: 1 / -1; }.field input, .field select, .locator-card input, .locator-card select { min-width: 0; width: 100%; height: 36px; padding: 0 9px; color: var(--ink); background: white; border: 1px solid var(--line-strong); border-radius: 7px; font-size: 11px; }
+.field input[readonly] { color: var(--muted); background: var(--surface-muted); text-transform: capitalize; }
+.field small { color: var(--subtle); font-weight: 500; line-height: 1.4; }
+.toggle-field { height: 36px; min-width: 92px; display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 11px; font-weight: 700; }.toggle-field input { width: 16px; height: 16px; accent-color: var(--primary); }
+.key-preview { min-width: 112px; height: 36px; padding: 0 9px; display: flex; align-items: center; gap: 6px; color: var(--muted); background: var(--surface-muted); border: 1px solid var(--line); border-radius: 7px; font-size: 10px; }
+.locator-list { display: flex; flex-direction: column; gap: 10px; }
+.locator-card { padding: 10px; display: grid; gap: 9px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-muted); }
+.locator-card-heading { display: grid; grid-template-columns: 24px minmax(0, 1fr) 32px; align-items: center; gap: 7px; }
+.locator-rank { width: 22px; height: 22px; display: grid; place-items: center; color: var(--muted); background: white; border: 1px solid var(--line); border-radius: 6px; font-size: 10px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.locator-kind select { height: 32px; text-transform: capitalize; }
+.add-locator { align-self: flex-start; min-height: 36px; font-size: 11px; }.muted-copy { margin: 4px 0 0; color: var(--subtle); font-size: 11px; line-height: 1.5; }
+.validation-summary { margin-top: 16px; padding: 9px 10px; display: flex; gap: 7px; align-items: flex-start; color: var(--danger); background: var(--danger-soft); border-radius: 7px; font-size: 10px; font-weight: 650; line-height: 1.45; }

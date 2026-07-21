@@ -8,6 +8,35 @@ import type {
   LiveViewPage,
 } from "@/server/provider/types";
 
+export function hideLiveViewNavbar(rawUrl: string): string {
+  const url = new URL(rawUrl);
+  url.searchParams.set("navbar", "false");
+  return url.toString();
+}
+
+interface BrowserbaseLiveViewLinks {
+  debuggerFullscreenUrl: string;
+  pages: Array<{ id: string; title: string; url: string; debuggerFullscreenUrl: string }>;
+}
+
+export function selectLiveViewPage(debug: BrowserbaseLiveViewLinks, pageIndex: number): LiveViewPage {
+  const page = debug.pages[pageIndex];
+  if (!page) {
+    return {
+      id: `page-${pageIndex}`,
+      title: "Browser",
+      url: "about:blank",
+      liveViewUrl: hideLiveViewNavbar(debug.debuggerFullscreenUrl),
+    };
+  }
+  return {
+    id: page.id,
+    title: page.title || "Browser",
+    url: page.url,
+    liveViewUrl: hideLiveViewNavbar(page.debuggerFullscreenUrl),
+  };
+}
+
 export class BrowserbaseProvider implements BrowserProvider {
   private readonly client: Browserbase;
   private readonly connectUrls = new Map<string, string>();
@@ -44,21 +73,7 @@ export class BrowserbaseProvider implements BrowserProvider {
 
   async getLiveView(sessionId: string, pageIndex = 0): Promise<LiveViewPage> {
     const debug = await this.client.sessions.debug(sessionId);
-    const page = debug.pages[pageIndex];
-    if (!page) {
-      return {
-        id: `page-${pageIndex}`,
-        title: "Browser",
-        url: "about:blank",
-        liveViewUrl: debug.debuggerUrl,
-      };
-    }
-    return {
-      id: page.id,
-      title: page.title || "Browser",
-      url: page.url,
-      liveViewUrl: page.debuggerUrl,
-    };
+    return selectLiveViewPage(debug, pageIndex);
   }
 
   async releaseSession(sessionId: string): Promise<void> {

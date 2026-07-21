@@ -18,6 +18,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import {
   CheckSquare,
+  ChevronLeft,
   Copy,
   GripVertical,
   Keyboard,
@@ -50,6 +51,7 @@ interface TimelineProps {
   onDelete: (id: string) => void;
   onReorder: (activeId: string, overId: string) => void;
   onInsert: () => void;
+  onCollapse: () => void;
 }
 
 function SortableStep({ step, selected, onSelect, onToggle, onDuplicate, onDelete }: {
@@ -67,7 +69,7 @@ function SortableStep({ step, selected, onSelect, onToggle, onDuplicate, onDelet
       <button className="drag-handle" type="button" aria-label={`Reorder step ${step.order + 1}`} {...attributes} {...listeners}>
         <GripVertical size={16} aria-hidden="true" />
       </button>
-      <button className="step-main" type="button" onClick={onSelect} aria-pressed={selected}>
+      <button id={`workflow-step-${step.id}`} className="step-main" type="button" onClick={onSelect} aria-pressed={selected}>
         <span className="step-icon"><Icon size={15} aria-hidden="true" /></span>
         <span className="step-copy">
           <span className="step-title">{step.name}</span>
@@ -85,7 +87,7 @@ function SortableStep({ step, selected, onSelect, onToggle, onDuplicate, onDelet
   );
 }
 
-export function WorkflowTimeline({ steps, selectedId, onSelect, onToggle, onDuplicate, onDelete, onReorder, onInsert }: TimelineProps) {
+export function WorkflowTimeline({ steps, selectedId, onSelect, onToggle, onDuplicate, onDelete, onReorder, onInsert, onCollapse }: TimelineProps) {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -100,9 +102,14 @@ export function WorkflowTimeline({ steps, selectedId, onSelect, onToggle, onDupl
           <span className="eyebrow">Workflow</span>
           <h2 id="timeline-title">Recorded steps <span>{steps.length}</span></h2>
         </div>
-        <button className="icon-button" type="button" onClick={onInsert} aria-label="Insert a workflow step" title="Insert step">
-          <Plus size={18} aria-hidden="true" />
-        </button>
+        <div className="panel-heading-actions">
+          <button className="icon-button" type="button" onClick={onInsert} aria-label="Insert a workflow step" title="Insert step">
+            <Plus size={18} aria-hidden="true" />
+          </button>
+          <button id="timeline-collapse" className="icon-button" type="button" onClick={onCollapse} aria-label="Collapse workflow timeline" title="Collapse timeline">
+            <ChevronLeft size={18} aria-hidden="true" />
+          </button>
+        </div>
       </div>
       {steps.length ? (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>

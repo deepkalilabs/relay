@@ -45,21 +45,20 @@ browser_replay/
 ├── src/
 │   ├── app/
 │   │   ├── fixture/               # Controlled pages used by E2E tests
-│   │   ├── globals.css            # Workspace styles and responsive rules
+│   │   ├── globals.css            # Global tokens, reset, and shared controls
 │   │   ├── layout.tsx             # Next.js root layout
 │   │   └── page.tsx               # Application entry page
 │   ├── components/
-│   │   ├── ui/Modal.tsx           # Shared accessible modal
-│   │   ├── BrowserPanel.tsx       # Browserbase Live View container
-│   │   ├── ManualStepDialog.tsx   # Manual workflow-step creation
-│   │   ├── RecorderWorkspace.tsx  # Main client state and UI orchestration
-│   │   ├── StepEditor.tsx         # Selected-step inspector
-│   │   ├── Toolbar.tsx            # Recording and export controls
-│   │   └── WorkflowTimeline.tsx   # Editable and sortable step list
+│   │   └── ui/                    # Shared accessible UI primitives
+│   ├── features/
+│   │   ├── browser/               # Browserbase Live View and browser styles
+│   │   ├── recorder/              # App shell, session controller, and panel layout
+│   │   └── workflow/              # Timeline, step editor, dialogs, and styles
 │   ├── hooks/
 │   │   └── use-recorder-socket.ts # WebSocket lifecycle and recovery
 │   ├── lib/
 │   │   ├── protocol.ts            # Client/server message schemas
+│   │   ├── recorder-session.ts    # Shared recorder presentation state
 │   │   └── workflow/
 │   │       ├── export.ts          # JSON serialization and download
 │   │       ├── recorded-action.ts # Recorder-event conversion

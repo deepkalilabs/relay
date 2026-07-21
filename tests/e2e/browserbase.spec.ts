@@ -15,6 +15,10 @@ test("real Browserbase session can connect, interact, and release", async () => 
     await expect(page.locator("h1")).toHaveText("Example Domain");
     const debug = await client.sessions.debug(session.id);
     expect(debug.debuggerUrl).toContain("http");
+    expect(debug.debuggerFullscreenUrl).toContain("http");
+    const embeddedUrl = new URL(debug.debuggerFullscreenUrl);
+    embeddedUrl.searchParams.set("navbar", "false");
+    expect(embeddedUrl.searchParams.get("navbar")).toBe("false");
     await browser.close();
   } finally {
     await client.sessions.update(session.id, { status: "REQUEST_RELEASE" });

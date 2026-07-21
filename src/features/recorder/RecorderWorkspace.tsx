@@ -1,0 +1,193 @@
+"use client";
+
+import { useCallback, useMemo, useReducer, useState } from "react";
+import { AlertTriangle, ChevronLeft, ChevronRight, RotateCcw } from "lucide-react";
+import { BrowserPanel } from "@/features/browser/BrowserPanel";
+import { Modal } from "@/components/ui/Modal";
+import { Toolbar } from "@/features/recorder/Toolbar";
+import { useRecorderSession } from "@/features/recorder/useRecorderSession";
+import { useWorkspacePanels } from "@/features/recorder/useWorkspacePanels";
+import { ManualStepDialog } from "@/features/workflow/ManualStepDialog";
+import { StepEditor } from "@/features/workflow/StepEditor";
+import { WorkflowTimeline } from "@/features/workflow/WorkflowTimeline";
+import { downloadWorkflow } from "@/lib/workflow/export";
+import type { WorkflowStep } from "@/lib/workflow/schema";
+import { WorkflowSchema } from "@/lib/workflow/schema";
+import { initialWorkflowState, workflowReducer } from "@/lib/workflow/store";
+
+type Confirmation = "new" | "sensitiveExport" | null;
+
+export function RecorderWorkspace() {
+  const [workflowState, dispatch] = useReducer(workflowReducer, undefined, initialWorkflowState);
+  const [manualOpen, setManualOpen] = useState(false);
+  const [confirmation, setConfirmation] = useState<Confirmation>(null);
+  const [announcement, setAnnouncement] = useState("");
+
+  const onSessionStarted = useCallback((sessionId: string) => {
+    dispatch({ type: "reset", sessionId });
+  }, []);
+  const onStepRecorded = useCallback((step: WorkflowStep) => {
+    dispatch({ type: "append", step });
+    setAnnouncement(`${step.name} added to the workflow.`);
+  }, []);
+  const session = useRecorderSession({ onSessionStarted, onStepRecorded });
+  const panels = useWorkspacePanels({
+    selectedStepId: workflowState.selectedStepId,
+    overlayOpen: Boolean(confirmation || manualOpen),
+  });
+
+  const beginRecording = () => {
+    if (workflowState.dirty && workflowState.workflow.steps.length) {
+      setConfirmation("new");
+      return;
+    }
+    session.startRecording();
+  };
+
+  const confirmNew = () => {
+    setConfirmation(null);
+    dispatch({ type: "reset" });
+    session.startAfterDiscard();
+  };
+
+  const exportNow = () => {
+    const parsed = WorkflowSchema.safeParse(workflowState.workflow);
+    if (!parsed.success) {
+      session.reportError(`Workflow export is blocked: ${parsed.error.issues[0]?.message}`);
+      return;
+    }
+    downloadWorkflow(parsed.data);
+    dispatch({ type: "markClean" });
+    setConfirmation(null);
+    setAnnouncement("Workflow JSON downloaded.");
+  };
+
+  const requestExport = () => {
+    if (workflowState.workflow.steps.some((step) => step.metadata.sensitive)) setConfirmation("sensitiveExport");
+    else exportNow();
+  };
+
+  const selectedStep = useMemo(() => workflowState.workflow.steps.find((step) => step.id === workflowState.selectedStepId) ?? null, [workflowState.workflow.steps, workflowState.selectedStepId]);
+  const activePage = selectedStep?.page ?? (session.browserPage
+    ? { id: session.browserPage.pageId, url: session.browserPage.url, title: session.browserPage.title }
+    : { id: "manual", url: session.liveViewUrl ? "about:blank" : "", title: "Manual step" });
+
+  return (
+    <>
+      <div className="viewport-guard" role="main">
+        <span className="guard-icon"><AlertTriangle size={24} /></span><h1>A larger screen is required</h1><p>Memory Recorder is a desktop workspace designed for viewports at least 1024px wide.</p>
+      </div>
+      <div className="desktop-app">
+        <Toolbar
+          workflowName={workflowState.workflow.name}
+          status={session.displayStatus}
+          transportStatus={session.transportStatus}
+          elapsed={session.elapsed}
+          stepCount={workflowState.workflow.steps.length}
+          onNameChange={(name) => dispatch({ type: "renameWorkflow", name })}
+          onStart={beginRecording}
+          onStop={session.stopRecording}
+          onExport={requestExport}
+        />
+        <main
+          id="workspace-main"
+          className="workspace"
+          style={{
+            "--timeline-width": `${panels.timelineCollapsed ? 44 : panels.timelineWidth}px`,
+            "--inspector-width": `${panels.inspectorCollapsed ? 44 : panels.inspectorWidth}px`,
+          } as React.CSSProperties}
+        >
+          <div className={`timeline-shell ${panels.timelineCollapsed ? "collapsed" : ""}`}>
+            {panels.timelineCollapsed ? (
+              <aside className="panel-rail" aria-label="Collapsed workflow timeline">
+                <button id="timeline-expand" className="rail-button" type="button" onClick={panels.expandTimeline} aria-label="Expand workflow timeline" title="Expand timeline">
+                  <ChevronRight size={19} aria-hidden="true" /><span>Workflow</span>
+                </button>
+              </aside>
+            ) : (
+              <>
+                <WorkflowTimeline
+                  steps={workflowState.workflow.steps}
+                  selectedId={workflowState.selectedStepId}
+                  onSelect={(id) => { dispatch({ type: "select", id }); panels.setInspectorCollapsed(false); }}
+                  onToggle={(step) => dispatch({ type: "update", step })}
+                  onDuplicate={(id) => dispatch({ type: "duplicate", id })}
+                  onDelete={(id) => dispatch({ type: "delete", id })}
+                  onReorder={(activeId, overId) => dispatch({ type: "reorder", activeId, overId })}
+                  onInsert={() => setManualOpen(true)}
+                  onCollapse={panels.collapseTimeline}
+                />
+                <div
+                  className="panel-resizer timeline-resizer"
+                  role="separator"
+                  tabIndex={0}
+                  aria-label="Resize workflow timeline"
+                  aria-orientation="vertical"
+                  aria-valuemin={panels.panelLimits.timeline.min}
+                  aria-valuemax={panels.panelLimits.timeline.max}
+                  aria-valuenow={panels.timelineWidth}
+                  onPointerDown={(event) => panels.beginPanelResize("timeline", event)}
+                  onKeyDown={(event) => panels.resizePanelWithKeyboard("timeline", event)}
+                />
+              </>
+            )}
+          </div>
+          <div className="main-stage">
+            <BrowserPanel
+              status={session.displayStatus}
+              liveViewUrl={session.liveViewUrl}
+              page={session.browserPage}
+              error={session.displayError}
+              navigationError={session.navigationError}
+              navigationPending={session.navigationPending}
+              popup={session.popup}
+              onBack={() => session.sendBrowserCommand({ type: "browser.back" })}
+              onForward={() => session.sendBrowserCommand({ type: "browser.forward" })}
+              onNavigate={(url) => session.sendBrowserCommand({ type: "browser.navigate", url })}
+              onReload={() => session.sendBrowserCommand({ type: "browser.reload" })}
+              onStart={beginRecording}
+              onRetry={beginRecording}
+              onSwitchPopup={session.switchPopup}
+            />
+          </div>
+          <aside className={`inspector-shell ${panels.inspectorCollapsed ? "collapsed" : ""}`} aria-label="Selected step editor">
+            {panels.inspectorCollapsed ? (
+              <div className="panel-rail panel-rail-right">
+                <button id="inspector-expand" className="rail-button" type="button" onClick={panels.expandInspector} aria-label="Expand step details" title="Expand details">
+                  <ChevronLeft size={19} aria-hidden="true" /><span>Details</span>
+                </button>
+              </div>
+            ) : (
+              <>
+                <div
+                  className="panel-resizer inspector-resizer"
+                  role="separator"
+                  tabIndex={0}
+                  aria-label="Resize step details"
+                  aria-orientation="vertical"
+                  aria-valuemin={panels.panelLimits.inspector.min}
+                  aria-valuemax={panels.panelLimits.inspector.max}
+                  aria-valuenow={panels.inspectorWidth}
+                  onPointerDown={(event) => panels.beginPanelResize("inspector", event)}
+                  onKeyDown={(event) => panels.resizePanelWithKeyboard("inspector", event)}
+                />
+                <StepEditor step={selectedStep} onUpdate={(step) => dispatch({ type: "update", step })} onCollapse={panels.collapseInspector} />
+              </>
+            )}
+          </aside>
+        </main>
+        {workflowState.deletedStep ? <div className="undo-toast" role="status"><span>Step deleted</span><button type="button" onClick={() => dispatch({ type: "undoDelete" })}><RotateCcw size={14} /> Undo</button></div> : null}
+        <div className="sr-only" aria-live="polite">{announcement}</div>
+      </div>
+      <ManualStepDialog open={manualOpen} order={workflowState.workflow.steps.length} page={activePage} onClose={() => setManualOpen(false)} onInsert={(step) => dispatch({ type: "insert", step, afterId: workflowState.selectedStepId ?? undefined })} />
+      <Modal open={confirmation === "new"} title="Start a new recording?" description="The current workflow only lives in this tab." onClose={() => setConfirmation(null)}>
+        <p className="modal-copy">Export the current workflow first if you want to keep it. Starting over clears all recorded and edited steps.</p>
+        <div className="modal-actions"><button className="button button-ghost" type="button" onClick={() => setConfirmation(null)}>Keep editing</button><button className="button button-danger" type="button" onClick={confirmNew}>Discard and start</button></div>
+      </Modal>
+      <Modal open={confirmation === "sensitiveExport"} title="This export contains sensitive values" description="Passwords, tokens, or payment-related fields were detected." onClose={() => setConfirmation(null)}>
+        <p className="modal-copy">The downloaded JSON contains recorded values in plain text. Store it like a secret and do not commit it to source control.</p>
+        <div className="modal-actions"><button className="button button-ghost" type="button" onClick={() => setConfirmation(null)}>Cancel</button><button className="button button-danger" type="button" onClick={exportNow}>Export sensitive JSON</button></div>
+      </Modal>
+    </>
+  );
+}

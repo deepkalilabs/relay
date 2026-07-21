@@ -1,5 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import "@/features/recorder/recorder.css";
+import "@/features/browser/browser.css";
+import "@/features/workflow/workflow.css";
+import "@/components/ui/modal.css";
 
 export const metadata: Metadata = {
   title: "Browser Memory Recorder",
