@@ -9,18 +9,21 @@ import {
   Globe2,
   LoaderCircle,
   LockKeyhole,
-  Monitor,
   RefreshCw,
   RotateCw,
 } from "lucide-react";
+import { RecorderControls } from "@/features/recorder/RecorderControls";
 import type {
   BrowserPageState,
   PopupState,
   RecordingStatus,
+  TransportStatus,
 } from "@/lib/recorder-session";
 
 interface BrowserPanelProps {
   status: RecordingStatus;
+  transportStatus: TransportStatus;
+  elapsed: string;
   liveViewUrl: string | null;
   error: string | null;
   navigationError: string | null;
@@ -32,6 +35,7 @@ interface BrowserPanelProps {
   onNavigate: (url: string) => void;
   onReload: () => void;
   onStart: () => void;
+  onStop: () => void;
   onRetry: () => void;
   onSwitchPopup: (pageId: string) => void;
 }
@@ -65,22 +69,12 @@ function BrowserAddress({ disabled, error, initialAddress, pending, onNavigate }
   );
 }
 
-export function BrowserPanel({ status, liveViewUrl, error, navigationError, navigationPending, page, popup, onBack, onForward, onNavigate, onReload, onStart, onRetry, onSwitchPopup }: BrowserPanelProps) {
+export function BrowserPanel({ status, transportStatus, elapsed, liveViewUrl, error, navigationError, navigationPending, page, popup, onBack, onForward, onNavigate, onReload, onStart, onStop, onRetry, onSwitchPopup }: BrowserPanelProps) {
   const [loadedUrl, setLoadedUrl] = useState<string | null>(null);
   const loading = status === "starting" || (liveViewUrl && loadedUrl !== liveViewUrl);
   const navigationDisabled = !liveViewUrl || navigationPending || !["recording", "reconnecting"].includes(status);
   const tabTitle = page?.title && page.title !== "about:blank" ? page.title : liveViewUrl ? "Browserbase" : "New cloud browser";
   const pageAddress = page?.url === "about:blank" ? "" : page?.url ?? "";
-
-  const browserState = status === "starting"
-    ? "Connecting"
-    : status === "reconnecting"
-      ? "Reconnecting"
-      : status === "stopping"
-        ? "Stopping"
-        : liveViewUrl
-          ? "Active"
-          : "Ready";
 
   return (
     <section className="browser-panel" aria-labelledby="browser-title">
@@ -108,12 +102,7 @@ export function BrowserPanel({ status, liveViewUrl, error, navigationError, navi
             pending={navigationPending}
             onNavigate={onNavigate}
           />
-          <div className="browser-session-state" aria-label={`Cloud Browser ${browserState}`}>
-            <Monitor size={16} />
-            <span className="browser-session-label">Cloud Browser</span>
-            <i className={liveViewUrl ? "is-active" : ""} />
-            <strong className="browser-session-value">{browserState}</strong>
-          </div>
+          <RecorderControls status={status} transportStatus={transportStatus} elapsed={elapsed} onStart={onStart} onStop={onStop} announce />
         </div>
         {navigationError ? <div className="browser-address-error" role="alert">{navigationError}</div> : null}
       </div>
@@ -133,7 +122,7 @@ export function BrowserPanel({ status, liveViewUrl, error, navigationError, navi
             <span className="cloud-orbit"><Cloud size={30} aria-hidden="true" /></span>
             <h2>Start with a fresh cloud browser</h2>
             <p>Your interactions become structured, editable workflow steps in real time.</p>
-            <button className="button button-primary" type="button" onClick={onStart} disabled={status === "configurationMissing"}>
+            <button className="button button-primary" type="button" onClick={onStart} disabled={status === "configurationMissing" || transportStatus === "offline"}>
               Start recording <ArrowRight size={17} aria-hidden="true" />
             </button>
             <div className="privacy-note"><LockKeyhole size={14} /><span>Values are held in memory until you export.</span></div>

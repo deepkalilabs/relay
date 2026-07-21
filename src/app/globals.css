@@ -22,7 +22,6 @@
   --radius-sm: 7px;
   --radius-md: 11px;
   --radius-lg: 16px;
-  --toolbar-height: 56px;
 }
 
 * { box-sizing: border-box; }

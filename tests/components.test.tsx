@@ -2,21 +2,75 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { BrowserPanel } from "@/features/browser/BrowserPanel";
-import { Toolbar } from "@/features/recorder/Toolbar";
+import { RecorderControls } from "@/features/recorder/RecorderControls";
+import { WorkspaceNavbar } from "@/features/recorder/WorkspaceNavbar";
 import { StepEditor } from "@/features/workflow/StepEditor";
 import { stepFromRecordedAction } from "@/lib/workflow/recorded-action";
 
-describe("Toolbar", () => {
-  it("exposes a named workflow field and start action", async () => {
+describe("WorkspaceNavbar", () => {
+  it("moves workflow identity and export into the expanded sidebar navbar", async () => {
     const user = userEvent.setup();
     const onNameChange = vi.fn();
-    const onStart = vi.fn();
-    render(<Toolbar workflowName="Checkout" status="idle" transportStatus="connected" elapsed="00:00" stepCount={0} onNameChange={onNameChange} onStart={onStart} onStop={vi.fn()} onExport={vi.fn()} />);
-    await user.click(screen.getByRole("button", { name: /new recording/i }));
-    expect(onStart).toHaveBeenCalledOnce();
+    const onExport = vi.fn();
+    const { rerender } = render(<WorkspaceNavbar collapsed={false} workflowName="Checkout" status="idle" transportStatus="connected" elapsed="00:00" stepCount={0} onNameChange={onNameChange} onExpand={vi.fn()} onStart={vi.fn()} onStop={vi.fn()} onExport={onExport} />);
+
+    expect(screen.getByText("Memory Recorder")).toBeInTheDocument();
     await user.type(screen.getByRole("textbox", { name: /workflow name/i }), " flow");
     expect(onNameChange).toHaveBeenCalled();
     expect(screen.getByRole("button", { name: /export/i })).toBeDisabled();
+
+    rerender(<WorkspaceNavbar collapsed={false} workflowName="Checkout" status="idle" transportStatus="connected" elapsed="00:00" stepCount={1} onNameChange={onNameChange} onExpand={vi.fn()} onStart={vi.fn()} onStop={vi.fn()} onExport={onExport} />);
+    await user.click(screen.getByRole("button", { name: /export/i }));
+    expect(onExport).toHaveBeenCalledOnce();
+  });
+
+  it("keeps core controls available in the collapsed rail", async () => {
+    const user = userEvent.setup();
+    const onExpand = vi.fn();
+    const onStart = vi.fn();
+    const onExport = vi.fn();
+    const { container } = render(<WorkspaceNavbar collapsed workflowName="Checkout" status="idle" transportStatus="connected" elapsed="00:00" stepCount={1} onNameChange={vi.fn()} onExpand={onExpand} onStart={onStart} onStop={vi.fn()} onExport={onExport} />);
+    const rail = within(container);
+
+    await user.click(rail.getByRole("button", { name: /expand workflow timeline/i }));
+    await user.click(rail.getByRole("button", { name: /start recording/i }));
+    await user.click(rail.getByRole("button", { name: /export workflow/i }));
+
+    expect(onExpand).toHaveBeenCalledOnce();
+    expect(onStart).toHaveBeenCalledOnce();
+    expect(onExport).toHaveBeenCalledOnce();
+  });
+});
+
+describe("RecorderControls", () => {
+  it("switches from a ready start action to an active timer and stop action", async () => {
+    const user = userEvent.setup();
+    const onStart = vi.fn();
+    const onStop = vi.fn();
+    const { container, rerender } = render(<RecorderControls status="idle" transportStatus="connected" elapsed="00:00" onStart={onStart} onStop={onStop} announce />);
+    const controls = within(container);
+
+    expect(controls.getByText("Ready")).toBeInTheDocument();
+    expect(controls.queryByText("Cloud Browser")).not.toBeInTheDocument();
+    await user.click(controls.getByRole("button", { name: /start recording/i }));
+    expect(onStart).toHaveBeenCalledOnce();
+
+    rerender(<RecorderControls status="recording" transportStatus="connected" elapsed="01:24" onStart={onStart} onStop={onStop} announce />);
+    expect(controls.getByText("Recording")).toBeInTheDocument();
+    expect(controls.getByText("01:24")).toBeInTheDocument();
+    await user.click(controls.getByRole("button", { name: /stop recording/i }));
+    expect(onStop).toHaveBeenCalledOnce();
+  });
+
+  it("labels and disables unavailable or busy recorder states", () => {
+    const { container, rerender } = render(<RecorderControls status="idle" transportStatus="offline" elapsed="00:00" onStart={vi.fn()} onStop={vi.fn()} />);
+    const controls = within(container);
+    expect(controls.getByText("Offline")).toBeInTheDocument();
+    expect(controls.getByRole("button", { name: /start recording/i })).toBeDisabled();
+
+    rerender(<RecorderControls status="starting" transportStatus="connected" elapsed="00:01" onStart={vi.fn()} onStop={vi.fn()} />);
+    expect(controls.getByText("Starting")).toBeInTheDocument();
+    expect(controls.getByRole("button", { name: /stop recording/i })).toBeDisabled();
   });
 });
 
@@ -39,6 +93,8 @@ describe("BrowserPanel", () => {
     const { container } = render(
       <BrowserPanel
         status="reconnecting"
+        transportStatus="reconnecting"
+        elapsed="00:42"
         liveViewUrl="https://example.com/live-view"
         page={{ pageId: "page", title: "Example Domain", url: "https://example.com/" }}
         error="The browser connection was interrupted."
@@ -50,6 +106,7 @@ describe("BrowserPanel", () => {
         onNavigate={vi.fn()}
         onReload={vi.fn()}
         onStart={vi.fn()}
+        onStop={vi.fn()}
         onRetry={vi.fn()}
         onSwitchPopup={vi.fn()}
       />,
@@ -60,8 +117,9 @@ describe("BrowserPanel", () => {
     expect(panel.getByTitle(/interactive browserbase browser/i)).toHaveAttribute("src", "https://example.com/live-view");
     expect(panel.getByRole("textbox", { name: /web address/i })).toHaveValue("https://example.com/");
     expect(panel.getByText("Example Domain")).toBeInTheDocument();
-    expect(panel.getByText("Cloud Browser")).toBeInTheDocument();
+    expect(panel.queryByText("Cloud Browser")).not.toBeInTheDocument();
     expect(panel.getByText("Reconnecting", { exact: true })).toBeInTheDocument();
+    expect(panel.getByText("00:42")).toBeInTheDocument();
     expect(panel.getByText(/preparing secure browser/i)).toBeInTheDocument();
     expect(panel.getByText(/reconnecting recorder transport/i)).toBeInTheDocument();
     expect(panel.getByRole("alert")).toHaveTextContent(/browser connection was interrupted/i);
@@ -77,6 +135,8 @@ describe("BrowserPanel", () => {
     const { container } = render(
       <BrowserPanel
         status="recording"
+        transportStatus="connected"
+        elapsed="00:12"
         liveViewUrl="https://example.com/live-view?navbar=false"
         page={{ pageId: "page", title: "Example Domain", url: "https://example.com/" }}
         error={null}
@@ -88,6 +148,7 @@ describe("BrowserPanel", () => {
         onNavigate={onNavigate}
         onReload={onReload}
         onStart={vi.fn()}
+        onStop={vi.fn()}
         onRetry={vi.fn()}
         onSwitchPopup={vi.fn()}
       />,

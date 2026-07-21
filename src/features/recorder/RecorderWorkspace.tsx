@@ -1,12 +1,12 @@
 "use client";
 
 import { useCallback, useMemo, useReducer, useState } from "react";
-import { AlertTriangle, ChevronLeft, ChevronRight, RotateCcw } from "lucide-react";
+import { AlertTriangle, ChevronLeft, RotateCcw } from "lucide-react";
 import { BrowserPanel } from "@/features/browser/BrowserPanel";
 import { Modal } from "@/components/ui/Modal";
-import { Toolbar } from "@/features/recorder/Toolbar";
 import { useRecorderSession } from "@/features/recorder/useRecorderSession";
 import { useWorkspacePanels } from "@/features/recorder/useWorkspacePanels";
+import { WorkspaceNavbar } from "@/features/recorder/WorkspaceNavbar";
 import { ManualStepDialog } from "@/features/workflow/ManualStepDialog";
 import { StepEditor } from "@/features/workflow/StepEditor";
 import { WorkflowTimeline } from "@/features/workflow/WorkflowTimeline";
@@ -78,19 +78,8 @@ export function RecorderWorkspace() {
         <span className="guard-icon"><AlertTriangle size={24} /></span><h1>A larger screen is required</h1><p>Memory Recorder is a desktop workspace designed for viewports at least 1024px wide.</p>
       </div>
       <div className="desktop-app">
-        <Toolbar
-          workflowName={workflowState.workflow.name}
-          status={session.displayStatus}
-          transportStatus={session.transportStatus}
-          elapsed={session.elapsed}
-          stepCount={workflowState.workflow.steps.length}
-          onNameChange={(name) => dispatch({ type: "renameWorkflow", name })}
-          onStart={beginRecording}
-          onStop={session.stopRecording}
-          onExport={requestExport}
-        />
+        <a className="skip-link" href="#browser-workspace">Skip to browser workspace</a>
         <main
-          id="workspace-main"
           className="workspace"
           style={{
             "--timeline-width": `${panels.timelineCollapsed ? 44 : panels.timelineWidth}px`,
@@ -98,13 +87,20 @@ export function RecorderWorkspace() {
           } as React.CSSProperties}
         >
           <div className={`timeline-shell ${panels.timelineCollapsed ? "collapsed" : ""}`}>
-            {panels.timelineCollapsed ? (
-              <aside className="panel-rail" aria-label="Collapsed workflow timeline">
-                <button id="timeline-expand" className="rail-button" type="button" onClick={panels.expandTimeline} aria-label="Expand workflow timeline" title="Expand timeline">
-                  <ChevronRight size={19} aria-hidden="true" /><span>Workflow</span>
-                </button>
-              </aside>
-            ) : (
+            <WorkspaceNavbar
+              collapsed={panels.timelineCollapsed}
+              workflowName={workflowState.workflow.name}
+              status={session.displayStatus}
+              transportStatus={session.transportStatus}
+              elapsed={session.elapsed}
+              stepCount={workflowState.workflow.steps.length}
+              onNameChange={(name) => dispatch({ type: "renameWorkflow", name })}
+              onExpand={panels.expandTimeline}
+              onStart={beginRecording}
+              onStop={session.stopRecording}
+              onExport={requestExport}
+            />
+            {!panels.timelineCollapsed ? (
               <>
                 <WorkflowTimeline
                   steps={workflowState.workflow.steps}
@@ -130,11 +126,13 @@ export function RecorderWorkspace() {
                   onKeyDown={(event) => panels.resizePanelWithKeyboard("timeline", event)}
                 />
               </>
-            )}
+            ) : null}
           </div>
-          <div className="main-stage">
+          <div id="browser-workspace" className="main-stage" tabIndex={-1}>
             <BrowserPanel
               status={session.displayStatus}
+              transportStatus={session.transportStatus}
+              elapsed={session.elapsed}
               liveViewUrl={session.liveViewUrl}
               page={session.browserPage}
               error={session.displayError}
@@ -146,6 +144,7 @@ export function RecorderWorkspace() {
               onNavigate={(url) => session.sendBrowserCommand({ type: "browser.navigate", url })}
               onReload={() => session.sendBrowserCommand({ type: "browser.reload" })}
               onStart={beginRecording}
+              onStop={session.stopRecording}
               onRetry={beginRecording}
               onSwitchPopup={session.switchPopup}
             />

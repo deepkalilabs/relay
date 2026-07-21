@@ -3,15 +3,45 @@ import { expect, test } from "@playwright/test";
 
 test("shows the configured desktop workspace shell", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByText("Memory Recorder", { exact: true })).toBeVisible();
+  const navbar = page.locator(".workspace-navbar");
+  const browserNavigation = page.locator(".browser-navigation");
+
+  await expect(navbar.getByText("Memory Recorder", { exact: true })).toBeVisible();
+  await expect(navbar.getByRole("textbox", { name: /workflow name/i })).toBeVisible();
+  await expect(navbar.getByRole("button", { name: /export workflow/i })).toBeDisabled();
   await expect(page.getByRole("heading", { name: /recorded steps/i })).toBeVisible();
   await expect(page.getByRole("heading", { name: /fresh cloud browser/i })).toBeVisible();
+  await expect(browserNavigation.getByRole("button", { name: /start recording/i })).toBeVisible();
+  await expect(browserNavigation.getByText(/cloud browser/i)).toHaveCount(0);
   await expect(page.getByRole("button", { name: /go back/i })).toBeDisabled();
   await expect(page.getByRole("button", { name: /go forward/i })).toBeDisabled();
   await expect(page.getByRole("button", { name: /reload page/i })).toBeDisabled();
   await expect(page.getByRole("textbox", { name: /web address/i })).toBeDisabled();
+  await expect(page.locator(".workspace")).toHaveCSS("height", "960px");
+
+  await page.getByRole("button", { name: /collapse workflow timeline/i }).click();
+  const rail = page.locator(".workspace-rail");
+  await expect(rail.getByRole("button", { name: /expand workflow timeline/i })).toBeFocused();
+  await expect(rail.getByRole("button", { name: /start recording/i })).toBeVisible();
+  await expect(rail.getByRole("button", { name: /export workflow/i })).toBeDisabled();
+  await rail.getByRole("button", { name: /expand workflow timeline/i }).click();
+  await expect(page.getByRole("button", { name: /collapse workflow timeline/i })).toBeFocused();
+
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations).toEqual([]);
+});
+
+test("keeps the desktop workspace within the viewport at its minimum width", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await page.goto("/");
+
+  const overflow = await page.evaluate(() => ({
+    document: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    body: document.body.scrollWidth - document.body.clientWidth,
+  }));
+  expect(overflow.document).toBeLessThanOrEqual(0);
+  expect(overflow.body).toBeLessThanOrEqual(0);
+  await expect(page.locator(".workspace")).toHaveCSS("height", "768px");
 });
 
 test("shows the desktop-only guard below 1024px", async ({ page }) => {

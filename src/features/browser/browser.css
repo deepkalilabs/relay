@@ -18,22 +18,21 @@
 .browser-address.has-error { border-color: #e89aa1; }
 .browser-address input { min-width: 0; width: 100%; height: 30px; padding: 0; border: 0; outline: 0; color: var(--ink); background: transparent; font-size: 11px; }
 .browser-address input::placeholder { color: var(--subtle); }
-.browser-session-state { height: 34px; display: flex; align-items: center; gap: 8px; white-space: nowrap; color: #596579; font-size: 10px; font-weight: 650; }
-.browser-session-state i { width: 7px; height: 7px; display: block; border-radius: 50%; background: var(--subtle); }
-.browser-session-state i.is-active { background: #22b864; box-shadow: 0 0 0 3px rgb(34 184 100 / 10%); }
-.browser-session-state strong { color: #667085; font-weight: 650; }
+.browser-navigation .recorder-controls { height: 34px; }
 .browser-address-error { position: absolute; top: calc(100% + 7px); left: 50%; width: min(420px, calc(100% - 32px)); padding: 8px 11px; transform: translateX(-50%); border: 1px solid #fecdd3; border-radius: 8px; color: var(--danger); background: white; box-shadow: var(--shadow-md); font-size: 11px; font-weight: 650; }
 @container (max-width: 540px) {
   .browser-navigation { grid-template-columns: 88px minmax(0, 1fr) auto; gap: 8px; padding-inline: 9px; }
-  .browser-session-label { display: none; }
-  .browser-session-state { gap: 6px; }
+  .browser-navigation .recorder-status-label { display: none; }
+  .browser-navigation .recorder-controls { gap: 6px; }
 }
 @container (max-width: 420px) {
   .traffic-lights { width: 62px; }
   .browser-tab { width: min(210px, calc(100% - 104px)); }
-  .browser-navigation { grid-template-columns: 78px minmax(0, 1fr); }
+  .browser-navigation { grid-template-columns: 78px minmax(0, 1fr) auto; gap: 6px; }
   .browser-nav-controls button { width: 26px; }
-  .browser-session-state { display: none; }
+  .browser-navigation .recorder-status { display: none; }
+  .browser-navigation .recorder-action { min-width: 34px; width: 34px; padding: 0; }
+  .browser-navigation .recorder-action-label { display: none; }
 }
 .browser-content { min-height: 0; flex: 1; position: relative; background: white; }
 .live-view { width: 100%; height: 100%; border: 0; display: block; }
