@@ -1,0 +1,139 @@
+import {
+  createWorkflow,
+  type Workflow,
+  type WorkflowStep,
+} from "@/lib/workflow/schema";
+
+export interface WorkflowState {
+  workflow: Workflow;
+  selectedStepId: string | null;
+  dirty: boolean;
+  deletedStep: { step: WorkflowStep; index: number } | null;
+  followLiveTail: boolean;
+}
+
+export type WorkflowAction =
+  | { type: "reset"; sessionId?: string }
+  | { type: "renameWorkflow"; name: string }
+  | { type: "append"; step: WorkflowStep }
+  | { type: "select"; id: string | null }
+  | { type: "update"; step: WorkflowStep }
+  | { type: "delete"; id: string }
+  | { type: "undoDelete" }
+  | { type: "duplicate"; id: string }
+  | { type: "insert"; step: WorkflowStep; afterId?: string }
+  | { type: "reorder"; activeId: string; overId: string }
+  | { type: "markClean" }
+  | { type: "setFollowLiveTail"; value: boolean };
+
+export function initialWorkflowState(): WorkflowState {
+  return {
+    workflow: createWorkflow(),
+    selectedStepId: null,
+    dirty: false,
+    deletedStep: null,
+    followLiveTail: true,
+  };
+}
+
+function reindex(steps: WorkflowStep[]): WorkflowStep[] {
+  return steps.map((step, order) => ({ ...step, order }));
+}
+
+function changed(state: WorkflowState, steps: WorkflowStep[], extra: Partial<WorkflowState> = {}): WorkflowState {
+  return {
+    ...state,
+    ...extra,
+    dirty: true,
+    workflow: {
+      ...state.workflow,
+      steps: reindex(steps),
+      updatedAt: new Date().toISOString(),
+    },
+  };
+}
+
+export function workflowReducer(state: WorkflowState, action: WorkflowAction): WorkflowState {
+  switch (action.type) {
+    case "reset":
+      return {
+        ...initialWorkflowState(),
+        workflow: createWorkflow(action.sessionId ?? ""),
+      };
+    case "renameWorkflow":
+      return {
+        ...state,
+        dirty: true,
+        workflow: { ...state.workflow, name: action.name, updatedAt: new Date().toISOString() },
+      };
+    case "append": {
+      const step = { ...action.step, order: state.workflow.steps.length };
+      return changed(state, [...state.workflow.steps, step], {
+        selectedStepId: state.followLiveTail ? step.id : state.selectedStepId,
+      });
+    }
+    case "select":
+      return { ...state, selectedStepId: action.id, followLiveTail: action.id === state.workflow.steps.at(-1)?.id };
+    case "update":
+      return changed(
+        state,
+        state.workflow.steps.map((step) => (step.id === action.step.id ? action.step : step)),
+      );
+    case "delete": {
+      const index = state.workflow.steps.findIndex((step) => step.id === action.id);
+      if (index < 0) return state;
+      const remaining = state.workflow.steps.filter((step) => step.id !== action.id);
+      return changed(state, remaining, {
+        deletedStep: { step: state.workflow.steps[index], index },
+        selectedStepId:
+          state.selectedStepId === action.id
+            ? (remaining[Math.min(index, remaining.length - 1)]?.id ?? null)
+            : state.selectedStepId,
+      });
+    }
+    case "undoDelete": {
+      if (!state.deletedStep) return state;
+      const steps = [...state.workflow.steps];
+      steps.splice(state.deletedStep.index, 0, state.deletedStep.step);
+      return changed(state, steps, {
+        selectedStepId: state.deletedStep.step.id,
+        deletedStep: null,
+      });
+    }
+    case "duplicate": {
+      const index = state.workflow.steps.findIndex((step) => step.id === action.id);
+      if (index < 0) return state;
+      const source = state.workflow.steps[index];
+      const copy: WorkflowStep = {
+        ...source,
+        id: crypto.randomUUID(),
+        name: `${source.name} copy`,
+        metadata: { ...source.metadata, origin: "duplicate", recordedAt: new Date().toISOString() },
+      };
+      const steps = [...state.workflow.steps];
+      steps.splice(index + 1, 0, copy);
+      return changed(state, steps, { selectedStepId: copy.id });
+    }
+    case "insert": {
+      const index = action.afterId
+        ? state.workflow.steps.findIndex((step) => step.id === action.afterId) + 1
+        : state.workflow.steps.length;
+      const steps = [...state.workflow.steps];
+      steps.splice(Math.max(0, index), 0, action.step);
+      return changed(state, steps, { selectedStepId: action.step.id });
+    }
+    case "reorder": {
+      const from = state.workflow.steps.findIndex((step) => step.id === action.activeId);
+      const to = state.workflow.steps.findIndex((step) => step.id === action.overId);
+      if (from < 0 || to < 0 || from === to) return state;
+      const steps = [...state.workflow.steps];
+      const [moved] = steps.splice(from, 1);
+      steps.splice(to, 0, moved);
+      return changed(state, steps);
+    }
+    case "markClean":
+      return { ...state, dirty: false };
+    case "setFollowLiveTail":
+      return { ...state, followLiveTail: action.value };
+  }
+}
