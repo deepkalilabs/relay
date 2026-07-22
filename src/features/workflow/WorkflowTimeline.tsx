@@ -22,7 +22,6 @@ import {
   CheckSquare,
   CalendarDays,
   ChevronLeft,
-  Copy,
   CircleDashed,
   GripVertical,
   Keyboard,
@@ -55,7 +54,6 @@ interface TimelineProps {
   selectedId: string | null;
   onSelect: (id: string) => void;
   onToggle: (step: WorkflowStep) => void;
-  onDuplicate: (id: string) => void;
   onDelete: (id: string) => void;
   onReorder: (activeId: string, overId: string) => void;
   onInsert: () => void;
@@ -72,14 +70,13 @@ const replayIcons = {
   skipped: SkipForward,
 };
 
-function SortableStep({ step, selected, result, locked, onSelect, onToggle, onDuplicate, onDelete }: {
+function SortableStep({ step, selected, result, locked, onSelect, onToggle, onDelete }: {
   step: WorkflowStep;
   selected: boolean;
   result?: ReplayStepResultState;
   locked: boolean;
   onSelect: () => void;
   onToggle: () => void;
-  onDuplicate: () => void;
   onDelete: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: step.id, disabled: locked });
@@ -102,14 +99,13 @@ function SortableStep({ step, selected, result, locked, onSelect, onToggle, onDu
         <button className="mini-button" type="button" disabled={locked} onClick={onToggle} aria-label={step.enabled ? `Disable ${step.name}` : `Enable ${step.name}`} title={step.enabled ? "Disable" : "Enable"}>
           <span className={`enabled-indicator ${step.enabled ? "on" : ""}`} aria-hidden="true" />
         </button>
-        <button className="mini-button" type="button" disabled={locked} onClick={onDuplicate} aria-label={`Duplicate ${step.name}`} title="Duplicate"><Copy size={14} /></button>
         <button className="mini-button danger-hover" type="button" disabled={locked} onClick={onDelete} aria-label={`Delete ${step.name}`} title="Delete"><Trash2 size={14} /></button>
       </div>
     </li>
   );
 }
 
-export function WorkflowTimeline({ steps, selectedId, onSelect, onToggle, onDuplicate, onDelete, onReorder, onInsert, onCollapse, replayResults = {}, locked = false }: TimelineProps) {
+export function WorkflowTimeline({ steps, selectedId, onSelect, onToggle, onDelete, onReorder, onInsert, onCollapse, replayResults = {}, locked = false }: TimelineProps) {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -146,7 +142,6 @@ export function WorkflowTimeline({ steps, selectedId, onSelect, onToggle, onDupl
                   locked={locked}
                   onSelect={() => onSelect(step.id)}
                   onToggle={() => onToggle({ ...step, enabled: !step.enabled })}
-                  onDuplicate={() => onDuplicate(step.id)}
                   onDelete={() => onDelete(step.id)}
                 />
               ))}

@@ -6,7 +6,42 @@ import { RecorderControls } from "@/features/recorder/RecorderControls";
 import { ReplayControls } from "@/features/replay/ReplayControls";
 import { WorkspaceNavbar } from "@/features/recorder/WorkspaceNavbar";
 import { StepEditor } from "@/features/workflow/StepEditor";
+import { WorkflowTimeline } from "@/features/workflow/WorkflowTimeline";
 import { stepFromRecordedAction } from "@/lib/workflow/recorded-action";
+
+describe("WorkflowTimeline", () => {
+  it("omits duplication while retaining the supported step actions", () => {
+    const step = stepFromRecordedAction({
+      type: "click",
+      name: "Click Continue",
+      sensitive: false,
+      target: {
+        candidates: [
+          { kind: "role", value: "button", name: "Continue", exact: true },
+        ],
+      },
+      page: { id: "page", url: "https://example.com" },
+      recordedAt: new Date().toISOString(),
+    }, 0);
+
+    render(
+      <WorkflowTimeline
+        steps={[step]}
+        selectedId={step.id}
+        onSelect={vi.fn()}
+        onToggle={vi.fn()}
+        onDelete={vi.fn()}
+        onReorder={vi.fn()}
+        onInsert={vi.fn()}
+        onCollapse={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: /duplicate/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /disable click continue/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /delete click continue/i })).toBeInTheDocument();
+  });
+});
 
 describe("WorkspaceNavbar", () => {
   it("moves workflow identity and export into the expanded sidebar navbar", async () => {

@@ -24,7 +24,6 @@ export type WorkflowAction =
   | { type: "delete"; id: string }
   | { type: "undoDelete" }
   | { type: "dismissDelete" }
-  | { type: "duplicate"; id: string }
   | { type: "insert"; step: WorkflowStep; afterId?: string }
   | { type: "reorder"; activeId: string; overId: string }
   | { type: "markClean" }
@@ -146,20 +145,6 @@ export function workflowReducer(state: WorkflowState, action: WorkflowAction): W
     }
     case "dismissDelete":
       return state.deletedStep ? { ...state, deletedStep: null } : state;
-    case "duplicate": {
-      const index = state.workflow.steps.findIndex((step) => step.id === action.id);
-      if (index < 0) return state;
-      const source = state.workflow.steps[index];
-      const copy: WorkflowStep = {
-        ...source,
-        id: crypto.randomUUID(),
-        name: `${source.name} copy`,
-        metadata: { ...source.metadata, origin: "duplicate", recordedAt: new Date().toISOString() },
-      };
-      const steps = [...state.workflow.steps];
-      steps.splice(index + 1, 0, copy);
-      return changed(state, steps, { selectedStepId: copy.id });
-    }
     case "insert": {
       const index = action.afterId
         ? state.workflow.steps.findIndex((step) => step.id === action.afterId) + 1

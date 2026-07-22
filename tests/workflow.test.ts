@@ -111,16 +111,6 @@ describe("workflow reducer", () => {
     expect(state.workflow.steps).toHaveLength(1);
   });
 
-  it("duplicates with a new identity and origin", () => {
-    let state = initialWorkflowState();
-    const step = makeStep("Navigate", 0);
-    state = workflowReducer(state, { type: "append", step });
-    state = workflowReducer(state, { type: "duplicate", id: step.id });
-    expect(state.workflow.steps).toHaveLength(2);
-    expect(state.workflow.steps[1].id).not.toBe(step.id);
-    expect(state.workflow.steps[1].metadata.origin).toBe("duplicate");
-  });
-
   it("dismisses a pending delete without restoring the step", () => {
     let state = initialWorkflowState();
     const step = makeStep("Navigate", 0);

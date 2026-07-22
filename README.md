@@ -2,7 +2,7 @@
 
 Browser Memory Recorder turns a live browser session into an editable automation blueprint. Use an embedded Browserbase browser normally, and the app records completed field edits and semantic button clicks as structured workflow steps.
 
-Each step can be reviewed, renamed, reordered, disabled, duplicated, or deleted before the workflow is exported as validated, versioned JSON. The current tree can be replayed at any point in the active recorder session, then extended with more recorded actions.
+Each step can be reviewed, renamed, reordered, disabled, or deleted before the workflow is exported as validated, versioned JSON. The current tree can be replayed at any point in the active recorder session, then extended with more recorded actions.
 
 ## What it does
 
@@ -96,7 +96,7 @@ Exports use schema version `1.0`. A workflow contains its Browserbase source, ti
 navigate · click · fill · select · check · uncheck · keypress · submit
 ```
 
-Element actions include multiple locator candidates, ordered from semantic selectors to CSS and XPath fallbacks. Metadata records whether a step was recorded, manually added, or duplicated, and whether its value may be sensitive.
+Element actions include multiple locator candidates, ordered from semantic selectors to CSS and XPath fallbacks. Metadata records whether a step was recorded or manually added, and whether its value may be sensitive.
 
 Steps may also define an optional replay wait. A wait can add up to 30 seconds after an action and can require an element to remain visible or hidden before replay continues. Workflows without replay waits remain valid schema `1.0` files.
 

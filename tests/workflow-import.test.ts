@@ -48,6 +48,19 @@ describe("workflow file import", () => {
     expect(parsed.steps[0].waitAfter).toEqual(workflow.steps[0].waitAfter);
   });
 
+  it("rejects workflows containing the removed duplicate origin", () => {
+    const workflow = exportedWorkflow();
+    const legacyWorkflow = {
+      ...workflow,
+      steps: workflow.steps.map((step) => ({
+        ...step,
+        metadata: { ...step.metadata, origin: "duplicate" },
+      })),
+    };
+
+    expect(() => parseWorkflowJson(JSON.stringify(legacyWorkflow))).toThrow(/metadata\.origin/i);
+  });
+
   it("rejects malformed JSON, unsupported versions, duplicate IDs, and oversized files", () => {
     expect(() => parseWorkflowJson("{")) .toThrow(/valid JSON/i);
     expect(() => parseWorkflowJson(JSON.stringify({ ...exportedWorkflow(), schemaVersion: "2.0" }))).toThrow(/schemaVersion/i);

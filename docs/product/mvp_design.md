@@ -273,7 +273,6 @@ Users can:
 * Rename a step
 * Delete a step
 * Disable a step
-* Duplicate a step
 * Drag to reorder
 * Insert a manual step
 

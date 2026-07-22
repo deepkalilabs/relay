@@ -167,7 +167,6 @@ export function RecorderWorkspace() {
                   selectedId={workflowState.selectedStepId}
                   onSelect={(id) => { dispatch({ type: "select", id }); panels.setInspectorCollapsed(false); }}
                   onToggle={(step) => dispatch({ type: "update", step })}
-                  onDuplicate={(id) => dispatch({ type: "duplicate", id })}
                   onDelete={(id) => dispatch({ type: "delete", id })}
                   onReorder={(activeId, overId) => dispatch({ type: "reorder", activeId, overId })}
                   onInsert={() => setManualOpen(true)}

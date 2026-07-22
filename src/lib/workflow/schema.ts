@@ -49,7 +49,7 @@ const PageDescriptorSchema = z.object({
 
 const StepMetadataSchema = z.object({
   recordedAt: z.string().datetime(),
-  origin: z.enum(["recorded", "manual", "duplicate"]),
+  origin: z.enum(["recorded", "manual"]),
   sensitive: z.boolean(),
 });
 
