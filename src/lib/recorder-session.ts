@@ -33,6 +33,7 @@ export interface DatePickerState {
 
 export interface ReplayStepResultState {
   status: "pending" | "running" | "passed" | "failed" | "skipped";
+  phase?: "acting" | "settling" | "waiting";
   durationMs?: number;
   locatorKind?: string;
   diagnostic?: {

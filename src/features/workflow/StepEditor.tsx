@@ -32,6 +32,38 @@ export function StepEditor({ step, onUpdate, onCollapse, locked = false, replayR
     if (!step?.target) return;
     onUpdate({ ...step, target: { ...step.target, candidates: candidates.filter((_, candidateIndex) => candidateIndex !== index) } } as WorkflowStep);
   };
+  const waitCandidates = step?.waitAfter?.condition?.target.candidates ?? [];
+  const updateWait = (delayMs: number, condition = step?.waitAfter?.condition) => {
+    if (!step) return;
+    if (delayMs <= 0 && !condition) {
+      const withoutWait = { ...step };
+      delete withoutWait.waitAfter;
+      onUpdate(withoutWait as WorkflowStep);
+      return;
+    }
+    onUpdate({ ...step, waitAfter: { ...(delayMs > 0 ? { delayMs } : {}), ...(condition ? { condition } : {}) } } as WorkflowStep);
+  };
+  const updateWaitCandidate = (index: number, patch: Partial<LocatorCandidate>) => {
+    const condition = step?.waitAfter?.condition;
+    if (!condition) return;
+    updateWait(step.waitAfter?.delayMs ?? 0, {
+      ...condition,
+      target: {
+        ...condition.target,
+        candidates: waitCandidates.map((candidate, candidateIndex) => candidateIndex === index ? { ...candidate, ...patch } : candidate),
+      },
+    });
+  };
+  const updateWaitConditionState = (state: "" | "visible" | "hidden") => {
+    if (!state) {
+      updateWait(step?.waitAfter?.delayMs ?? 0, undefined);
+      return;
+    }
+    const current = step?.waitAfter?.condition;
+    updateWait(step?.waitAfter?.delayMs ?? 0, current
+      ? { ...current, state }
+      : { state, target: { candidates: [{ kind: "css", value: "", exact: true }] } });
+  };
 
   return (
     <div className="step-editor-content">
@@ -49,7 +81,7 @@ export function StepEditor({ step, onUpdate, onCollapse, locked = false, replayR
           <button className="button button-secondary run-from-here" type="button" disabled={locked || !step.enabled} onClick={onRunFromHere}><Play size={15} /> Run from here</button>
           {replayResult ? (
             <section className={`replay-result replay-result-${replayResult.status}`} aria-labelledby="replay-result-title">
-              <div id="replay-result-title" className="editor-section-title"><span>Replay result</span><small>{replayResult.status}</small></div>
+              <div id="replay-result-title" className="editor-section-title"><span>Replay result</span><small>{replayResult.phase ?? replayResult.status}</small></div>
               {replayResult.durationMs !== undefined ? <p>{replayResult.durationMs} ms{replayResult.locatorKind ? ` · ${replayResult.locatorKind} locator` : ""}</p> : null}
               {replayResult.diagnostic ? <><strong>{replayResult.diagnostic.message}</strong>{replayResult.diagnostic.attemptedLocators.length ? <ul>{replayResult.diagnostic.attemptedLocators.map((attempt, index) => <li key={`${attempt.kind}-${index}`}><code>{attempt.kind}</code> — {attempt.reason}</li>)}</ul> : null}</> : null}
             </section>
@@ -88,6 +120,65 @@ export function StepEditor({ step, onUpdate, onCollapse, locked = false, replayR
                 <button className="text-button add-locator" type="button" onClick={() => step.target && onUpdate({ ...step, target: { ...step.target, candidates: [...candidates, { kind: "css", value: "body", exact: true }] } } as WorkflowStep)}><Plus size={14} /> Add locator</button>
               </div>
             ) : <p className="muted-copy">Navigation steps do not require an element locator.</p>}
+          </section>
+          <div className="editor-divider" />
+          <section className="editor-section replay-wait-editor" aria-labelledby="replay-wait-title">
+            <div id="replay-wait-title" className="editor-section-title"><span>Replay wait</span><small>after action</small></div>
+            <div className="editor-fields">
+              <label className="field field-wide">
+                <span>Additional delay (ms)</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={30_000}
+                  step={100}
+                  value={step.waitAfter?.delayMs ?? 0}
+                  onChange={(event) => updateWait(Math.max(0, Math.min(30_000, Number(event.target.value) || 0)))}
+                />
+              </label>
+              <label className="field field-wide">
+                <span>Element condition</span>
+                <select value={step.waitAfter?.condition?.state ?? ""} onChange={(event) => updateWaitConditionState(event.target.value as "" | "visible" | "hidden")}>
+                  <option value="">No element condition</option>
+                  <option value="visible">Wait until visible</option>
+                  <option value="hidden">Wait until hidden</option>
+                </select>
+              </label>
+            </div>
+            {step.waitAfter?.condition ? (
+              <div className="locator-list replay-wait-locators">
+                <label className="field">
+                  <span>Frame URL (optional)</span>
+                  <input
+                    value={step.waitAfter.condition.target.frameUrl ?? ""}
+                    onChange={(event) => updateWait(step.waitAfter?.delayMs ?? 0, {
+                      ...step.waitAfter!.condition!,
+                      target: { ...step.waitAfter!.condition!.target, frameUrl: event.target.value || undefined },
+                    })}
+                  />
+                </label>
+                {waitCandidates.map((candidate, index) => (
+                  <div className="locator-card" key={`wait-${candidate.kind}-${index}`}>
+                    <div className="locator-card-heading">
+                      <span className="locator-rank">{index + 1}</span>
+                      <label className="locator-kind"><span className="sr-only">Wait locator kind</span><select value={candidate.kind} onChange={(event) => updateWaitCandidate(index, { kind: event.target.value as LocatorCandidate["kind"] })}>{locatorKinds.map((kind) => <option value={kind} key={kind}>{kind}</option>)}</select></label>
+                      <button className="mini-button danger-hover" type="button" aria-label={`Remove wait locator ${index + 1}`} onClick={() => {
+                        const condition = step.waitAfter?.condition;
+                        if (!condition) return;
+                        updateWait(step.waitAfter?.delayMs ?? 0, { ...condition, target: { ...condition.target, candidates: waitCandidates.filter((_, candidateIndex) => candidateIndex !== index) } });
+                      }}><Trash2 size={14} /></button>
+                    </div>
+                    <label className="field locator-value"><span>Value</span><input value={candidate.value} onChange={(event) => updateWaitCandidate(index, { value: event.target.value })} /></label>
+                    {candidate.kind === "role" ? <label className="field locator-name"><span>Accessible name</span><input value={candidate.name ?? ""} onChange={(event) => updateWaitCandidate(index, { name: event.target.value })} /></label> : null}
+                  </div>
+                ))}
+                <button className="text-button add-locator" type="button" onClick={() => {
+                  const condition = step.waitAfter?.condition;
+                  if (!condition) return;
+                  updateWait(step.waitAfter?.delayMs ?? 0, { ...condition, target: { ...condition.target, candidates: [...waitCandidates, { kind: "css", value: "", exact: true }] } });
+                }}><Plus size={14} /> Add wait locator</button>
+              </div>
+            ) : <p className="muted-copy">Smart DOM and network settling runs automatically after every replayed action.</p>}
           </section>
           {validation && !validation.success ? <div className="validation-summary" role="alert"><AlertCircle size={15} /><span>{validation.error.issues[0]?.message}</span></div> : null}
           </fieldset>

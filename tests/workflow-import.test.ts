@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MAX_WORKFLOW_FILE_BYTES, parseWorkflowJson } from "@/lib/workflow/import";
+import { serializeWorkflow } from "@/lib/workflow/export";
 import { createWorkflow } from "@/lib/workflow/schema";
 
 function exportedWorkflow() {
@@ -26,6 +27,25 @@ describe("workflow file import", () => {
     const parsed = parseWorkflowJson(JSON.stringify(exportedWorkflow()));
     expect(parsed.name).toBe("Imported checkout");
     expect(parsed.steps[0].order).toBe(0);
+    expect(parsed.steps[0].waitAfter).toBeUndefined();
+  });
+
+  it("round-trips optional replay waits without changing schema version", () => {
+    const workflow = exportedWorkflow();
+    workflow.steps[0].waitAfter = {
+      delayMs: 1_200,
+      condition: {
+        state: "hidden",
+        target: {
+          frameUrl: "https://example.com/frame",
+          candidates: [{ kind: "testId", value: "loading", exact: true }],
+        },
+      },
+    };
+
+    const parsed = parseWorkflowJson(serializeWorkflow(workflow));
+    expect(parsed.schemaVersion).toBe("1.0");
+    expect(parsed.steps[0].waitAfter).toEqual(workflow.steps[0].waitAfter);
   });
 
   it("rejects malformed JSON, unsupported versions, duplicate IDs, and oversized files", () => {
@@ -37,4 +57,3 @@ describe("workflow file import", () => {
     expect(() => parseWorkflowJson("{}", MAX_WORKFLOW_FILE_BYTES + 1)).toThrow(/1 MiB/i);
   });
 });
-

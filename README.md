@@ -15,6 +15,7 @@ Each step can be reviewed, renamed, reordered, disabled, duplicated, or deleted 
 - Imports schema `1.0` workflow JSON without server-side file persistence.
 - Replays full workflows or starts from a selected deterministic step.
 - Returns to recording after replay so workflows can be built and verified incrementally.
+- Waits for DOM and network activity to settle between replayed actions, with optional per-step delay and element conditions.
 - Pauses on failures with Retry, Skip, Take Control, and Stop recovery actions.
 
 The current MVP focuses on accurate capture, review, and local interactive replay. It does not store workflows permanently.
@@ -96,6 +97,8 @@ navigate · click · fill · select · check · uncheck · keypress · submit
 ```
 
 Element actions include multiple locator candidates, ordered from semantic selectors to CSS and XPath fallbacks. Metadata records whether a step was recorded, manually added, or duplicated, and whether its value may be sensitive.
+
+Steps may also define an optional replay wait. A wait can add up to 30 seconds after an action and can require an element to remain visible or hidden before replay continues. Workflows without replay waits remain valid schema `1.0` files.
 
 ## Requirements
 

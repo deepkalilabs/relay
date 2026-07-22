@@ -89,6 +89,7 @@ describe("useRecorderSession", () => {
       runId,
       stepId: "step-1",
       status: "failed",
+      phase: "waiting",
       durationMs: 42,
       diagnostic: { message: "No visible match", attemptedLocators: [{ kind: "role", reason: "No match." }] },
     }));
@@ -96,7 +97,7 @@ describe("useRecorderSession", () => {
     expect(result.current.replayStatus).toBe("running");
     expect(result.current.displayStatus).toBe("recording");
     expect(onReplaySessionStarted).toHaveBeenCalledWith("session-2");
-    expect(result.current.replayResults["step-1"]).toMatchObject({ status: "failed", durationMs: 42 });
+    expect(result.current.replayResults["step-1"]).toMatchObject({ status: "failed", phase: "waiting", durationMs: 42 });
     expect(onReplayStepChange).toHaveBeenCalledWith("step-1", "failed");
     act(() => result.current.retryReplay());
     act(() => result.current.skipReplay());

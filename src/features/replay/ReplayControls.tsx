@@ -14,11 +14,13 @@ interface ReplayControlsProps {
   onTakeControl: () => void;
   onStop: () => void;
   failed?: boolean;
+  phase?: "acting" | "settling" | "waiting";
 }
 
-export function ReplayControls({ status, currentIndex, totalSteps, onPause, onResume, onRetry, onSkip, onTakeControl, onStop, failed = false }: ReplayControlsProps) {
+export function ReplayControls({ status, currentIndex, totalSteps, onPause, onResume, onRetry, onSkip, onTakeControl, onStop, failed = false, phase }: ReplayControlsProps) {
   const busy = status === "preparing" || status === "pausing" || status === "stopping";
-  const progress = totalSteps ? `Step ${Math.min(currentIndex + 1, totalSteps)} of ${totalSteps}` : "Preparing replay";
+  const phaseLabel = phase === "settling" ? " · settling UI" : phase === "waiting" ? " · waiting for UI" : "";
+  const progress = totalSteps ? `Step ${Math.min(currentIndex + 1, totalSteps)} of ${totalSteps}${phaseLabel}` : "Preparing replay";
   return (
     <div className="replay-controls" aria-live="polite">
       <span className={`replay-state replay-state-${status}`}>

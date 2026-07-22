@@ -94,6 +94,7 @@ export const SequencedServerMessageSchema = z.object({
       runId: z.string().uuid(),
       stepId: z.string(),
       status: ReplayStepStatusSchema,
+      phase: z.enum(["acting", "settling", "waiting"]).optional(),
       durationMs: z.number().nonnegative().optional(),
       locatorKind: z.string().optional(),
       diagnostic: ReplayDiagnosticSchema.optional(),

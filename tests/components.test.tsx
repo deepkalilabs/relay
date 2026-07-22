@@ -104,6 +104,41 @@ describe("StepEditor", () => {
     await user.clear(screen.getByLabelText("Step name"));
     expect(await screen.findByRole("alert")).toHaveTextContent(/give this step a name/i);
   });
+
+  it("edits a post-action delay and element wait condition", async () => {
+    const user = userEvent.setup();
+    let step = stepFromRecordedAction({
+      type: "click", name: "Open quotes", sensitive: false,
+      target: { candidates: [{ kind: "testId", value: "open-quotes", exact: true }] },
+      page: { id: "page", url: "https://example.com" }, recordedAt: new Date().toISOString(),
+    }, 0);
+    const onUpdate = vi.fn((updated: typeof step) => {
+      step = updated;
+    });
+    const rendered = render(<StepEditor step={step} onUpdate={onUpdate} />);
+    onUpdate.mockImplementation((updated) => {
+      step = updated;
+      rendered.rerender(<StepEditor step={step} onUpdate={onUpdate} />);
+    });
+    const waitEditor = within(rendered.container.querySelector(".replay-wait-editor") as HTMLElement);
+
+    await user.clear(waitEditor.getByLabelText(/additional delay/i));
+    await user.type(waitEditor.getByLabelText(/additional delay/i), "1200");
+    await user.selectOptions(waitEditor.getByLabelText(/element condition/i), "hidden");
+    await user.type(waitEditor.getByLabelText("Value"), ".loading");
+    await user.type(waitEditor.getByLabelText(/frame URL/i), "https://example.com/frame");
+
+    expect(step.waitAfter).toMatchObject({
+      delayMs: 1_200,
+      condition: {
+        state: "hidden",
+        target: {
+          frameUrl: "https://example.com/frame",
+          candidates: [{ kind: "css", value: ".loading" }],
+        },
+      },
+    });
+  });
 });
 
 describe("BrowserPanel", () => {

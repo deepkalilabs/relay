@@ -133,6 +133,7 @@ export function BrowserPanel({ status, transportStatus, elapsed, liveViewUrl, er
               currentIndex={replayCurrentIndex}
               totalSteps={replayTotalSteps}
               failed={replayCurrentResult?.status === "failed"}
+              phase={replayCurrentResult?.phase}
               onPause={() => onReplayPause?.()}
               onResume={() => onReplayResume?.()}
               onRetry={() => onReplayRetry?.()}

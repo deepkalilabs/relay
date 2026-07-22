@@ -139,6 +139,7 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
           ...current,
           [message.stepId]: {
             status: message.status,
+            phase: message.phase,
             durationMs: message.durationMs,
             locatorKind: message.locatorKind,
             diagnostic: message.diagnostic,

@@ -37,6 +37,21 @@ describe("workflow contract", () => {
     expect(workflowFilename(new Date("2026-07-21T12:34:56.000Z"))).toBe("browser-memory-workflow-2026-07-21T12-34-56-000Z.json");
   });
 
+  it("validates replay wait bounds and locator requirements", () => {
+    const workflow = createWorkflow("session-1");
+    const step = stepFromRecordedAction({
+      type: "click", name: "Open modal", sensitive: false,
+      target: { candidates: [{ kind: "testId", value: "open", exact: true }] },
+      page: { id: "page", url: "https://example.com" }, recordedAt: new Date().toISOString(),
+    }, 0);
+    workflow.steps = [{ ...step, waitAfter: { delayMs: 30_000 } }];
+    expect(WorkflowSchema.safeParse(workflow).success).toBe(true);
+    workflow.steps = [{ ...step, waitAfter: { delayMs: 30_001 } }];
+    expect(WorkflowSchema.safeParse(workflow).success).toBe(false);
+    workflow.steps = [{ ...step, waitAfter: { condition: { state: "visible", target: { candidates: [] } } } }];
+    expect(WorkflowSchema.safeParse(workflow).success).toBe(false);
+  });
+
   it("keeps a date selection as one replayable semantic step", () => {
     const step = stepFromRecordedAction({
       type: "set_date",

@@ -27,6 +27,20 @@ export const TargetDescriptorSchema = z.object({
   candidates: z.array(LocatorCandidateSchema),
 });
 
+export const ReplayWaitSchema = z.object({
+  delayMs: z.number().int().min(0).max(30_000).optional(),
+  condition: z.object({
+    state: z.enum(["visible", "hidden"]),
+    target: TargetDescriptorSchema.refine(
+      (target) => target.candidates.length > 0,
+      "Replay wait conditions need at least one locator.",
+    ),
+  }).optional(),
+}).refine(
+  (wait) => (wait.delayMs ?? 0) > 0 || Boolean(wait.condition),
+  "Configure a delay or element condition for this replay wait.",
+);
+
 const PageDescriptorSchema = z.object({
   id: z.string().min(1),
   url: z.string(),
@@ -46,6 +60,7 @@ const StepBase = z.object({
   enabled: z.boolean(),
   page: PageDescriptorSchema,
   target: TargetDescriptorSchema.optional(),
+  waitAfter: ReplayWaitSchema.optional(),
   metadata: StepMetadataSchema,
 });
 
@@ -116,6 +131,7 @@ export type Workflow = z.infer<typeof WorkflowSchema>;
 export type WorkflowStep = z.infer<typeof WorkflowStepSchema>;
 export type WorkflowActionType = WorkflowStep["type"];
 export type TargetDescriptor = z.infer<typeof TargetDescriptorSchema>;
+export type ReplayWait = z.infer<typeof ReplayWaitSchema>;
 
 const locatorPriority = new Map(locatorKinds.map((kind, index) => [kind, index]));
 

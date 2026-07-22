@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { Frame, Locator, Page } from "playwright-core";
+import type { Frame, Locator, Page, Request } from "playwright-core";
 import type { ServerMessage } from "@/lib/protocol";
 import { createWorkflow, type Workflow, type WorkflowStep } from "@/lib/workflow/schema";
 import { preflightReplay, ReplayEngine, resolveTarget } from "@/server/replay/engine";
@@ -167,5 +167,227 @@ describe("replay engine", () => {
     await running;
     expect(messages).toContainEqual(expect.objectContaining({ type: "replay.step", stepId: "step-1", status: "skipped" }));
     expect(messages.at(-1)).toMatchObject({ type: "replay.status", status: "completed" });
+  });
+
+  it("waits for DOM and request quiet before executing the next step", async () => {
+    vi.useFakeTimers();
+    try {
+      const listeners = new Map<string, Set<(request: Request) => void>>();
+      const emit = (event: string, request: Request) => listeners.get(event)?.forEach((listener) => listener(request));
+      const request = { resourceType: () => "xhr" } as unknown as Request;
+      let lastMutation = Date.now();
+      const firstClick = vi.fn(async () => {
+        emit("request", request);
+        setTimeout(() => {
+          lastMutation = Date.now();
+          emit("requestfinished", request);
+        }, 100);
+      });
+      const secondClick = vi.fn(async () => undefined);
+      const firstLocator = { count: vi.fn(async () => 1), isVisible: vi.fn(async () => true), click: firstClick } as unknown as Locator;
+      const secondLocator = { count: vi.fn(async () => 1), isVisible: vi.fn(async () => true), click: secondClick } as unknown as Locator;
+      const frame = {
+        getByTestId: vi.fn((value: string) => value === "first" ? firstLocator : secondLocator),
+      } as unknown as Frame;
+      const page = {
+        evaluate: vi.fn(async (_callback: unknown, quietMs?: number) => {
+          if (quietMs === 500) return Date.now() - lastMutation >= quietMs;
+          lastMutation = Date.now();
+          return undefined;
+        }),
+        frames: vi.fn(() => [frame]),
+        goto: vi.fn(async () => null),
+        mainFrame: vi.fn(() => frame),
+        on: vi.fn((event: string, listener: (request: Request) => void) => {
+          const registered = listeners.get(event) ?? new Set();
+          registered.add(listener);
+          listeners.set(event, registered);
+          return page;
+        }),
+        off: vi.fn((event: string, listener: (request: Request) => void) => {
+          listeners.get(event)?.delete(listener);
+          return page;
+        }),
+        waitForLoadState: vi.fn(async () => undefined),
+      } as unknown as Page;
+      const steps: WorkflowStep[] = [
+        { ...baseStep("click", 0), target: { candidates: [{ kind: "testId", value: "first", exact: true }] }, type: "click" },
+        { ...baseStep("click", 1), target: { candidates: [{ kind: "testId", value: "second", exact: true }] }, type: "click" },
+      ];
+      const engine = new ReplayEngine(crypto.randomUUID(), page, preflightReplay(workflowWith(steps)), vi.fn());
+      const running = engine.run();
+
+      await vi.advanceTimersByTimeAsync(500);
+      expect(firstClick).toHaveBeenCalledOnce();
+      expect(secondClick).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(599);
+      expect(secondClick).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(501);
+      expect(secondClick).toHaveBeenCalledOnce();
+      await vi.advanceTimersByTimeAsync(500);
+      await running;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("continues after the five-second automatic settling cap", async () => {
+    vi.useFakeTimers();
+    try {
+      const locator = { count: vi.fn(async () => 1), isVisible: vi.fn(async () => true) } as unknown as Locator;
+      const frame = { getByTestId: vi.fn(() => locator) } as unknown as Frame;
+      const messages: ServerMessage[] = [];
+      const page = {
+        evaluate: vi.fn(async (_callback: unknown, quietMs?: number) => quietMs === 500 ? false : undefined),
+        frames: vi.fn(() => [frame]),
+        goto: vi.fn(async () => null),
+        mainFrame: vi.fn(() => frame),
+        waitForLoadState: vi.fn(async () => undefined),
+      } as unknown as Page;
+      const step = { ...baseStep("navigate", 0), type: "navigate" as const, payload: { url: "https://example.com" } };
+      const engine = new ReplayEngine(crypto.randomUUID(), page, preflightReplay(workflowWith([step])), (message) => messages.push(message));
+      const running = engine.run();
+
+      await vi.advanceTimersByTimeAsync(5_100);
+      await running;
+      expect(messages.at(-1)).toMatchObject({ type: "replay.status", status: "completed" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("honors an explicit post-action delay", async () => {
+    vi.useFakeTimers();
+    try {
+      const { page } = replayPage();
+      const messages: ServerMessage[] = [];
+      const step: WorkflowStep = {
+        ...baseStep("navigate", 0),
+        type: "navigate",
+        payload: { url: "https://example.com" },
+        waitAfter: { delayMs: 1_000 },
+      };
+      const engine = new ReplayEngine(crypto.randomUUID(), page, preflightReplay(workflowWith([step])), (message) => messages.push(message));
+      const running = engine.run();
+
+      await vi.advanceTimersByTimeAsync(999);
+      expect(messages.some((message) => message.type === "replay.status" && message.status === "completed")).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      await running;
+      expect(messages.at(-1)).toMatchObject({ type: "replay.status", status: "completed" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(["visible", "hidden"] as const)("waits for a child-frame element to remain %s", async (conditionState) => {
+    vi.useFakeTimers();
+    try {
+      let visible = conditionState === "hidden";
+      const conditionLocator = {
+        count: vi.fn(async () => 1),
+        isVisible: vi.fn(async () => visible),
+      } as unknown as Locator;
+      const mainFrame = { url: vi.fn(() => "https://example.com") } as unknown as Frame;
+      const childFrame = {
+        getByTestId: vi.fn(() => conditionLocator),
+        url: vi.fn(() => "https://widgets.example.com/frame"),
+      } as unknown as Frame;
+      const page = {
+        frames: vi.fn(() => [mainFrame, childFrame]),
+        goto: vi.fn(async () => {
+          setTimeout(() => { visible = conditionState === "visible"; }, 100);
+          return null;
+        }),
+        mainFrame: vi.fn(() => mainFrame),
+      } as unknown as Page;
+      const step: WorkflowStep = {
+        ...baseStep("navigate", 0),
+        type: "navigate",
+        payload: { url: "https://example.com" },
+        waitAfter: {
+          condition: {
+            state: conditionState,
+            target: {
+              frameUrl: "https://widgets.example.com/frame",
+              candidates: [{ kind: "testId", value: "ready", exact: true }],
+            },
+          },
+        },
+      };
+      const messages: ServerMessage[] = [];
+      const engine = new ReplayEngine(crypto.randomUUID(), page, preflightReplay(workflowWith([step])), (message) => messages.push(message));
+      const running = engine.run();
+
+      await vi.advanceTimersByTimeAsync(399);
+      expect(messages.some((message) => message.type === "replay.step" && message.status === "passed")).toBe(false);
+      await vi.advanceTimersByTimeAsync(51);
+      await running;
+      expect(messages).toContainEqual(expect.objectContaining({ type: "replay.step", status: "passed" }));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("retries a timed-out wait condition without repeating its successful action", async () => {
+    vi.useFakeTimers();
+    try {
+      let ready = false;
+      const actionClick = vi.fn(async () => undefined);
+      const actionLocator = { count: vi.fn(async () => 1), isVisible: vi.fn(async () => true), click: actionClick } as unknown as Locator;
+      const readyLocator = { count: vi.fn(async () => 1), isVisible: vi.fn(async () => ready) } as unknown as Locator;
+      const frame = {
+        getByTestId: vi.fn((value: string) => value === "action" ? actionLocator : readyLocator),
+      } as unknown as Frame;
+      const page = { frames: vi.fn(() => [frame]), goto: vi.fn(async () => null), mainFrame: vi.fn(() => frame) } as unknown as Page;
+      const step: WorkflowStep = {
+        ...baseStep("click", 0),
+        target: { candidates: [{ kind: "testId", value: "action", exact: true }] },
+        type: "click",
+        waitAfter: {
+          condition: {
+            state: "visible",
+            target: { candidates: [{ kind: "testId", value: "ready", exact: true }] },
+          },
+        },
+      };
+      const messages: ServerMessage[] = [];
+      const engine = new ReplayEngine(crypto.randomUUID(), page, preflightReplay(workflowWith([step])), (message) => messages.push(message));
+      const running = engine.run();
+      await vi.advanceTimersByTimeAsync(15_100);
+      expect(messages).toContainEqual(expect.objectContaining({ type: "replay.step", status: "failed", phase: "waiting" }));
+
+      ready = true;
+      engine.retry();
+      await vi.advanceTimersByTimeAsync(350);
+      await running;
+      expect(actionClick).toHaveBeenCalledOnce();
+      expect(messages.at(-1)).toMatchObject({ type: "replay.status", status: "completed" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("stops promptly during an explicit wait", async () => {
+    vi.useFakeTimers();
+    try {
+      const { page } = replayPage();
+      const step: WorkflowStep = {
+        ...baseStep("navigate", 0),
+        type: "navigate",
+        payload: { url: "https://example.com" },
+        waitAfter: { delayMs: 30_000 },
+      };
+      const messages: ServerMessage[] = [];
+      const engine = new ReplayEngine(crypto.randomUUID(), page, preflightReplay(workflowWith([step])), (message) => messages.push(message));
+      const running = engine.run();
+      await vi.advanceTimersByTimeAsync(100);
+      engine.stop();
+      await vi.advanceTimersByTimeAsync(50);
+      await running;
+      expect(messages.some((message) => message.type === "replay.status" && message.status === "completed")).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

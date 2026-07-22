@@ -94,7 +94,7 @@ function SortableStep({ step, selected, result, locked, onSelect, onToggle, onDu
         <span className="step-icon"><Icon size={15} aria-hidden="true" /></span>
         <span className="step-copy">
           <span className="step-title">{step.name}</span>
-          <span className="step-meta">{step.order + 1} · {step.type}{result ? ` · ${result.status}` : ""}</span>
+          <span className="step-meta">{step.order + 1} · {step.type}{result ? ` · ${result.phase ?? result.status}` : ""}</span>
         </span>
         {ResultIcon ? <span className={`replay-step-status replay-step-status-${result?.status}`}><ResultIcon className={result?.status === "running" ? "spin" : undefined} size={16} aria-hidden="true" /><span className="sr-only">Replay {result?.status}</span></span> : null}
       </button>
