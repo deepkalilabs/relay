@@ -23,8 +23,10 @@ describe("useRecorderSession", () => {
 
   it("forwards session identity and normalized recorded steps to the workspace", () => {
     const onSessionStarted = vi.fn();
+    const onReplaySessionStarted = vi.fn();
+    const onStartUrl = vi.fn();
     const onStepRecorded = vi.fn();
-    renderHook(() => useRecorderSession({ onSessionStarted, onStepRecorded }));
+    renderHook(() => useRecorderSession({ onSessionStarted, onReplaySessionStarted, onStartUrl, onStepRecorded }));
 
     act(() => socket.onMessage?.({
       type: "session.started",
@@ -32,6 +34,7 @@ describe("useRecorderSession", () => {
       liveViewUrl: "https://example.com/live",
       pageId: "page-1",
     }));
+    act(() => socket.onMessage?.({ type: "recording.startUrl", url: "https://example.com/start" }));
     act(() => socket.onMessage?.({
       type: "recorded.action",
       action: {
@@ -45,6 +48,7 @@ describe("useRecorderSession", () => {
     }));
 
     expect(onSessionStarted).toHaveBeenCalledWith("session-1");
+    expect(onStartUrl).toHaveBeenCalledWith("https://example.com/start");
     expect(onStepRecorded).toHaveBeenCalledWith(expect.objectContaining({
       type: "click",
       name: "Click Continue",
@@ -53,7 +57,7 @@ describe("useRecorderSession", () => {
   });
 
   it("opens the parent date picker and sends one semantic selection command", () => {
-    const { result } = renderHook(() => useRecorderSession({ onSessionStarted: vi.fn(), onStepRecorded: vi.fn() }));
+    const { result } = renderHook(() => useRecorderSession({ onSessionStarted: vi.fn(), onReplaySessionStarted: vi.fn(), onStartUrl: vi.fn(), onStepRecorded: vi.fn() }));
     const requestId = "c7daf0b9-d92a-44db-9967-db33d1516976";
 
     act(() => socket.onMessage?.({
@@ -74,10 +78,12 @@ describe("useRecorderSession", () => {
 
   it("tracks replay progress and exposes recovery commands", () => {
     const onReplayStepChange = vi.fn();
-    const { result } = renderHook(() => useRecorderSession({ onSessionStarted: vi.fn(), onStepRecorded: vi.fn(), onReplayStepChange }));
+    const onReplaySessionStarted = vi.fn();
+    const { result } = renderHook(() => useRecorderSession({ onSessionStarted: vi.fn(), onReplaySessionStarted, onStartUrl: vi.fn(), onStepRecorded: vi.fn(), onReplayStepChange }));
     const runId = "c7daf0b9-d92a-44db-9967-db33d1516976";
 
     act(() => socket.onMessage?.({ type: "replay.status", runId, status: "running", currentStepId: "step-1", currentIndex: 0, totalSteps: 2 }));
+    act(() => socket.onMessage?.({ type: "replay.started", runId, sessionId: "session-2", liveViewUrl: "https://example.com/live", pageId: "page-1", totalSteps: 2 }));
     act(() => socket.onMessage?.({
       type: "replay.step",
       runId,
@@ -88,6 +94,8 @@ describe("useRecorderSession", () => {
     }));
 
     expect(result.current.replayStatus).toBe("running");
+    expect(result.current.displayStatus).toBe("recording");
+    expect(onReplaySessionStarted).toHaveBeenCalledWith("session-2");
     expect(result.current.replayResults["step-1"]).toMatchObject({ status: "failed", durationMs: 42 });
     expect(onReplayStepChange).toHaveBeenCalledWith("step-1", "failed");
     act(() => result.current.retryReplay());
@@ -96,5 +104,8 @@ describe("useRecorderSession", () => {
     expect(socket.send).toHaveBeenCalledWith({ type: "replay.retry" });
     expect(socket.send).toHaveBeenCalledWith({ type: "replay.skip" });
     expect(socket.send).toHaveBeenCalledWith({ type: "replay.takeControl" });
+
+    act(() => socket.onMessage?.({ type: "replay.status", runId, status: "stopped", totalSteps: 2 }));
+    expect(result.current.liveViewUrl).toBe("https://example.com/live");
   });
 });

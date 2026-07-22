@@ -16,6 +16,8 @@ import { getDisplayError, getDisplayStatus } from "@/lib/recorder-session";
 
 interface RecorderSessionOptions {
   onSessionStarted: (sessionId: string) => void;
+  onReplaySessionStarted: (sessionId: string) => void;
+  onStartUrl: (url: string) => void;
   onStepRecorded: (step: WorkflowStep) => void;
   onReplayStepChange?: (stepId: string, status: ReplayStepResultState["status"]) => void;
 }
@@ -26,7 +28,7 @@ function formatElapsed(startedAt: number | null, now: number): string {
   return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
-export function useRecorderSession({ onSessionStarted, onStepRecorded, onReplayStepChange }: RecorderSessionOptions) {
+export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, onStartUrl, onStepRecorded, onReplayStepChange }: RecorderSessionOptions) {
   const [status, setStatus] = useState<RecordingStatus>("idle");
   const [liveViewUrl, setLiveViewUrl] = useState<string | null>(null);
   const [browserPage, setBrowserPage] = useState<BrowserPageState | null>(null);
@@ -72,6 +74,9 @@ export function useRecorderSession({ onSessionStarted, onStepRecorded, onReplayS
           setDatePicker(null);
         }
         break;
+      case "recording.startUrl":
+        onStartUrl(message.url);
+        break;
       case "recorded.action":
         onStepRecorded(stepFromRecordedAction(message.action, 0));
         break;
@@ -106,10 +111,13 @@ export function useRecorderSession({ onSessionStarted, onStepRecorded, onReplayS
         setDatePicker((current) => current?.requestId === message.requestId ? null : current);
         break;
       case "replay.started":
+        onReplaySessionStarted(message.sessionId);
         setReplayRunId(message.runId);
         setReplayTotalSteps(message.totalSteps);
         setLiveViewUrl(message.liveViewUrl);
         setBrowserPage(null);
+        setStatus("recording");
+        setStartedAt((current) => current ?? Date.now());
         setError(null);
         setErrorContext("replay");
         setNavigationError(null);
@@ -122,8 +130,6 @@ export function useRecorderSession({ onSessionStarted, onStepRecorded, onReplayS
         setReplayCurrentStepId(message.currentStepId ?? null);
         setReplayCurrentIndex(message.currentIndex ?? 0);
         if (message.status === "stopped") {
-          setLiveViewUrl(null);
-          setBrowserPage(null);
           setReplayRunId(null);
           setReplayCurrentStepId(null);
         }
@@ -157,7 +163,7 @@ export function useRecorderSession({ onSessionStarted, onStepRecorded, onReplayS
         else setStatus("error");
         break;
     }
-  }, [liveViewUrl, onReplayStepChange, onSessionStarted, onStepRecorded, replayStatus]);
+  }, [liveViewUrl, onReplaySessionStarted, onReplayStepChange, onSessionStarted, onStartUrl, onStepRecorded, replayStatus]);
 
   const { transportStatus, send } = useRecorderSocket(handleServerMessage);
 
@@ -227,8 +233,6 @@ export function useRecorderSession({ onSessionStarted, onStepRecorded, onReplayS
     setReplayResults(Object.fromEntries(workflow.steps.slice(Math.max(0, startIndex)).map((step) => [step.id, { status: "pending" as const }])));
     setError(null);
     setErrorContext("replay");
-    setLiveViewUrl(null);
-    setBrowserPage(null);
     if (!send({ type: "replay.start", workflow, startStepId })) {
       setReplayStatus("stopped");
       setError("The recorder connection is unavailable. Wait a moment and try again.");

@@ -117,13 +117,6 @@ webSockets.on("connection", (socket: WebSocket) => {
       } else if (message.type === "date.picker.dismiss") {
         runtime.dismissDatePicker(message.requestId);
       } else if (message.type === "replay.start") {
-        const clientId = runtime.clientId;
-        const nextSequence = runtime.sequence;
-        await runtime.release();
-        runtime = new RecordingRuntime(clientId, provider!, () => runtimes.delete(clientId), nextSequence);
-        runtimes.set(clientId, runtime);
-        runtime.attach(socket, nextSequence);
-        runtime.emit({ type: "server.ready", configured: true });
         await runtime.startReplay(message.workflow, message.startStepId, { timeoutSeconds, region });
       } else if (message.type === "replay.pause") {
         runtime.pauseReplay();
@@ -136,13 +129,7 @@ webSockets.on("connection", (socket: WebSocket) => {
       } else if (message.type === "replay.takeControl") {
         runtime.takeControlOfReplay();
       } else if (message.type === "replay.stop") {
-        const clientId = runtime.clientId;
         await runtime.stopReplay();
-        const nextSequence = runtime.sequence;
-        runtime = new RecordingRuntime(clientId, provider!, () => runtimes.delete(clientId), nextSequence);
-        runtimes.set(clientId, runtime);
-        runtime.attach(socket, nextSequence);
-        runtime.emit({ type: "server.ready", configured: true });
       }
     } catch (error) {
       runtime?.emit({

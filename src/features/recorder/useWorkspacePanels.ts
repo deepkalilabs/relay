@@ -28,7 +28,18 @@ export function useWorkspacePanels({ selectedStepId, overlayOpen }: WorkspacePan
   const [timelineWidth, setTimelineWidth] = useState(280);
   const [inspectorWidth, setInspectorWidth] = useState(360);
   const [timelineCollapsed, setTimelineCollapsed] = useState(false);
-  const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
+  const [inspectorCollapsed, setInspectorCollapsed] = useState(true);
+
+  useEffect(() => {
+    const compactWorkspace = matchMedia("(min-width: 1024px) and (max-width: 1439px)");
+    const syncEmptyInspector = () => {
+      if (!selectedStepId) setInspectorCollapsed(compactWorkspace.matches);
+    };
+
+    syncEmptyInspector();
+    compactWorkspace.addEventListener("change", syncEmptyInspector);
+    return () => compactWorkspace.removeEventListener("change", syncEmptyInspector);
+  }, [selectedStepId]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

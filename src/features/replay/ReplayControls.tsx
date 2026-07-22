@@ -37,7 +37,7 @@ export function ReplayControls({ status, currentIndex, totalSteps, onPause, onRe
         </>
       ) : null}
       <button className="replay-stop" type="button" onClick={onStop} disabled={status === "stopping"}>
-        <CircleStop size={15} /> {status === "completed" ? "Close session" : "Stop"}
+        <CircleStop size={15} /> Stop replay
       </button>
     </div>
   );

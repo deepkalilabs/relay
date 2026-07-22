@@ -2,7 +2,7 @@
 
 Browser Memory Recorder turns a live browser session into an editable automation blueprint. Use an embedded Browserbase browser normally, and the app records completed field edits and semantic button clicks as structured workflow steps.
 
-Each step can be reviewed, renamed, reordered, disabled, duplicated, or deleted before the workflow is exported as validated, versioned JSON. Exported files can be imported again and replayed in a fresh Browserbase session with live progress and failure recovery.
+Each step can be reviewed, renamed, reordered, disabled, duplicated, or deleted before the workflow is exported as validated, versioned JSON. The current tree can be replayed at any point in the active recorder session, then extended with more recorded actions.
 
 ## What it does
 
@@ -14,6 +14,7 @@ Each step can be reviewed, renamed, reordered, disabled, duplicated, or deleted 
 - Exports the completed workflow as portable JSON.
 - Imports schema `1.0` workflow JSON without server-side file persistence.
 - Replays full workflows or starts from a selected deterministic step.
+- Returns to recording after replay so workflows can be built and verified incrementally.
 - Pauses on failures with Retry, Skip, Take Control, and Stop recovery actions.
 
 The current MVP focuses on accurate capture, review, and local interactive replay. It does not store workflows permanently.

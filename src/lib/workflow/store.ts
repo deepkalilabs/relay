@@ -16,6 +16,8 @@ export type WorkflowAction =
   | { type: "reset"; sessionId?: string }
   | { type: "load"; workflow: Workflow }
   | { type: "renameWorkflow"; name: string }
+  | { type: "setSessionId"; sessionId: string }
+  | { type: "setStartUrl"; url: string }
   | { type: "append"; step: WorkflowStep }
   | { type: "select"; id: string | null }
   | { type: "update"; step: WorkflowStep }
@@ -75,6 +77,28 @@ export function workflowReducer(state: WorkflowState, action: WorkflowAction): W
         ...state,
         dirty: true,
         workflow: { ...state.workflow, name: action.name, updatedAt: new Date().toISOString() },
+      };
+    case "setSessionId":
+      if (state.workflow.source.sessionId === action.sessionId) return state;
+      return {
+        ...state,
+        dirty: true,
+        workflow: {
+          ...state.workflow,
+          source: { ...state.workflow.source, sessionId: action.sessionId },
+          updatedAt: new Date().toISOString(),
+        },
+      };
+    case "setStartUrl":
+      if (state.workflow.source.startUrl === action.url) return state;
+      return {
+        ...state,
+        dirty: true,
+        workflow: {
+          ...state.workflow,
+          source: { ...state.workflow.source, startUrl: action.url },
+          updatedAt: new Date().toISOString(),
+        },
       };
     case "append": {
       const step = { ...action.step, order: state.workflow.steps.length };

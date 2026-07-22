@@ -57,6 +57,7 @@ export const SequencedServerMessageSchema = z.object({
       pageId: z.string(),
     }),
     z.object({ type: z.literal("session.status"), status: z.enum(["starting", "recording", "stopping", "stopped", "reconnecting"]) }),
+    z.object({ type: z.literal("recording.startUrl"), url: z.string().url() }),
     z.object({ type: z.literal("recorded.action"), action: RecordedActionSchema }),
     z.object({ type: z.literal("popup.detected"), pageId: z.string(), title: z.string(), url: z.string() }),
     z.object({ type: z.literal("popup.switched"), pageId: z.string(), liveViewUrl: z.string() }),

@@ -80,8 +80,8 @@
 @keyframes undo-toast-in { from { opacity: 0; transform: translate(-50%, 8px); } }
 
 @media (min-width: 1024px) and (max-width: 1439px) {
-  .workspace { grid-template-columns: var(--timeline-width) minmax(0, 1fr); }
+  .workspace { grid-template-columns: var(--timeline-width) minmax(0, 1fr) 44px; }
   .inspector-shell { position: absolute; z-index: 30; top: 0; right: 0; bottom: 0; width: var(--inspector-width); box-shadow: -14px 0 34px rgb(15 23 42 / 16%); }
-  .inspector-shell.collapsed { box-shadow: none; }
+  .inspector-shell.collapsed { position: relative; z-index: auto; grid-column: 3; top: auto; right: auto; bottom: auto; width: 44px; box-shadow: none; }
 }
 @media (max-width: 1023px) { .desktop-app { display: none; }.viewport-guard { display: grid; } }

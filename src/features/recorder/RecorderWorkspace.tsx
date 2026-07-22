@@ -30,15 +30,21 @@ export function RecorderWorkspace() {
   const onSessionStarted = useCallback((sessionId: string) => {
     dispatch({ type: "reset", sessionId });
   }, []);
+  const onReplaySessionStarted = useCallback((sessionId: string) => {
+    dispatch({ type: "setSessionId", sessionId });
+  }, []);
   const onStepRecorded = useCallback((step: WorkflowStep) => {
     dispatch({ type: "append", step });
     setAnnouncement(`${step.name} added to the workflow.`);
+  }, []);
+  const onStartUrl = useCallback((url: string) => {
+    dispatch({ type: "setStartUrl", url });
   }, []);
   const onReplayStepChange = useCallback((stepId: string, status: import("@/lib/recorder-session").ReplayStepResultState["status"]) => {
     if (status === "running" || status === "failed") dispatch({ type: "select", id: stepId });
     setAnnouncement(`Replay step ${status}.`);
   }, []);
-  const session = useRecorderSession({ onSessionStarted, onStepRecorded, onReplayStepChange });
+  const session = useRecorderSession({ onSessionStarted, onReplaySessionStarted, onStartUrl, onStepRecorded, onReplayStepChange });
   const replayLocked = ["preparing", "running", "pausing", "paused", "manual", "stopping"].includes(session.replayStatus);
   const panels = useWorkspacePanels({
     selectedStepId: workflowState.selectedStepId,
@@ -152,7 +158,7 @@ export function RecorderWorkspace() {
               onImport={(file) => void importWorkflow(file)}
               onReplay={() => requestReplay()}
               importDisabled={replayLocked}
-              replayDisabled={!workflowState.workflow.steps.some((step) => step.enabled) || replayLocked || session.displayStatus === "recording" || session.transportStatus === "offline"}
+              replayDisabled={!workflowState.workflow.steps.some((step) => step.enabled) || replayLocked || session.transportStatus === "offline"}
             />
             {!panels.timelineCollapsed ? (
               <>

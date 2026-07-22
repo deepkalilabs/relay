@@ -5,6 +5,7 @@ import { useState } from "react";
 export default function RecorderFixture() {
   const [submitted, setSubmitted] = useState(false);
   const [appointmentDate, setAppointmentDate] = useState("2026-07-21");
+  const [delegatedClicks, setDelegatedClicks] = useState(0);
   const navigateSpa = () => {
     history.pushState({ fixture: true }, "", "/fixture?view=details");
     dispatchEvent(new PopStateEvent("popstate"));
@@ -27,6 +28,10 @@ export default function RecorderFixture() {
       <input type="button" value="Input action" />
       <div role="button" tabIndex={0}>Role action</div>
       <a href="#fixture-help">Fixture help</a>
+      <a href="/fixture?view=linked">Open linked page</a>
+      <div role="menuitem" onClick={() => setDelegatedClicks((count) => count + 1)}><span>Quotes menu</span></div>
+      <div onClick={() => setDelegatedClicks((count) => count + 1)}><span>Delegated content action</span></div>
+      <p data-testid="delegated-clicks">Delegated clicks: {delegatedClicks}</p>
       <iframe title="Payment frame" src="/fixture/frame" style={{ width: "100%", height: 120, marginTop: 20 }} />
     </main>
   );

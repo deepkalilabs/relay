@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { Frame, Locator, Page } from "playwright-core";
 import type { ServerMessage } from "@/lib/protocol";
 import { createWorkflow, type Workflow, type WorkflowStep } from "@/lib/workflow/schema";
-import { preflightReplay, ReplayEngine } from "@/server/replay/engine";
+import { preflightReplay, ReplayEngine, resolveTarget } from "@/server/replay/engine";
 
 const recordedAt = new Date().toISOString();
 const target = { candidates: [{ kind: "testId" as const, value: "target", exact: true }] };
@@ -65,6 +65,65 @@ describe("replay preflight", () => {
 });
 
 describe("replay engine", () => {
+  it("uses the current main frame for legacy main-frame URLs", async () => {
+    const locator = { count: vi.fn(async () => 1), isVisible: vi.fn(async () => true) } as unknown as Locator;
+    const mainFrame = {
+      getByTestId: vi.fn(() => locator),
+      url: vi.fn(() => "https://example.com/app?live=2#current"),
+    } as unknown as Frame;
+    const page = { frames: vi.fn(() => [mainFrame]), mainFrame: vi.fn(() => mainFrame) } as unknown as Page;
+
+    await resolveTarget(page, { ...target, frameUrl: "https://example.com/app?recorded=1#old" }, "https://example.com/app?recorded=1");
+
+    expect(mainFrame.getByTestId).toHaveBeenCalledWith("target");
+  });
+
+  it("matches a unique child frame by origin and path when query values change", async () => {
+    const locator = { count: vi.fn(async () => 1), isVisible: vi.fn(async () => true) } as unknown as Locator;
+    const mainFrame = { url: vi.fn(() => "https://example.com/app") } as unknown as Frame;
+    const childFrame = {
+      getByTestId: vi.fn(() => locator),
+      url: vi.fn(() => "https://widgets.example.com/embed/?token=new#live"),
+    } as unknown as Frame;
+    const page = { frames: vi.fn(() => [mainFrame, childFrame]), mainFrame: vi.fn(() => mainFrame) } as unknown as Page;
+
+    await resolveTarget(page, { ...target, frameUrl: "https://widgets.example.com/embed?token=old" }, "https://example.com/app");
+
+    expect(childFrame.getByTestId).toHaveBeenCalledWith("target");
+  });
+
+  it("matches an exact child frame URL", async () => {
+    const locator = { count: vi.fn(async () => 1), isVisible: vi.fn(async () => true) } as unknown as Locator;
+    const mainFrame = { url: vi.fn(() => "https://example.com/app") } as unknown as Frame;
+    const childFrame = {
+      getByTestId: vi.fn(() => locator),
+      url: vi.fn(() => "https://widgets.example.com/embed?token=same"),
+    } as unknown as Frame;
+    const page = { frames: vi.fn(() => [mainFrame, childFrame]), mainFrame: vi.fn(() => mainFrame) } as unknown as Page;
+
+    await resolveTarget(page, { ...target, frameUrl: childFrame.url() }, "https://example.com/app");
+
+    expect(childFrame.getByTestId).toHaveBeenCalledWith("target");
+  });
+
+  it("reports ambiguous normalized child-frame matches", async () => {
+    const mainFrame = { url: vi.fn(() => "https://example.com/app") } as unknown as Frame;
+    const first = { url: vi.fn(() => "https://widgets.example.com/embed?token=one") } as unknown as Frame;
+    const second = { url: vi.fn(() => "https://widgets.example.com/embed?token=two") } as unknown as Frame;
+    const page = { frames: vi.fn(() => [mainFrame, first, second]), mainFrame: vi.fn(() => mainFrame) } as unknown as Page;
+
+    await expect(resolveTarget(page, { ...target, frameUrl: "https://widgets.example.com/embed?token=old" }, "https://example.com/app"))
+      .rejects.toThrow(/multiple frames/i);
+  });
+
+  it("reports a missing child frame", async () => {
+    const mainFrame = { url: vi.fn(() => "https://example.com/app") } as unknown as Frame;
+    const page = { frames: vi.fn(() => [mainFrame]), mainFrame: vi.fn(() => mainFrame) } as unknown as Page;
+
+    await expect(resolveTarget(page, { ...target, frameUrl: "https://widgets.example.com/embed" }, "https://example.com/app"))
+      .rejects.toThrow(/not available/i);
+  });
+
   it("executes every supported action and reports completion", async () => {
     const steps: WorkflowStep[] = [
       { ...baseStep("navigate", 0), type: "navigate", payload: { url: "https://example.com" } },

@@ -80,6 +80,22 @@ describe("workflow reducer", () => {
     expect(state.workflow.source.startUrl).toBe("https://example.com/0");
   });
 
+  it("stores and updates a recording start URL without adding a step", () => {
+    let state = initialWorkflowState();
+    state = workflowReducer(state, { type: "setStartUrl", url: "https://example.com/start" });
+    state = workflowReducer(state, { type: "setStartUrl", url: "https://example.com/later" });
+    expect(state.workflow.source.startUrl).toBe("https://example.com/later");
+    expect(state.workflow.steps).toHaveLength(0);
+  });
+
+  it("adopts the active replay session without clearing the current tree", () => {
+    let state = initialWorkflowState();
+    state = workflowReducer(state, { type: "append", step: makeStep("Navigate", 0) });
+    state = workflowReducer(state, { type: "setSessionId", sessionId: "incremental-session" });
+    expect(state.workflow.source.sessionId).toBe("incremental-session");
+    expect(state.workflow.steps).toHaveLength(1);
+  });
+
   it("duplicates with a new identity and origin", () => {
     let state = initialWorkflowState();
     const step = makeStep("Navigate", 0);

@@ -88,9 +88,12 @@ export class RecordingRuntime {
   private pendingDatePicker: PendingDatePicker | null = null;
   private mode: "recording" | "replay" | null = null;
   private recordingReady = false;
-  private hasInitialNavigation = false;
+  private startUrlSource: "observed" | "requested" | null = null;
+  private hasRecordedAction = false;
   private replayEngine: ReplayEngine | null = null;
   private replayMeta: { runId: string; totalSteps: number } | null = null;
+  private replayTask: Promise<void> | null = null;
+  private replayStopRequested = false;
   private released = false;
 
   constructor(
@@ -130,36 +133,40 @@ export class RecordingRuntime {
     this.emit(message);
   }
 
+  private async installRecorder(context: BrowserContext): Promise<void> {
+    await context.exposeBinding(RECORDER_BINDING, async ({ page, frame }, raw: unknown) => {
+      const state = this.pages.get(page);
+      if (!state || state.id !== this.activePageId) return;
+      const dateEvent = DatePickerBrowserEventSchema.safeParse(raw);
+      if (dateEvent.success) {
+        await this.handleDatePickerBrowserEvent(state, frame, dateEvent.data);
+        return;
+      }
+      const parsed = RecordedActionSchema.omit({ page: true, recordedAt: true }).safeParse(raw);
+      if (!parsed.success) return;
+      await this.forwardAction({
+        ...parsed.data,
+        page: { id: state.id, url: page.url(), title: await page.title().catch(() => undefined) },
+        recordedAt: new Date().toISOString(),
+      });
+    });
+    await context.addInitScript({ content: RECORDER_SCRIPT });
+  }
+
   async start(options: { timeoutSeconds: number; region: "us-west-2" | "us-east-1" | "eu-central-1" | "ap-southeast-1" }): Promise<void> {
     if (this.sessionId) return;
     this.emit({ type: "session.status", status: "starting" });
     this.mode = "recording";
     this.recordingReady = false;
-    this.hasInitialNavigation = false;
+    this.startUrlSource = null;
+    this.hasRecordedAction = false;
     try {
       const created = await this.provider.createSession(options);
       this.sessionId = created.id;
       const connected = await this.provider.connect(created.id);
       this.browser = connected.browser;
       this.context = connected.context;
-
-      await this.context.exposeBinding(RECORDER_BINDING, async ({ page, frame }, raw: unknown) => {
-        const state = this.pages.get(page);
-        if (!state || state.id !== this.activePageId) return;
-        const dateEvent = DatePickerBrowserEventSchema.safeParse(raw);
-        if (dateEvent.success) {
-          await this.handleDatePickerBrowserEvent(state, frame, dateEvent.data);
-          return;
-        }
-        const parsed = RecordedActionSchema.omit({ page: true, recordedAt: true }).safeParse(raw);
-        if (!parsed.success) return;
-        await this.forwardAction({
-          ...parsed.data,
-          page: { id: state.id, url: page.url(), title: await page.title().catch(() => undefined) },
-          recordedAt: new Date().toISOString(),
-        });
-      });
-      await this.context.addInitScript({ content: RECORDER_SCRIPT });
+      await this.installRecorder(this.context);
 
       for (const [index, page] of this.context.pages().entries()) await this.registerPage(page, index, index === 0, true);
       this.context.on("page", (page) => void this.registerPage(page, this.pages.size, false, true));
@@ -170,7 +177,7 @@ export class RecordingRuntime {
       this.activePageId = first.id;
       this.emit({ type: "session.started", sessionId: created.id, liveViewUrl: liveView.liveViewUrl, pageId: first.id });
       this.recordingReady = true;
-      this.forwardNavigation(first);
+      this.forwardStartUrl(first);
       await this.emitPageState(first);
       this.emit({ type: "session.status", status: "recording" });
     } catch (error) {
@@ -183,7 +190,8 @@ export class RecordingRuntime {
       this.activePageId = null;
       this.mode = null;
       this.recordingReady = false;
-      this.hasInitialNavigation = false;
+      this.startUrlSource = null;
+      this.hasRecordedAction = false;
       if (failedSessionId) await this.provider.releaseSession(failedSessionId);
       throw error;
     }
@@ -198,7 +206,7 @@ export class RecordingRuntime {
       if (frame !== page.mainFrame() || state.id !== this.activePageId) return;
       void this.emitPageState(state);
       this.dismissDatePickersForPage(state);
-      this.forwardNavigation(state);
+      this.forwardStartUrl(state);
     });
     page.on("domcontentloaded", () => {
       if (state.id === this.activePageId) void this.emitPageState(state);
@@ -306,33 +314,28 @@ export class RecordingRuntime {
   private async forwardAction(action: RecordedAction): Promise<void> {
     if (this.mode !== "recording" || !this.recordingReady) return;
     if (!isAutomaticallyRecordableAction(action)) return;
-    if (!this.hasInitialNavigation) {
-      if (!this.forwardNavigationDescriptor(action.page)) return;
+    if (!this.startUrlSource) {
+      if (!this.forwardStartUrlDescriptor(action.page)) return;
     }
     const normalized = action.target
       ? { ...action, target: { ...action.target, candidates: orderLocatorCandidates(action.target.candidates) } }
       : action;
     if (!this.deduplicator.shouldForward(normalized)) return;
     this.emit({ type: "recorded.action", action: normalized });
+    this.hasRecordedAction = true;
   }
 
-  private forwardNavigation(state: PageState): boolean {
-    return this.forwardNavigationDescriptor({ id: state.id, url: state.page.url() });
+  private forwardStartUrl(state: PageState): boolean {
+    return this.forwardStartUrlDescriptor({ id: state.id, url: state.page.url() });
   }
 
-  private forwardNavigationDescriptor(page: RecordedAction["page"]): boolean {
-    if (this.mode !== "recording" || !this.recordingReady || !isRecordableNavigationUrl(page.url)) return false;
-    const action: RecordedAction = {
-      type: "navigate",
-      name: `Navigate to ${page.url}`,
-      payload: { url: page.url },
-      sensitive: false,
-      page,
-      recordedAt: new Date().toISOString(),
-    };
-    if (!this.deduplicator.shouldForward(action)) return this.hasInitialNavigation;
-    this.emit({ type: "recorded.action", action });
-    this.hasInitialNavigation = true;
+  private forwardStartUrlDescriptor(page: RecordedAction["page"], source: "observed" | "requested" = "observed"): boolean {
+    if (this.mode !== "recording" || !this.recordingReady) return false;
+    if (this.startUrlSource === "requested") return true;
+    if (this.startUrlSource === "observed" && (source === "observed" || this.hasRecordedAction)) return true;
+    if (!isRecordableNavigationUrl(page.url)) return false;
+    this.emit({ type: "recording.startUrl", url: page.url });
+    this.startUrlSource = source;
     return true;
   }
 
@@ -375,6 +378,10 @@ export class RecordingRuntime {
       });
       return;
     }
+    if (this.mode === "recording" && this.recordingReady) {
+      const state = this.activePage();
+      this.forwardStartUrlDescriptor({ id: state.id, url: normalized }, "requested");
+    }
     await this.runNavigation((page) => page.goto(normalized, { waitUntil: "domcontentloaded", timeout: 30_000 }));
   }
 
@@ -405,58 +412,94 @@ export class RecordingRuntime {
     startStepId: string | undefined,
     options: { timeoutSeconds: number; region: "us-west-2" | "us-east-1" | "eu-central-1" | "ap-southeast-1" },
   ): Promise<void> {
-    if (this.sessionId) throw new Error("Stop the current browser session before replaying.");
+    if (this.replayEngine || this.mode === "replay") throw new Error("A replay is already running.");
     const preflight = preflightReplay(workflow, startStepId);
     const runId = crypto.randomUUID();
+    const existingSessionId = this.sessionId;
+    const createdForReplay = !existingSessionId;
     this.mode = "replay";
     this.recordingReady = false;
+    this.replayStopRequested = false;
     this.replayMeta = { runId, totalSteps: preflight.totalSteps };
     this.emit({ type: "replay.status", runId, status: "preparing", totalSteps: preflight.totalSteps });
     try {
-      const created = await this.provider.createSession(options);
-      this.sessionId = created.id;
-      const connected = await this.provider.connect(created.id);
-      this.browser = connected.browser;
-      this.context = connected.context;
-      for (const [index, page] of this.context.pages().entries()) await this.registerPage(page, index, index === 0, false);
-      this.context.on("page", (page) => void this.registerPage(page, this.pages.size, false, false));
+      if (!existingSessionId) {
+        const created = await this.provider.createSession(options);
+        this.sessionId = created.id;
+        const connected = await this.provider.connect(created.id);
+        this.browser = connected.browser;
+        this.context = connected.context;
+        await this.installRecorder(this.context);
+        for (const [index, page] of this.context.pages().entries()) await this.registerPage(page, index, index === 0, true);
+        this.context.on("page", (page) => void this.registerPage(page, this.pages.size, false, true));
+        this.startUrlSource = "requested";
+        this.hasRecordedAction = workflow.steps.length > 0;
+      }
 
-      const first = [...this.pages.values()][0];
-      if (!first) throw new Error("Browserbase opened without a page.");
-      this.activePageId = first.id;
-      const liveView = await this.provider.getLiveView(created.id, 0);
+      if (!this.sessionId) throw new Error("The recorder browser session is not available.");
+      const active = this.activePageId ? this.activePage() : [...this.pages.values()][0];
+      if (!active) throw new Error("Browserbase opened without a page.");
+      this.activePageId = active.id;
+      const liveView = await this.provider.getLiveView(this.sessionId, active.index);
       this.emit({
         type: "replay.started",
         runId,
-        sessionId: created.id,
+        sessionId: this.sessionId,
         liveViewUrl: liveView.liveViewUrl,
-        pageId: first.id,
+        pageId: active.id,
         totalSteps: preflight.totalSteps,
       });
-      await this.emitPageState(first);
-      this.replayEngine = new ReplayEngine(runId, first.page, preflight, (message) => this.emit(message));
-      void this.replayEngine.run().catch((error) => {
+      await this.emitPageState(active);
+      this.replayEngine = new ReplayEngine(runId, active.page, preflight, (message) => this.emit(message));
+      const replayTask = this.replayEngine.run();
+      this.replayTask = replayTask;
+      void replayTask.then(() => {
+        if (!this.replayStopRequested) this.returnToRecording(runId);
+      }).catch((error) => {
         if (!this.replayMeta || this.replayMeta.runId !== runId) return;
+        this.emit({ type: "replay.status", runId, status: "stopped", totalSteps: preflight.totalSteps });
         this.emit({
           type: "server.error",
           code: "REPLAY_ERROR",
           message: error instanceof Error ? error.message : "Replay could not continue.",
           recoverable: true,
         });
+        this.returnToRecording(runId);
       });
     } catch (error) {
-      const failedSessionId = this.sessionId;
-      this.sessionId = null;
-      await this.browser?.close().catch(() => undefined);
-      this.browser = null;
-      this.context = null;
-      this.pages.clear();
-      this.activePageId = null;
-      this.mode = null;
+      if (createdForReplay) {
+        const failedSessionId = this.sessionId;
+        this.sessionId = null;
+        await this.browser?.close().catch(() => undefined);
+        this.browser = null;
+        this.context = null;
+        this.pages.clear();
+        this.activePageId = null;
+        this.mode = null;
+        this.startUrlSource = null;
+        this.hasRecordedAction = false;
+        if (failedSessionId) await this.provider.releaseSession(failedSessionId);
+      } else {
+        this.mode = "recording";
+        this.recordingReady = true;
+        this.emit({ type: "session.status", status: "recording" });
+      }
+      this.replayEngine = null;
       this.replayMeta = null;
-      if (failedSessionId) await this.provider.releaseSession(failedSessionId);
+      this.replayTask = null;
       throw error;
     }
+  }
+
+  private returnToRecording(runId: string): void {
+    if (this.released || !this.sessionId || this.replayMeta?.runId !== runId) return;
+    this.mode = "recording";
+    this.recordingReady = true;
+    this.replayEngine = null;
+    this.replayMeta = null;
+    this.replayTask = null;
+    this.replayStopRequested = false;
+    this.emit({ type: "session.status", status: "recording" });
   }
 
   pauseReplay(): void { this.replayEngine?.pause(); }
@@ -466,8 +509,16 @@ export class RecordingRuntime {
   takeControlOfReplay(): void { this.replayEngine?.takeControl(); }
 
   async stopReplay(): Promise<void> {
-    this.replayEngine?.stop();
-    await this.release();
+    const replayMeta = this.replayMeta;
+    const replayTask = this.replayTask;
+    if (!replayMeta || !this.replayEngine) return;
+    this.replayStopRequested = true;
+    this.emit({ type: "replay.status", runId: replayMeta.runId, status: "stopping", totalSteps: replayMeta.totalSteps });
+    this.replayEngine.stop();
+    await replayTask?.catch(() => undefined);
+    if (this.released || this.replayMeta?.runId !== replayMeta.runId) return;
+    this.emit({ type: "replay.status", runId: replayMeta.runId, status: "stopped", totalSteps: replayMeta.totalSteps });
+    this.returnToRecording(replayMeta.runId);
   }
 
   async release(): Promise<void> {
@@ -477,9 +528,9 @@ export class RecordingRuntime {
     const replayMeta = this.replayMeta;
     if (replayMeta) {
       this.emit({ type: "replay.status", runId: replayMeta.runId, status: "stopping", totalSteps: replayMeta.totalSteps });
-    } else {
-      this.emit({ type: "session.status", status: "stopping" });
     }
+    this.emit({ type: "session.status", status: "stopping" });
+    this.replayStopRequested = true;
     this.replayEngine?.stop();
     const sessionId = this.sessionId;
     this.pendingDatePicker = null;
@@ -488,14 +539,16 @@ export class RecordingRuntime {
     if (sessionId) await this.provider.releaseSession(sessionId);
     if (replayMeta) {
       this.emit({ type: "replay.status", runId: replayMeta.runId, status: "stopped", totalSteps: replayMeta.totalSteps });
-    } else {
-      this.emit({ type: "session.status", status: "stopped" });
     }
+    this.emit({ type: "session.status", status: "stopped" });
     this.mode = null;
     this.recordingReady = false;
-    this.hasInitialNavigation = false;
+    this.startUrlSource = null;
+    this.hasRecordedAction = false;
     this.replayEngine = null;
     this.replayMeta = null;
+    this.replayTask = null;
+    this.replayStopRequested = false;
     this.onReleased();
   }
 }

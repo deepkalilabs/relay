@@ -48,8 +48,8 @@ export function preflightReplay(input: Workflow, startStepId?: string): ReplayPr
         : undefined;
   if (firstEnabled.type !== "navigate" && !bootstrapUrl) {
     throw new Error(startStepId
-      ? "Run from here needs a recorded HTTP page URL because replay uses a fresh browser."
-      : "Replay needs a recorded HTTP page URL because replay uses a fresh browser.");
+      ? "Run from here needs a recorded HTTP page URL as its starting point."
+      : "Replay needs a recorded HTTP page URL as its starting point.");
   }
 
   return { workflow: parsed, startIndex, totalSteps: range.length, bootstrapUrl };
@@ -84,10 +84,50 @@ function errorMessage(error: unknown): string {
   return error.message.split("\n")[0] || "The replay action could not be completed.";
 }
 
-async function resolveTarget(page: Page, target: TargetDescriptor): Promise<ResolvedTarget> {
-  const frame = target.frameUrl
-    ? page.frames().find((candidate) => candidate.url() === target.frameUrl)
-    : page.mainFrame();
+function normalizedFrameUrl(value: string): string | null {
+  try {
+    const url = new URL(value);
+    const pathname = url.pathname.replace(/\/+$/, "") || "/";
+    return `${url.origin}${pathname}`;
+  } catch {
+    return null;
+  }
+}
+
+export async function resolveTarget(page: Page, target: TargetDescriptor, recordedPageUrl?: string): Promise<ResolvedTarget> {
+  const mainFrame = page.mainFrame();
+  let frame: Frame | undefined;
+  if (!target.frameUrl) {
+    frame = mainFrame;
+  } else {
+    const recordedFrame = normalizedFrameUrl(target.frameUrl);
+    const recordedPage = recordedPageUrl ? normalizedFrameUrl(recordedPageUrl) : null;
+    const currentMain = normalizedFrameUrl(mainFrame.url());
+    if (
+      (recordedFrame && recordedPage && recordedFrame === recordedPage) ||
+      mainFrame.url() === target.frameUrl ||
+      (recordedFrame && currentMain === recordedFrame)
+    ) {
+      frame = mainFrame;
+    } else {
+      const childFrames = page.frames().filter((candidate) => candidate !== mainFrame);
+      const exact = childFrames.filter((candidate) => candidate.url() === target.frameUrl);
+      if (exact.length === 1) frame = exact[0];
+      else if (exact.length > 1) {
+        throw Object.assign(new Error("Multiple frames match the recorded frame URL."), {
+          attempts: [{ kind: "frame", reason: "Recorded frame URL matched multiple frames." }],
+        });
+      } else if (recordedFrame) {
+        const normalized = childFrames.filter((candidate) => normalizedFrameUrl(candidate.url()) === recordedFrame);
+        if (normalized.length === 1) frame = normalized[0];
+        else if (normalized.length > 1) {
+          throw Object.assign(new Error("Multiple frames match the recorded frame address."), {
+            attempts: [{ kind: "frame", reason: "Recorded frame origin and path matched multiple frames." }],
+          });
+        }
+      }
+    }
+  }
   if (!frame) {
     throw Object.assign(new Error("The recorded frame is not available on this page."), {
       attempts: [{ kind: "frame", reason: "Recorded frame URL was not found." }],
@@ -128,7 +168,7 @@ async function executeStep(page: Page, step: WorkflowStep): Promise<{ locatorKin
     return { attempts: [] };
   }
 
-  const resolved = await resolveTarget(page, step.target);
+  const resolved = await resolveTarget(page, step.target, step.page.url);
   const options = { timeout: REPLAY_STEP_TIMEOUT_MS };
   switch (step.type) {
     case "click":

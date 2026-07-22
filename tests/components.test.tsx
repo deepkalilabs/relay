@@ -186,6 +186,38 @@ describe("BrowserPanel", () => {
     expect(onNavigate).toHaveBeenCalledWith("example.org");
   });
 
+  it("returns to recorder controls when an incremental replay completes", () => {
+    const { container } = render(
+      <BrowserPanel
+        status="recording"
+        transportStatus="connected"
+        elapsed="00:12"
+        liveViewUrl="https://example.com/live-view"
+        page={{ pageId: "page", title: "Example", url: "https://example.com/" }}
+        error={null}
+        navigationError={null}
+        navigationPending={false}
+        popup={null}
+        replayStatus="completed"
+        replayCurrentIndex={1}
+        replayTotalSteps={2}
+        onBack={vi.fn()}
+        onForward={vi.fn()}
+        onNavigate={vi.fn()}
+        onReload={vi.fn()}
+        onStart={vi.fn()}
+        onStop={vi.fn()}
+        onRetry={vi.fn()}
+        onSwitchPopup={vi.fn()}
+      />,
+    );
+    const panel = within(container);
+
+    expect(panel.getByText("Recording")).toBeInTheDocument();
+    expect(panel.getByRole("button", { name: /stop recording/i })).toBeInTheDocument();
+    expect(panel.queryByRole("button", { name: /stop replay/i })).not.toBeInTheDocument();
+  });
+
   it("selects and dismisses dates from the custom calendar", async () => {
     vi.stubGlobal("ResizeObserver", class ResizeObserver {
       observe() {}

@@ -96,7 +96,7 @@ export function BrowserPanel({ status, transportStatus, elapsed, liveViewUrl, er
   const [loadedUrl, setLoadedUrl] = useState<string | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const loading = status === "starting" || replayStatus === "preparing" || (liveViewUrl && loadedUrl !== liveViewUrl);
-  const replayMode = !["idle", "stopped"].includes(replayStatus);
+  const replayMode = ["preparing", "running", "pausing", "paused", "manual", "stopping"].includes(replayStatus);
   const navigationDisabled = !liveViewUrl || navigationPending || (!["recording", "reconnecting"].includes(status) && replayStatus !== "manual");
   const tabTitle = page?.title && page.title !== "about:blank" ? page.title : liveViewUrl ? "Browserbase" : "New cloud browser";
   const pageAddress = page?.url === "about:blank" ? "" : page?.url ?? "";
@@ -159,7 +159,7 @@ export function BrowserPanel({ status, transportStatus, elapsed, liveViewUrl, er
           <div className="browser-empty">
             <span className="cloud-orbit"><Cloud size={30} aria-hidden="true" /></span>
             <h2>{replayReadyCount ? "Workflow ready to replay" : "Start with a fresh cloud browser"}</h2>
-            <p>{replayReadyCount ? `${replayReadyCount} steps are loaded and ready for a fresh Browserbase session.` : "Your interactions become structured, editable workflow steps in real time."}</p>
+            <p>{replayReadyCount ? `${replayReadyCount} steps are loaded. Replay them, then keep recording in the same browser.` : "Your interactions become structured, editable workflow steps in real time."}</p>
             {replayReadyCount ? <button className="button button-primary" type="button" onClick={onReplay} disabled={status === "configurationMissing" || transportStatus === "offline" || !["idle", "stopped", "error"].includes(status)}>Replay workflow <Play size={17} aria-hidden="true" /></button> : null}
             <button className={`button ${replayReadyCount ? "button-secondary" : "button-primary"}`} type="button" onClick={onStart} disabled={status === "configurationMissing" || transportStatus === "offline"}>
               Start recording <ArrowRight size={17} aria-hidden="true" />

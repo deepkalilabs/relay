@@ -17,11 +17,13 @@ describe("browser navigation", () => {
     expect(isRecordableNavigationUrl("about:blank")).toBe(false);
   });
 
-  it("seeds an already-loaded page as the first recorded navigation", async () => {
-    const currentUrl = "https://example.com/start";
+  it("stores an already-loaded page as the start URL without recording a navigate action", async () => {
+    let currentUrl = "https://example.com/start";
     const mainFrame = {};
+    const goto = vi.fn(async () => { currentUrl = "https://resolved.example.net/"; return null; });
     const page = {
       evaluate: vi.fn(async () => undefined),
+      goto,
       mainFrame: vi.fn(() => mainFrame),
       on: vi.fn(),
       title: vi.fn(async () => "Example"),
@@ -43,13 +45,18 @@ describe("browser navigation", () => {
     await runtime.start({ timeoutSeconds: 120, region: "us-west-2" });
 
     const startedIndex = runtime.buffer.findIndex((item) => item.message.type === "session.started");
-    const recorded = runtime.buffer.filter((item) => item.message.type === "recorded.action");
-    expect(recorded).toHaveLength(1);
-    expect(recorded[0].message).toMatchObject({ type: "recorded.action", action: { type: "navigate", payload: { url: currentUrl } } });
-    expect(runtime.buffer.indexOf(recorded[0])).toBeGreaterThan(startedIndex);
+    const startUrl = runtime.buffer.find((item) => item.message.type === "recording.startUrl");
+    expect(startUrl?.message).toEqual({ type: "recording.startUrl", url: currentUrl });
+    expect(runtime.buffer.indexOf(startUrl!)).toBeGreaterThan(startedIndex);
+    expect(runtime.buffer.some((item) => item.message.type === "recorded.action")).toBe(false);
+
+    await runtime.navigate("pasted.example.com/path");
+    const startUrls = runtime.buffer.flatMap((item) => item.message.type === "recording.startUrl" ? [item.message.url] : []);
+    expect(startUrls).toEqual(["https://example.com/start", "https://pasted.example.com/path"]);
+    expect(currentUrl).toBe("https://resolved.example.net/");
   });
 
-  it("synthesizes a leading navigate before the first injected action when the navigation event was missed", async () => {
+  it("stores the start URL before the first injected action when the navigation event was missed", async () => {
     let currentUrl = "about:blank";
     const mainFrame = {};
     let binding: ((source: { page: Page; frame: unknown }, raw: unknown) => Promise<void>) | undefined;
@@ -84,12 +91,12 @@ describe("browser navigation", () => {
       sensitive: false,
     });
 
-    const actions = runtime.buffer.flatMap((item) => item.message.type === "recorded.action" ? [item.message.action] : []);
-    expect(actions.map((action) => action.type)).toEqual(["navigate", "click"]);
-    expect(actions[0].page.url).toBe(currentUrl);
+    expect(runtime.buffer.map((item) => item.message.type)).toEqual(["recording.startUrl", "recorded.action"]);
+    expect(runtime.buffer[0].message).toEqual({ type: "recording.startUrl", url: currentUrl });
+    expect(runtime.buffer[1].message).toMatchObject({ type: "recorded.action", action: { type: "click" } });
   });
 
-  it("records later main-frame navigation while ignoring about:blank, subframes, and duplicate events", async () => {
+  it("stores only the first main-frame URL while ignoring later navigations", async () => {
     let currentUrl = "about:blank";
     const mainFrame = {};
     const handlers = new Map<string, (...args: unknown[]) => void>();
@@ -124,15 +131,18 @@ describe("browser navigation", () => {
     currentUrl = "https://example.com/two";
     handlers.get("framenavigated")?.(mainFrame);
 
-    const navigations = runtime.buffer.flatMap((item) => item.message.type === "recorded.action" && item.message.action.type === "navigate" ? [item.message.action] : []);
-    expect(navigations.map((action) => action.page.url)).toEqual(["https://example.com/one", "https://example.com/two"]);
+    const startUrls = runtime.buffer.flatMap((item) => item.message.type === "recording.startUrl" ? [item.message.url] : []);
+    expect(startUrls).toEqual(["https://example.com/one"]);
+    expect(runtime.buffer.some((item) => item.message.type === "recorded.action")).toBe(false);
   });
 
-  it("does not record navigation performed by replay mode", async () => {
+  it("turns a fresh replay session into a recorder after the workflow completes", async () => {
     let currentUrl = "about:blank";
     const handlers = new Map<string, (...args: unknown[]) => void>();
+    let binding: ((source: { page: Page; frame: unknown }, raw: unknown) => Promise<void>) | undefined;
     const mainFrame = { url: vi.fn(() => currentUrl) };
     const page = {
+      evaluate: vi.fn(async () => undefined),
       frames: vi.fn(() => [mainFrame]),
       goto: vi.fn(async (url: string) => { currentUrl = url; return null; }),
       mainFrame: vi.fn(() => mainFrame),
@@ -141,6 +151,8 @@ describe("browser navigation", () => {
       url: vi.fn(() => currentUrl),
     } as unknown as Page;
     const context = {
+      addInitScript: vi.fn(async () => undefined),
+      exposeBinding: vi.fn(async (_name: string, callback: typeof binding) => { binding = callback; }),
       on: vi.fn(),
       pages: vi.fn(() => [page]),
     } as unknown as BrowserContext;
@@ -169,6 +181,98 @@ describe("browser navigation", () => {
     currentUrl = "https://example.com/after-replay";
     handlers.get("framenavigated")?.(mainFrame);
     expect(runtime.buffer.some((item) => item.message.type === "recorded.action")).toBe(false);
+    expect(runtime.buffer.some((item) => item.message.type === "recording.startUrl")).toBe(false);
+
+    await binding?.({ page, frame: mainFrame }, {
+      type: "click",
+      name: "Click Continue",
+      target: { candidates: [{ kind: "role", value: "button", name: "Continue", exact: true }] },
+      sensitive: false,
+    });
+    expect(runtime.buffer.some((item) => item.message.type === "recorded.action" && item.message.action.name === "Click Continue")).toBe(true);
+    expect(runtime.buffer.at(-1)?.message).toEqual({ type: "recorded.action", action: expect.objectContaining({ name: "Click Continue" }) });
+  });
+
+  it("replays the growing workflow inside the active recorder session", async () => {
+    let currentUrl = "https://example.com/start";
+    let binding: ((source: { page: Page; frame: unknown }, raw: unknown) => Promise<void>) | undefined;
+    const locator = {
+      count: vi.fn(async () => 1),
+      isVisible: vi.fn(async () => true),
+      click: vi.fn(async () => {
+        await binding?.({ page, frame: mainFrame }, {
+          type: "click",
+          name: "Replay-generated click",
+          target: { candidates: [{ kind: "testId", value: "continue", exact: true }] },
+          sensitive: false,
+        });
+      }),
+    };
+    const mainFrame = {
+      getByTestId: vi.fn(() => locator),
+      url: vi.fn(() => currentUrl),
+    };
+    const page = {
+      evaluate: vi.fn(async () => undefined),
+      frames: vi.fn(() => [mainFrame]),
+      goto: vi.fn(async (url: string) => { currentUrl = url; return null; }),
+      mainFrame: vi.fn(() => mainFrame),
+      on: vi.fn(),
+      title: vi.fn(async () => "Example"),
+      url: vi.fn(() => currentUrl),
+    } as unknown as Page;
+    const context = {
+      addInitScript: vi.fn(async () => undefined),
+      exposeBinding: vi.fn(async (_name: string, callback: typeof binding) => { binding = callback; }),
+      on: vi.fn(),
+      pages: vi.fn(() => [page]),
+    } as unknown as BrowserContext;
+    const provider: BrowserProvider = {
+      connect: vi.fn(async () => ({ browser: { close: vi.fn(async () => undefined) } as unknown as Browser, context })),
+      createSession: vi.fn(async () => ({ id: "session", connectUrl: "ws://example.com" })),
+      getLiveView: vi.fn(async () => ({ id: "page", title: "Example", url: currentUrl, liveViewUrl: "https://example.com/live" })),
+      releaseSession: vi.fn(async () => undefined),
+    };
+    const workflow = createWorkflow("session");
+    workflow.source.startUrl = "https://example.com/start";
+    workflow.steps.push({
+      id: "continue",
+      order: 0,
+      name: "Click Continue",
+      enabled: true,
+      page: { id: "recorded-page", url: "https://example.com/start" },
+      target: { candidates: [{ kind: "testId", value: "continue", exact: true }] },
+      metadata: { recordedAt: new Date().toISOString(), origin: "recorded", sensitive: false },
+      type: "click",
+    });
+    const runtime = new RecordingRuntime(crypto.randomUUID(), provider, vi.fn());
+    await runtime.start({ timeoutSeconds: 120, region: "us-west-2" });
+    runtime.buffer.splice(0);
+
+    await runtime.startReplay(workflow, undefined, { timeoutSeconds: 120, region: "us-west-2" });
+    await vi.waitFor(() => expect(runtime.buffer.some((item) => item.message.type === "replay.status" && item.message.status === "completed")).toBe(true));
+
+    expect(provider.createSession).toHaveBeenCalledOnce();
+    expect(provider.releaseSession).not.toHaveBeenCalled();
+    expect(runtime.buffer.some((item) => item.message.type === "recorded.action" && item.message.action.name === "Replay-generated click")).toBe(false);
+    expect(runtime.buffer.at(-1)?.message).toEqual({ type: "session.status", status: "recording" });
+
+    await binding?.({ page, frame: mainFrame }, {
+      type: "click",
+      name: "Click next step",
+      target: { candidates: [{ kind: "testId", value: "next", exact: true }] },
+      sensitive: false,
+    });
+    expect(runtime.buffer.at(-1)?.message).toEqual({ type: "recorded.action", action: expect.objectContaining({ name: "Click next step" }) });
+
+    locator.click.mockRejectedValueOnce(new Error("Button unavailable"));
+    await runtime.startReplay(workflow, undefined, { timeoutSeconds: 120, region: "us-west-2" });
+    await vi.waitFor(() => expect(runtime.buffer.some((item) => item.message.type === "replay.step" && item.message.status === "failed")).toBe(true));
+    await runtime.stopReplay();
+
+    expect(provider.createSession).toHaveBeenCalledOnce();
+    expect(provider.releaseSession).not.toHaveBeenCalled();
+    expect(runtime.buffer.at(-1)?.message).toEqual({ type: "session.status", status: "recording" });
   });
 
   it("uses Browserbase fullscreen URLs without the native navbar", () => {
@@ -198,7 +302,7 @@ describe("browser navigation", () => {
 
   it("runs commands against the active page and emits recoverable page state", async () => {
     let currentUrl = "about:blank";
-    const goto = vi.fn(async (url: string) => { currentUrl = url; return null; });
+    const goto = vi.fn(async () => { currentUrl = "https://resolved.example.net/"; return null; });
     const goBack = vi.fn(async () => null);
     const goForward = vi.fn(async () => null);
     const reload = vi.fn(async () => null);
@@ -238,7 +342,8 @@ describe("browser navigation", () => {
     expect(goBack).toHaveBeenCalledOnce();
     expect(goForward).toHaveBeenCalledOnce();
     expect(reload).toHaveBeenCalledOnce();
-    expect(runtime.buffer.some((item) => item.message.type === "browser.page" && item.message.url === "https://example.com/")).toBe(true);
+    expect(runtime.buffer.some((item) => item.message.type === "recording.startUrl" && item.message.url === "https://example.com/")).toBe(true);
+    expect(runtime.buffer.some((item) => item.message.type === "browser.page" && item.message.url === "https://resolved.example.net/")).toBe(true);
 
     runtime.buffer.splice(0);
     await runtime.navigate("file:///tmp/private");

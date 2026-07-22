@@ -35,6 +35,8 @@ test("keeps the desktop workspace within the viewport at its minimum width", asy
   await page.setViewportSize({ width: 1024, height: 768 });
   await page.goto("/");
 
+  await expect(page.getByRole("button", { name: /expand step details/i })).toBeVisible();
+
   const overflow = await page.evaluate(() => ({
     document: document.documentElement.scrollWidth - document.documentElement.clientWidth,
     body: document.body.scrollWidth - document.body.clientWidth,
@@ -42,6 +44,14 @@ test("keeps the desktop workspace within the viewport at its minimum width", asy
   expect(overflow.document).toBeLessThanOrEqual(0);
   expect(overflow.body).toBeLessThanOrEqual(0);
   await expect(page.locator(".workspace")).toHaveCSS("height", "768px");
+
+  const startRecording = page.locator(".browser-navigation").getByRole("button", { name: /start recording/i });
+  const receivesPointer = await startRecording.evaluate((button) => {
+    const bounds = button.getBoundingClientRect();
+    const hit = document.elementFromPoint(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2);
+    return hit === button || button.contains(hit);
+  });
+  expect(receivesPointer).toBe(true);
 });
 
 test("shows a centered, dismissible undo toast after deleting a step", async ({ page }) => {

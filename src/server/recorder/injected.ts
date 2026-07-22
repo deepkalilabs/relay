@@ -113,7 +113,7 @@ export const RECORDER_SCRIPT = String.raw`(() => {
     return {
       tagName: element.tagName.toLowerCase(),
       inputType: element instanceof HTMLInputElement ? element.type : undefined,
-      frameUrl: location.href,
+      frameUrl: window === window.top ? undefined : location.href,
       candidates,
     };
   };
@@ -134,6 +134,54 @@ export const RECORDER_SCRIPT = String.raw`(() => {
     if (element instanceof HTMLTextAreaElement || element.isContentEditable) return true;
     if (!(element instanceof HTMLInputElement)) return false;
     return !["button", "submit", "reset", "image", "checkbox", "radio", "file", "hidden", "date"].includes(element.type);
+  };
+
+  const semanticClickSelector = [
+    "button",
+    "a[href]",
+    "[role='button']",
+    "[role='link']",
+    "[role='menuitem']",
+    "[role='menuitemcheckbox']",
+    "[role='menuitemradio']",
+    "[role='tab']",
+    "input[type='button']",
+    "input[type='submit']",
+    "input[type='reset']",
+    "input[type='image']",
+    "input[type='checkbox']",
+    "input[type='radio']",
+  ].join(",");
+
+  const isFocusOnlyControl = (element) => {
+    const control = element.closest("input,textarea,select,option,[contenteditable]");
+    if (!control) return false;
+    if (control instanceof HTMLInputElement) {
+      return !["button", "submit", "reset", "image", "checkbox", "radio"].includes(control.type);
+    }
+    return true;
+  };
+
+  const resolveClickTarget = (event) => {
+    const origin = event.target instanceof Element ? event.target : null;
+    if (!origin || isFocusOnlyControl(origin)) return null;
+
+    const semantic = origin.closest(semanticClickSelector);
+    if (semantic instanceof HTMLElement) return semantic;
+
+    const path = event.composedPath().filter((item) => item instanceof HTMLElement);
+    const content = path.filter((element) =>
+      element !== document.body &&
+      element !== document.documentElement &&
+      !isFocusOnlyControl(element)
+    );
+    const signaled = content.find((element) =>
+      typeof element.onclick === "function" ||
+      element.hasAttribute("onclick") ||
+      element.tabIndex >= 0 ||
+      getComputedStyle(element).cursor === "pointer"
+    );
+    return signaled || content[0] || null;
   };
 
   const flushInput = (element) => {
@@ -185,9 +233,7 @@ export const RECORDER_SCRIPT = String.raw`(() => {
       datePickerOpen = false;
       emit({ type: "date-picker.dismiss" });
     }
-    const element = event.target instanceof Element
-      ? event.target.closest("button,[role='button'],input[type='button'],input[type='submit'],input[type='reset'],input[type='image']")
-      : null;
+    const element = resolveClickTarget(event);
     if (!(element instanceof HTMLElement)) return;
     [...dirtyFields].forEach((field) => flushInput(field));
     emit({ type: "click", name: actionName("Click", element), target: describe(element), sensitive: false });
