@@ -24,11 +24,15 @@ describe("recorder normalization", () => {
 
   it("captures completed fields and semantic buttons only", () => {
     expect(RECORDER_SCRIPT).toContain("const dirtyFields = new Set()");
-    expect(RECORDER_SCRIPT).toContain('document.addEventListener("focusout"');
+    expect(RECORDER_SCRIPT).toContain('window.addEventListener("focusout"');
+    expect(RECORDER_SCRIPT).toContain("event.composedPath?.()");
     expect(RECORDER_SCRIPT).toContain("input[type='submit']");
     expect(RECORDER_SCRIPT).toContain('kind: "testId"');
     expect(RECORDER_SCRIPT).toContain('input[type="date"]');
     expect(RECORDER_SCRIPT).toContain('type: "date-picker.request"');
+    expect(RECORDER_SCRIPT).toContain("position: viewportPosition()");
+    expect(RECORDER_SCRIPT).not.toContain('type: "scroll.position"');
+    expect(RECORDER_SCRIPT).not.toContain('window.addEventListener("scroll"');
     expect(RECORDER_SCRIPT).not.toContain('document.addEventListener("submit"');
     expect(RECORDER_SCRIPT).not.toContain('"pushState", "replaceState"');
   });

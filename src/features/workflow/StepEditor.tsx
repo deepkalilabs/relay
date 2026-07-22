@@ -7,6 +7,7 @@ import {
   WorkflowStepSchema,
   locatorKinds,
   type LocatorCandidate,
+  type ViewportPosition,
   type WorkflowStep,
 } from "@/lib/workflow/schema";
 
@@ -31,6 +32,16 @@ export function StepEditor({ step, onUpdate, onCollapse, locked = false, replayR
   const removeCandidate = (index: number) => {
     if (!step?.target) return;
     onUpdate({ ...step, target: { ...step.target, candidates: candidates.filter((_, candidateIndex) => candidateIndex !== index) } } as WorkflowStep);
+  };
+  const updatePosition = (patch: Partial<ViewportPosition>) => {
+    if (!step?.position) return;
+    onUpdate({ ...step, position: { ...step.position, ...patch } } as WorkflowStep);
+  };
+  const removePosition = () => {
+    if (!step?.position) return;
+    const next = { ...step };
+    delete next.position;
+    onUpdate(next as WorkflowStep);
   };
   const waitCandidates = step?.waitAfter?.condition?.target.candidates ?? [];
   const updateWait = (delayMs: number, condition = step?.waitAfter?.condition) => {
@@ -101,6 +112,23 @@ export function StepEditor({ step, onUpdate, onCollapse, locked = false, replayR
               </> : null}
             </div>
           </section>
+          {step.position ? <>
+            <div className="editor-divider" />
+            <section className="editor-section position-before-editor" aria-labelledby="position-before-title">
+              <div id="position-before-title" className="editor-section-title"><span>Position before action</span><small>{step.position.frameUrl ? "child frame" : "main frame"}</small></div>
+              <div className="locator-card">
+                <div className="locator-card-heading">
+                  <span>{step.position.frameUrl ? "Child frame viewport" : "Main frame viewport"}</span>
+                  <button className="mini-button danger-hover" type="button" aria-label="Remove action position" onClick={removePosition}><Trash2 size={14} /></button>
+                </div>
+                <div className="editor-fields">
+                  <label className="field"><span>Horizontal position (px)</span><input type="number" value={step.position.x} onChange={(event) => updatePosition({ x: Number(event.target.value) })} /></label>
+                  <label className="field"><span>Vertical position (px)</span><input type="number" value={step.position.y} onChange={(event) => updatePosition({ y: Number(event.target.value) })} /></label>
+                  {step.position.frameUrl ? <label className="field field-wide"><span>Frame URL</span><input value={step.position.frameUrl} readOnly aria-readonly="true" /></label> : null}
+                </div>
+              </div>
+            </section>
+          </> : null}
           <div className="editor-divider" />
           <section className="editor-section locator-editor" aria-labelledby="locator-details-title">
             <div id="locator-details-title" className="editor-section-title"><Crosshair size={15} /><span>Locator candidates</span><small>{candidates.length}</small></div>

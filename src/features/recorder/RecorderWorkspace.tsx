@@ -7,6 +7,7 @@ import { Modal } from "@/components/ui/Modal";
 import { useRecorderSession } from "@/features/recorder/useRecorderSession";
 import { useWorkspacePanels } from "@/features/recorder/useWorkspacePanels";
 import { WorkspaceNavbar } from "@/features/recorder/WorkspaceNavbar";
+import { RunWorkflowDialog } from "@/features/replay/RunWorkflowDialog";
 import { ManualStepDialog } from "@/features/workflow/ManualStepDialog";
 import { StepEditor } from "@/features/workflow/StepEditor";
 import { WorkflowTimeline } from "@/features/workflow/WorkflowTimeline";
@@ -16,11 +17,12 @@ import type { Workflow, WorkflowStep } from "@/lib/workflow/schema";
 import { WorkflowSchema } from "@/lib/workflow/schema";
 import { initialWorkflowState, workflowReducer } from "@/lib/workflow/store";
 
-type Confirmation = "new" | "sensitiveExport" | "replaceImport" | "sensitiveReplay" | null;
+type Confirmation = "new" | "sensitiveExport" | "replaceImport" | null;
 
 export function RecorderWorkspace() {
   const [workflowState, dispatch] = useReducer(workflowReducer, undefined, initialWorkflowState);
   const [manualOpen, setManualOpen] = useState(false);
+  const [runDialogOpen, setRunDialogOpen] = useState(false);
   const [confirmation, setConfirmation] = useState<Confirmation>(null);
   const [announcement, setAnnouncement] = useState("");
   const [pendingImport, setPendingImport] = useState<Workflow | null>(null);
@@ -48,7 +50,7 @@ export function RecorderWorkspace() {
   const replayLocked = ["preparing", "running", "pausing", "paused", "manual", "stopping"].includes(session.replayStatus);
   const panels = useWorkspacePanels({
     selectedStepId: workflowState.selectedStepId,
-    overlayOpen: Boolean(confirmation || manualOpen),
+    overlayOpen: Boolean(confirmation || manualOpen || runDialogOpen),
   });
 
   useEffect(() => {
@@ -85,19 +87,21 @@ export function RecorderWorkspace() {
     }
   };
 
-  const startReplayNow = (startStepId = pendingReplayStartId) => {
-    setConfirmation(null);
+  const closeRunDialog = () => {
+    setRunDialogOpen(false);
     setPendingReplayStartId(undefined);
-    session.startReplay(workflowState.workflow, startStepId);
   };
 
   const requestReplay = (startStepId?: string) => {
     setPendingReplayStartId(startStepId);
-    if (workflowState.workflow.steps.some((step) => step.metadata.sensitive)) {
-      setConfirmation("sensitiveReplay");
-      return;
-    }
-    startReplayNow(startStepId);
+    setRunDialogOpen(true);
+  };
+
+  const startReplayNow = () => {
+    const startStepId = pendingReplayStartId;
+    setRunDialogOpen(false);
+    setPendingReplayStartId(undefined);
+    session.startReplay(workflowState.workflow, startStepId);
   };
 
   const confirmNew = () => {
@@ -124,6 +128,8 @@ export function RecorderWorkspace() {
   };
 
   const selectedStep = useMemo(() => workflowState.workflow.steps.find((step) => step.id === workflowState.selectedStepId) ?? null, [workflowState.workflow.steps, workflowState.selectedStepId]);
+  const pendingReplayStep = useMemo(() => workflowState.workflow.steps.find((step) => step.id === pendingReplayStartId), [pendingReplayStartId, workflowState.workflow.steps]);
+  const workflowContainsSensitiveValues = useMemo(() => workflowState.workflow.steps.some((step) => step.metadata.sensitive), [workflowState.workflow.steps]);
   const activePage = selectedStep?.page ?? (session.browserPage
     ? { id: session.browserPage.pageId, url: session.browserPage.url, title: session.browserPage.title }
     : { id: "manual", url: session.liveViewUrl ? "about:blank" : "", title: "Manual step" });
@@ -276,6 +282,13 @@ export function RecorderWorkspace() {
         <div className="sr-only" aria-live="polite">{announcement}</div>
       </div>
       <ManualStepDialog open={manualOpen} order={workflowState.workflow.steps.length} page={activePage} onClose={() => setManualOpen(false)} onInsert={(step) => dispatch({ type: "insert", step, afterId: workflowState.selectedStepId ?? undefined })} />
+      <RunWorkflowDialog
+        open={runDialogOpen}
+        sensitive={workflowContainsSensitiveValues}
+        startStepName={pendingReplayStep?.name}
+        onClose={closeRunDialog}
+        onRun={startReplayNow}
+      />
       <Modal open={confirmation === "new"} title="Start a new recording?" description="The current workflow only lives in this tab." onClose={() => setConfirmation(null)}>
         <p className="modal-copy">Export the current workflow first if you want to keep it. Starting over clears all recorded and edited steps.</p>
         <div className="modal-actions"><button className="button button-ghost" type="button" onClick={() => setConfirmation(null)}>Keep editing</button><button className="button button-danger" type="button" onClick={confirmNew}>Discard and start</button></div>
@@ -287,10 +300,6 @@ export function RecorderWorkspace() {
       <Modal open={confirmation === "replaceImport"} title="Replace the current workflow?" description="The imported workflow will replace every step currently in the timeline." onClose={() => { setConfirmation(null); setPendingImport(null); }}>
         <p className="modal-copy">Export the current workflow first if you want to keep it. Importing does not merge workflows.</p>
         <div className="modal-actions"><button className="button button-ghost" type="button" onClick={() => { setConfirmation(null); setPendingImport(null); }}>Cancel</button><button className="button button-danger" type="button" onClick={() => pendingImport && loadWorkflow(pendingImport)}>Replace workflow</button></div>
-      </Modal>
-      <Modal open={confirmation === "sensitiveReplay"} title="Replay sensitive values?" description="This workflow contains fields marked as passwords, tokens, payment data, or other sensitive content." onClose={() => { setConfirmation(null); setPendingReplayStartId(undefined); }}>
-        <p className="modal-copy">Values will be sent to this local server and typed into the destination website. They are not written to disk or included in replay diagnostics.</p>
-        <div className="modal-actions"><button className="button button-ghost" type="button" onClick={() => { setConfirmation(null); setPendingReplayStartId(undefined); }}>Cancel</button><button className="button button-danger" type="button" onClick={() => startReplayNow()}>Replay sensitive workflow</button></div>
       </Modal>
       <Modal open={Boolean(importError)} title="Workflow could not be imported" description={importError ?? "The selected file is invalid."} onClose={() => setImportError(null)}>
         <div className="modal-actions"><button className="button button-primary" type="button" onClick={() => setImportError(null)}>Choose another file</button></div>

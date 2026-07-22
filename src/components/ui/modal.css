@@ -3,5 +3,10 @@
 .modal-heading { display: flex; justify-content: space-between; gap: 16px; }.modal-heading h2 { margin: 0; font-size: 18px; }.modal-heading p { margin: 5px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .modal-copy { margin: 18px 0 4px; color: var(--muted); font-size: 13px; line-height: 1.6; }.modal-form { margin-top: 18px; display: grid; gap: 13px; }.modal-form .field input, .modal-form .field select { height: 42px; font-size: 13px; }
 .modal-actions { margin-top: 22px; display: flex; justify-content: flex-end; gap: 8px; }.field-error { margin: 0; color: var(--danger); font-size: 12px; }
+.run-workflow-form { margin-top: 18px; }
+.run-workflow-warning { margin-top: 12px; padding: 12px 14px; display: flex; align-items: flex-start; gap: 10px; color: var(--danger); border: 1px solid color-mix(in srgb, var(--danger) 28%, white); border-radius: var(--radius-md); background: var(--danger-soft); }
+.run-workflow-warning svg { margin-top: 1px; flex: 0 0 auto; }
+.run-workflow-warning strong { display: block; font-size: 13px; line-height: 1.4; }
+.run-workflow-warning p { margin: 4px 0 0; color: var(--ink); font-size: 12px; line-height: 1.5; }
 
 @keyframes modal-in { from { opacity: 0; transform: translateY(8px) scale(.985); } }

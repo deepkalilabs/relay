@@ -122,6 +122,8 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
         setErrorContext("replay");
         setNavigationError(null);
         setNavigationPending(false);
+        setPopup(null);
+        setDatePicker(null);
         break;
       case "replay.status":
         setReplayRunId(message.runId);
@@ -234,6 +236,8 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
     setReplayResults(Object.fromEntries(workflow.steps.slice(Math.max(0, startIndex)).map((step) => [step.id, { status: "pending" as const }])));
     setError(null);
     setErrorContext("replay");
+    setPopup(null);
+    setDatePicker(null);
     if (!send({ type: "replay.start", workflow, startStepId })) {
       setReplayStatus("stopped");
       setError("The recorder connection is unavailable. Wait a moment and try again.");

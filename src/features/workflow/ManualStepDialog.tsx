@@ -22,13 +22,13 @@ const actionTypes: WorkflowActionType[] = ["navigate", "click", "fill", "select"
 
 export function ManualStepDialog({ open, order, page, onClose, onInsert }: ManualStepDialogProps) {
   const [type, setType] = useState<WorkflowActionType>("click");
-  const [name, setName] = useState("Click element");
+  const [name, setName] = useState("Element");
   const [value, setValue] = useState("");
   const [locator, setLocator] = useState("body");
   const [error, setError] = useState("");
 
   const close = () => {
-    setType("click"); setName("Click element"); setValue(""); setLocator("body"); setError("");
+    setType("click"); setName("Element"); setValue(""); setLocator("body"); setError("");
     onClose();
   };
 

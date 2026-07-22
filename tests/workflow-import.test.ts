@@ -48,6 +48,15 @@ describe("workflow file import", () => {
     expect(parsed.steps[0].waitAfter).toEqual(workflow.steps[0].waitAfter);
   });
 
+  it("round-trips a pre-action position without changing schema version", () => {
+    const workflow = exportedWorkflow();
+    workflow.steps[0].position = { x: 12, y: 90, frameUrl: "https://widgets.example.com/frame" };
+
+    const parsed = parseWorkflowJson(serializeWorkflow(workflow));
+    expect(parsed.schemaVersion).toBe("1.0");
+    expect(parsed.steps[0].position).toEqual(workflow.steps[0].position);
+  });
+
   it("rejects workflows containing the removed duplicate origin", () => {
     const workflow = exportedWorkflow();
     const legacyWorkflow = {

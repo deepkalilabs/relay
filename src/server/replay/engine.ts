@@ -170,7 +170,25 @@ function resolveFrame(page: Page, frameUrl?: string, recordedPageUrl?: string): 
   return frame;
 }
 
+export async function applyPositionBefore(page: Page, step: WorkflowStep): Promise<void> {
+  const position = step.position;
+  if (!position) return;
+  const frame = resolveFrame(page, position.frameUrl, step.page.url);
+  await frame.evaluate(async ({ x, y }) => {
+    const maxAttempts = 3;
+    const tolerance = 1;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      window.scrollTo({ left: x, top: y, behavior: "instant" as ScrollBehavior });
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      });
+      if (Math.abs(window.scrollX - x) <= tolerance && Math.abs(window.scrollY - y) <= tolerance) break;
+    }
+  }, { x: position.x, y: position.y });
+}
+
 async function executeStep(page: Page, step: WorkflowStep): Promise<{ locatorKind?: string; attempts: ReplayDiagnostic["attemptedLocators"] }> {
+  await applyPositionBefore(page, step);
   if (step.type === "navigate") {
     await page.goto(step.payload.url, { waitUntil: "domcontentloaded", timeout: REPLAY_STEP_TIMEOUT_MS });
     return { attempts: [] };

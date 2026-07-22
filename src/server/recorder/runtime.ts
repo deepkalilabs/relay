@@ -6,7 +6,13 @@ import type { ServerMessage, SequencedServerMessage } from "@/lib/protocol";
 import type { BrowserProvider } from "@/server/provider/types";
 import { RECORDER_BINDING, RECORDER_SCRIPT } from "@/server/recorder/injected";
 import { ActionDeduplicator } from "@/server/recorder/deduplicate";
-import { orderLocatorCandidates, TargetDescriptorSchema, type TargetDescriptor } from "@/lib/workflow/schema";
+import {
+  orderLocatorCandidates,
+  TargetDescriptorSchema,
+  ViewportPositionSchema,
+  type TargetDescriptor,
+  type ViewportPosition,
+} from "@/lib/workflow/schema";
 import type { Workflow } from "@/lib/workflow/schema";
 import { preflightReplay, ReplayEngine } from "@/server/replay/engine";
 
@@ -25,6 +31,7 @@ const DatePickerBrowserEventSchema = z.discriminatedUnion("type", [
     value: z.string(),
     min: z.string(),
     max: z.string(),
+    position: ViewportPositionSchema,
     rect: z.object({ x: z.number(), y: z.number(), width: z.number(), height: z.number() }),
   }),
   z.object({ type: z.literal("date-picker.dismiss") }),
@@ -37,6 +44,7 @@ interface PendingDatePicker {
   selector: string;
   name: string;
   target: TargetDescriptor;
+  position: ViewportPosition;
   min: string;
   max: string;
 }
@@ -209,7 +217,8 @@ export class RecordingRuntime {
       this.forwardStartUrl(state);
     });
     page.on("domcontentloaded", () => {
-      if (state.id === this.activePageId) void this.emitPageState(state);
+      if (state.id !== this.activePageId) return;
+      void this.emitPageState(state);
     });
     page.on("close", () => {
       this.dismissDatePickersForPage(state);
@@ -258,6 +267,7 @@ export class RecordingRuntime {
       selector: event.selector,
       name: event.name,
       target: event.target,
+      position: event.position,
       min: event.min,
       max: event.max,
     };
@@ -294,6 +304,7 @@ export class RecordingRuntime {
       type: "set_date",
       name: pending.name,
       target: pending.target,
+      position: pending.position,
       payload: { value },
       sensitive: false,
       page: {
@@ -416,25 +427,33 @@ export class RecordingRuntime {
     const preflight = preflightReplay(workflow, startStepId);
     const runId = crypto.randomUUID();
     const existingSessionId = this.sessionId;
-    const createdForReplay = !existingSessionId;
     this.mode = "replay";
     this.recordingReady = false;
     this.replayStopRequested = false;
     this.replayMeta = { runId, totalSteps: preflight.totalSteps };
     this.emit({ type: "replay.status", runId, status: "preparing", totalSteps: preflight.totalSteps });
     try {
-      if (!existingSessionId) {
-        const created = await this.provider.createSession(options);
-        this.sessionId = created.id;
-        const connected = await this.provider.connect(created.id);
-        this.browser = connected.browser;
-        this.context = connected.context;
-        await this.installRecorder(this.context);
-        for (const [index, page] of this.context.pages().entries()) await this.registerPage(page, index, index === 0, true);
-        this.context.on("page", (page) => void this.registerPage(page, this.pages.size, false, true));
-        this.startUrlSource = "requested";
-        this.hasRecordedAction = workflow.steps.length > 0;
-      }
+      this.sessionId = null;
+      await this.browser?.close().catch(() => undefined);
+      this.browser = null;
+      this.context = null;
+      this.pages.clear();
+      this.activePageId = null;
+      this.pendingDatePicker = null;
+      this.startUrlSource = null;
+      this.hasRecordedAction = false;
+      if (existingSessionId) await this.provider.releaseSession(existingSessionId);
+
+      const created = await this.provider.createSession(options);
+      this.sessionId = created.id;
+      const connected = await this.provider.connect(created.id);
+      this.browser = connected.browser;
+      this.context = connected.context;
+      await this.installRecorder(this.context);
+      for (const [index, page] of this.context.pages().entries()) await this.registerPage(page, index, index === 0, true);
+      this.context.on("page", (page) => void this.registerPage(page, this.pages.size, false, true));
+      this.startUrlSource = "requested";
+      this.hasRecordedAction = workflow.steps.length > 0;
 
       if (!this.sessionId) throw new Error("The recorder browser session is not available.");
       const active = this.activePageId ? this.activePage() : [...this.pages.values()][0];
@@ -467,23 +486,18 @@ export class RecordingRuntime {
         this.returnToRecording(runId);
       });
     } catch (error) {
-      if (createdForReplay) {
-        const failedSessionId = this.sessionId;
-        this.sessionId = null;
-        await this.browser?.close().catch(() => undefined);
-        this.browser = null;
-        this.context = null;
-        this.pages.clear();
-        this.activePageId = null;
-        this.mode = null;
-        this.startUrlSource = null;
-        this.hasRecordedAction = false;
-        if (failedSessionId) await this.provider.releaseSession(failedSessionId);
-      } else {
-        this.mode = "recording";
-        this.recordingReady = true;
-        this.emit({ type: "session.status", status: "recording" });
-      }
+      const failedSessionId = this.sessionId;
+      this.sessionId = null;
+      await this.browser?.close().catch(() => undefined);
+      this.browser = null;
+      this.context = null;
+      this.pages.clear();
+      this.activePageId = null;
+      this.pendingDatePicker = null;
+      this.mode = null;
+      this.startUrlSource = null;
+      this.hasRecordedAction = false;
+      if (failedSessionId) await this.provider.releaseSession(failedSessionId);
       this.replayEngine = null;
       this.replayMeta = null;
       this.replayTask = null;

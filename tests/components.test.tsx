@@ -5,15 +5,16 @@ import { BrowserPanel } from "@/features/browser/BrowserPanel";
 import { RecorderControls } from "@/features/recorder/RecorderControls";
 import { ReplayControls } from "@/features/replay/ReplayControls";
 import { WorkspaceNavbar } from "@/features/recorder/WorkspaceNavbar";
+import { ManualStepDialog } from "@/features/workflow/ManualStepDialog";
 import { StepEditor } from "@/features/workflow/StepEditor";
 import { WorkflowTimeline } from "@/features/workflow/WorkflowTimeline";
 import { stepFromRecordedAction } from "@/lib/workflow/recorded-action";
 
 describe("WorkflowTimeline", () => {
-  it("omits duplication while retaining the supported step actions", () => {
+  it("shows a target-focused title while retaining action and replay metadata", () => {
     const step = stepFromRecordedAction({
       type: "click",
-      name: "Click Continue",
+      name: "Continue",
       sensitive: false,
       target: {
         candidates: [
@@ -34,12 +35,45 @@ describe("WorkflowTimeline", () => {
         onReorder={vi.fn()}
         onInsert={vi.fn()}
         onCollapse={vi.fn()}
+        replayResults={{ [step.id]: { status: "passed" } }}
       />,
     );
 
+    expect(screen.getByText("Continue", { exact: true })).toBeInTheDocument();
+    expect(screen.getByText("1 · click · passed", { exact: true })).toBeInTheDocument();
+    expect(screen.getByText("Replay passed", { exact: true })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /duplicate/i })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /disable click continue/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /delete click continue/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /disable continue/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /delete continue/i })).toBeInTheDocument();
+  });
+});
+
+describe("ManualStepDialog", () => {
+  it("uses and restores a target-focused default across action types", async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    const rendered = render(
+      <ManualStepDialog
+        open
+        order={0}
+        page={{ id: "page", url: "https://example.com" }}
+        onClose={onClose}
+        onInsert={vi.fn()}
+      />,
+    );
+
+    const name = screen.getByLabelText("Step name");
+    expect(name).toHaveValue("Element");
+    await user.selectOptions(screen.getByLabelText("Action type"), "fill");
+    expect(name).toHaveValue("Element");
+    await user.clear(name);
+    await user.type(name, "Email address");
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(onClose).toHaveBeenCalled();
+    expect(screen.getByLabelText("Step name")).toHaveValue("Element");
+    expect(screen.getByLabelText("Action type")).toHaveValue("click");
+    rendered.unmount();
   });
 });
 
@@ -173,6 +207,31 @@ describe("StepEditor", () => {
         },
       },
     });
+  });
+
+  it("edits and removes the position attached to an action", async () => {
+    const user = userEvent.setup();
+    let step = stepFromRecordedAction({
+      type: "click", name: "Continue", sensitive: false,
+      target: { candidates: [{ kind: "testId", value: "continue", exact: true }] },
+      position: { x: 10, y: 80, frameUrl: "https://widgets.example.com/frame" },
+      page: { id: "page", url: "https://example.com" }, recordedAt: new Date().toISOString(),
+    }, 0);
+    const onUpdate = vi.fn((updated: typeof step) => { step = updated; });
+    const rendered = render(<StepEditor step={step} onUpdate={onUpdate} />);
+    onUpdate.mockImplementation((updated) => {
+      step = updated;
+      rendered.rerender(<StepEditor step={step} onUpdate={onUpdate} />);
+    });
+    const positionEditor = within(rendered.container.querySelector(".position-before-editor") as HTMLElement);
+
+    await user.clear(positionEditor.getByLabelText(/vertical position/i));
+    await user.type(positionEditor.getByLabelText(/vertical position/i), "720");
+    expect(step.position).toEqual({ x: 10, y: 720, frameUrl: "https://widgets.example.com/frame" });
+
+    await user.click(positionEditor.getByRole("button", { name: /remove action position/i }));
+    expect(step.position).toBeUndefined();
+    expect(rendered.container.querySelector(".position-before-editor")).not.toBeInTheDocument();
   });
 });
 

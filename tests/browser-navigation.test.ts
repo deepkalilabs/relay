@@ -96,6 +96,142 @@ describe("browser navigation", () => {
     expect(runtime.buffer[1].message).toMatchObject({ type: "recorded.action", action: { type: "click" } });
   });
 
+  it("preserves the synchronous position carried by each accepted action", async () => {
+    const currentUrl = "https://example.com/form";
+    let binding: ((source: { page: Page; frame: unknown }, raw: unknown) => Promise<void>) | undefined;
+    const mainFrame = { url: vi.fn(() => currentUrl) };
+    const childFrame = { url: vi.fn(() => "https://widgets.example.com/frame") };
+    const page = {
+      evaluate: vi.fn(async () => undefined),
+      frames: vi.fn(() => [mainFrame, childFrame]),
+      mainFrame: vi.fn(() => mainFrame),
+      on: vi.fn(),
+      title: vi.fn(async () => "Example"),
+      url: vi.fn(() => currentUrl),
+    } as unknown as Page;
+    const context = {
+      addInitScript: vi.fn(async () => undefined),
+      exposeBinding: vi.fn(async (_name: string, callback: typeof binding) => { binding = callback; }),
+      on: vi.fn(),
+      pages: vi.fn(() => [page]),
+    } as unknown as BrowserContext;
+    const provider: BrowserProvider = {
+      connect: vi.fn(async () => ({ browser: { close: vi.fn(async () => undefined) } as unknown as Browser, context })),
+      createSession: vi.fn(async () => ({ id: "session", connectUrl: "ws://example.com" })),
+      getLiveView: vi.fn(async () => ({ id: "page", title: "Example", url: currentUrl, liveViewUrl: "https://example.com/live" })),
+      releaseSession: vi.fn(async () => undefined),
+    };
+    const runtime = new RecordingRuntime(crypto.randomUUID(), provider, vi.fn());
+    await runtime.start({ timeoutSeconds: 120, region: "us-west-2" });
+    runtime.buffer.splice(0);
+
+    await binding?.({ page, frame: mainFrame }, { type: "not-an-action" });
+    expect(runtime.buffer).toHaveLength(0);
+
+    const click = {
+      type: "click",
+      name: "Click Continue",
+      target: { candidates: [{ kind: "role", value: "button", name: "Continue", exact: true }] },
+      position: { x: 0, y: 0 },
+      sensitive: false,
+    };
+    await binding?.({ page, frame: mainFrame }, click);
+
+    expect(runtime.buffer).toHaveLength(1);
+    expect(runtime.buffer[0].message).toMatchObject({
+      type: "recorded.action",
+      action: {
+        type: "click",
+        position: { x: 0, y: 0 },
+      },
+    });
+
+    await binding?.({ page, frame: mainFrame }, { ...click, position: { x: 0, y: 720 } });
+    expect(runtime.buffer).toHaveLength(1);
+
+    await binding?.({
+      page,
+      frame: childFrame,
+    }, {
+      ...click,
+      name: "Click Submit",
+      target: { candidates: [{ kind: "testId", value: "submit", exact: true }] },
+      position: { x: 15, y: 180, frameUrl: "https://widgets.example.com/frame" },
+    });
+    expect(runtime.buffer).toHaveLength(2);
+    expect(runtime.buffer[1].message).toMatchObject({
+      type: "recorded.action",
+      action: {
+        name: "Click Submit",
+        position: { x: 15, y: 180, frameUrl: "https://widgets.example.com/frame" },
+      },
+    });
+  });
+
+  it("preserves the date-picker position until the semantic date action is emitted", async () => {
+    const currentUrl = "https://example.com/form";
+    let binding: ((source: { page: Page; frame: unknown }, raw: unknown) => Promise<void>) | undefined;
+    const locator = {
+      boundingBox: vi.fn(async () => ({ x: 20, y: 30, width: 160, height: 32 })),
+      dispatchEvent: vi.fn(async () => undefined),
+      fill: vi.fn(async () => undefined),
+    };
+    const mainFrame = {
+      locator: vi.fn(() => locator),
+      url: vi.fn(() => currentUrl),
+    };
+    const page = {
+      evaluate: vi.fn(async () => ({ width: 1280, height: 720 })),
+      isClosed: vi.fn(() => false),
+      mainFrame: vi.fn(() => mainFrame),
+      on: vi.fn(),
+      title: vi.fn(async () => "Example"),
+      url: vi.fn(() => currentUrl),
+    } as unknown as Page;
+    const context = {
+      addInitScript: vi.fn(async () => undefined),
+      exposeBinding: vi.fn(async (_name: string, callback: typeof binding) => { binding = callback; }),
+      on: vi.fn(),
+      pages: vi.fn(() => [page]),
+    } as unknown as BrowserContext;
+    const provider: BrowserProvider = {
+      connect: vi.fn(async () => ({ browser: { close: vi.fn(async () => undefined) } as unknown as Browser, context })),
+      createSession: vi.fn(async () => ({ id: "session", connectUrl: "ws://example.com" })),
+      getLiveView: vi.fn(async () => ({ id: "page", title: "Example", url: currentUrl, liveViewUrl: "https://example.com/live" })),
+      releaseSession: vi.fn(async () => undefined),
+    };
+    const runtime = new RecordingRuntime(crypto.randomUUID(), provider, vi.fn());
+    await runtime.start({ timeoutSeconds: 120, region: "us-west-2" });
+    runtime.buffer.splice(0);
+
+    await binding?.({ page, frame: mainFrame }, {
+      type: "date-picker.request",
+      selector: "#appointment-date",
+      name: "Set date Appointment date",
+      target: { candidates: [{ kind: "label", value: "Appointment date", exact: true }], inputType: "date" },
+      value: "2026-07-21",
+      min: "2026-07-01",
+      max: "2026-08-31",
+      position: { x: 0, y: 480 },
+      rect: { x: 20, y: 30, width: 160, height: 32 },
+    });
+    const open = runtime.buffer.find((item) => item.message.type === "date.picker.open")?.message;
+    expect(open?.type).toBe("date.picker.open");
+    if (open?.type !== "date.picker.open") throw new Error("Date picker did not open");
+
+    await runtime.selectDate(open.requestId, "2026-07-22");
+
+    const recorded = runtime.buffer.find((item) => item.message.type === "recorded.action")?.message;
+    expect(recorded).toMatchObject({
+      type: "recorded.action",
+      action: {
+        type: "set_date",
+        payload: { value: "2026-07-22" },
+        position: { x: 0, y: 480 },
+      },
+    });
+  });
+
   it("stores only the first main-frame URL while ignoring later navigations", async () => {
     let currentUrl = "about:blank";
     const mainFrame = {};
@@ -191,9 +327,11 @@ describe("browser navigation", () => {
     });
     expect(runtime.buffer.some((item) => item.message.type === "recorded.action" && item.message.action.name === "Click Continue")).toBe(true);
     expect(runtime.buffer.at(-1)?.message).toEqual({ type: "recorded.action", action: expect.objectContaining({ name: "Click Continue" }) });
+    expect(provider.createSession).toHaveBeenCalledOnce();
+    expect(provider.releaseSession).not.toHaveBeenCalled();
   });
 
-  it("replays the growing workflow inside the active recorder session", async () => {
+  it("replays the growing workflow in a fresh session every time", async () => {
     let currentUrl = "https://example.com/start";
     let binding: ((source: { page: Page; frame: unknown }, raw: unknown) => Promise<void>) | undefined;
     const locator = {
@@ -204,6 +342,7 @@ describe("browser navigation", () => {
           type: "click",
           name: "Replay-generated click",
           target: { candidates: [{ kind: "testId", value: "continue", exact: true }] },
+          position: { x: 0, y: 500 },
           sensitive: false,
         });
       }),
@@ -212,12 +351,13 @@ describe("browser navigation", () => {
       getByTestId: vi.fn(() => locator),
       url: vi.fn(() => currentUrl),
     };
+    const handlers = new Map<string, (...args: unknown[]) => void>();
     const page = {
       evaluate: vi.fn(async () => undefined),
       frames: vi.fn(() => [mainFrame]),
       goto: vi.fn(async (url: string) => { currentUrl = url; return null; }),
       mainFrame: vi.fn(() => mainFrame),
-      on: vi.fn(),
+      on: vi.fn((name: string, handler: (...args: unknown[]) => void) => { handlers.set(name, handler); }),
       title: vi.fn(async () => "Example"),
       url: vi.fn(() => currentUrl),
     } as unknown as Page;
@@ -227,11 +367,15 @@ describe("browser navigation", () => {
       on: vi.fn(),
       pages: vi.fn(() => [page]),
     } as unknown as BrowserContext;
+    const closeBrowser = vi.fn(async () => undefined);
+    let nextSessionId = 0;
+    const createSession = vi.fn(async () => ({ id: `session-${++nextSessionId}`, connectUrl: "ws://example.com" }));
+    const releaseSession = vi.fn(async () => undefined);
     const provider: BrowserProvider = {
-      connect: vi.fn(async () => ({ browser: { close: vi.fn(async () => undefined) } as unknown as Browser, context })),
-      createSession: vi.fn(async () => ({ id: "session", connectUrl: "ws://example.com" })),
+      connect: vi.fn(async () => ({ browser: { close: closeBrowser } as unknown as Browser, context })),
+      createSession,
       getLiveView: vi.fn(async () => ({ id: "page", title: "Example", url: currentUrl, liveViewUrl: "https://example.com/live" })),
-      releaseSession: vi.fn(async () => undefined),
+      releaseSession,
     };
     const workflow = createWorkflow("session");
     workflow.source.startUrl = "https://example.com/start";
@@ -249,11 +393,18 @@ describe("browser navigation", () => {
     await runtime.start({ timeoutSeconds: 120, region: "us-west-2" });
     runtime.buffer.splice(0);
 
+    const invalidWorkflow = createWorkflow("session-1");
+    await expect(runtime.startReplay(invalidWorkflow, undefined, { timeoutSeconds: 120, region: "us-west-2" })).rejects.toThrow(/no enabled steps/i);
+    expect(provider.createSession).toHaveBeenCalledOnce();
+    expect(provider.releaseSession).not.toHaveBeenCalled();
+
     await runtime.startReplay(workflow, undefined, { timeoutSeconds: 120, region: "us-west-2" });
     await vi.waitFor(() => expect(runtime.buffer.some((item) => item.message.type === "replay.status" && item.message.status === "completed")).toBe(true));
 
-    expect(provider.createSession).toHaveBeenCalledOnce();
-    expect(provider.releaseSession).not.toHaveBeenCalled();
+    expect(provider.createSession).toHaveBeenCalledTimes(2);
+    expect(provider.releaseSession).toHaveBeenCalledWith("session-1");
+    expect(releaseSession.mock.invocationCallOrder[0]).toBeLessThan(createSession.mock.invocationCallOrder[1]);
+    expect(closeBrowser).toHaveBeenCalledOnce();
     expect(runtime.buffer.some((item) => item.message.type === "recorded.action" && item.message.action.name === "Replay-generated click")).toBe(false);
     expect(runtime.buffer.at(-1)?.message).toEqual({ type: "session.status", status: "recording" });
 
@@ -261,18 +412,77 @@ describe("browser navigation", () => {
       type: "click",
       name: "Click next step",
       target: { candidates: [{ kind: "testId", value: "next", exact: true }] },
+      position: { x: 0, y: 0 },
       sensitive: false,
     });
-    expect(runtime.buffer.at(-1)?.message).toEqual({ type: "recorded.action", action: expect.objectContaining({ name: "Click next step" }) });
+    const nextAction = runtime.buffer.at(-1)?.message;
+    expect(nextAction).toEqual({ type: "recorded.action", action: expect.objectContaining({ name: "Click next step" }) });
+    if (nextAction?.type === "recorded.action") {
+      expect(nextAction.action.position).toEqual({ x: 0, y: 0 });
+    }
 
     locator.click.mockRejectedValueOnce(new Error("Button unavailable"));
     await runtime.startReplay(workflow, undefined, { timeoutSeconds: 120, region: "us-west-2" });
     await vi.waitFor(() => expect(runtime.buffer.some((item) => item.message.type === "replay.step" && item.message.status === "failed")).toBe(true));
     await runtime.stopReplay();
 
-    expect(provider.createSession).toHaveBeenCalledOnce();
-    expect(provider.releaseSession).not.toHaveBeenCalled();
+    expect(provider.createSession).toHaveBeenCalledTimes(3);
+    expect(provider.releaseSession).toHaveBeenCalledTimes(2);
+    expect(closeBrowser).toHaveBeenCalledTimes(2);
     expect(runtime.buffer.at(-1)?.message).toEqual({ type: "session.status", status: "recording" });
+  });
+
+  it("cleans up when the fresh Browserbase session cannot connect", async () => {
+    let currentUrl = "https://example.com/start";
+    const mainFrame = { url: vi.fn(() => currentUrl) };
+    const page = {
+      evaluate: vi.fn(async () => undefined),
+      frames: vi.fn(() => [mainFrame]),
+      goto: vi.fn(async (url: string) => { currentUrl = url; return null; }),
+      mainFrame: vi.fn(() => mainFrame),
+      on: vi.fn(),
+      title: vi.fn(async () => "Example"),
+      url: vi.fn(() => currentUrl),
+    } as unknown as Page;
+    const context = {
+      addInitScript: vi.fn(async () => undefined),
+      exposeBinding: vi.fn(async () => undefined),
+      on: vi.fn(),
+      pages: vi.fn(() => [page]),
+    } as unknown as BrowserContext;
+    const closeBrowser = vi.fn(async () => undefined);
+    let nextSessionId = 0;
+    const createSession = vi.fn(async () => ({ id: `session-${++nextSessionId}`, connectUrl: "ws://example.com" }));
+    const provider: BrowserProvider = {
+      connect: vi.fn()
+        .mockResolvedValueOnce({ browser: { close: closeBrowser } as unknown as Browser, context })
+        .mockRejectedValueOnce(new Error("Browserbase connection failed")),
+      createSession,
+      getLiveView: vi.fn(async () => ({ id: "page", title: "Example", url: currentUrl, liveViewUrl: "https://example.com/live" })),
+      releaseSession: vi.fn(async () => undefined),
+    };
+    const workflow = createWorkflow("session");
+    workflow.steps.push({
+      id: "navigate",
+      order: 0,
+      name: "Open example",
+      enabled: true,
+      page: { id: "recorded-page", url: "https://example.com" },
+      metadata: { recordedAt: new Date().toISOString(), origin: "recorded", sensitive: false },
+      type: "navigate",
+      payload: { url: "https://example.com" },
+    });
+    const runtime = new RecordingRuntime(crypto.randomUUID(), provider, vi.fn());
+    await runtime.start({ timeoutSeconds: 120, region: "us-west-2" });
+    runtime.buffer.splice(0);
+
+    await expect(runtime.startReplay(workflow, undefined, { timeoutSeconds: 120, region: "us-west-2" })).rejects.toThrow(/browserbase connection failed/i);
+
+    expect(closeBrowser).toHaveBeenCalledOnce();
+    expect(provider.releaseSession).toHaveBeenNthCalledWith(1, "session-1");
+    expect(provider.releaseSession).toHaveBeenNthCalledWith(2, "session-2");
+    expect(page.goto).not.toHaveBeenCalled();
+    expect(runtime.buffer.some((item) => item.message.type === "replay.started")).toBe(false);
   });
 
   it("uses Browserbase fullscreen URLs without the native navbar", () => {
@@ -298,6 +508,8 @@ describe("browser navigation", () => {
     expect(ClientMessageSchema.safeParse({ type: "browser.forward" }).success).toBe(true);
     expect(ClientMessageSchema.safeParse({ type: "browser.reload" }).success).toBe(true);
     expect(ClientMessageSchema.safeParse({ type: "browser.navigate", url: "" }).success).toBe(false);
+    const workflow = createWorkflow("session");
+    expect(ClientMessageSchema.safeParse({ type: "replay.start", workflow }).success).toBe(true);
   });
 
   it("runs commands against the active page and emits recoverable page state", async () => {

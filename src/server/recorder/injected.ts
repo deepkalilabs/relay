@@ -17,6 +17,22 @@ export const RECORDER_SCRIPT = String.raw`(() => {
     } catch {}
   };
 
+  const viewportPosition = () => ({
+    x: window.scrollX,
+    y: window.scrollY,
+    frameUrl: window === window.top ? undefined : location.href,
+  });
+  const emitAction = (payload) => emit({ ...payload, position: viewportPosition() });
+
+  const eventElement = (event) => {
+    const origin = event.composedPath?.().find((item) => item instanceof Element);
+    return origin instanceof Element
+      ? origin
+      : event.target instanceof Element
+        ? event.target
+        : null;
+  };
+
   const implicitRole = (element) => {
     const tag = element.tagName.toLowerCase();
     const type = String(element.getAttribute("type") || "").toLowerCase();
@@ -118,9 +134,9 @@ export const RECORDER_SCRIPT = String.raw`(() => {
     };
   };
 
-  const actionName = (verb, element) => {
+  const targetName = (element) => {
     const name = accessibleName(element);
-    return name ? verb + ' “' + name + '”' : verb + " " + element.tagName.toLowerCase();
+    return name || element.tagName.toLowerCase();
   };
 
   const sensitive = (element) => {
@@ -163,7 +179,7 @@ export const RECORDER_SCRIPT = String.raw`(() => {
   };
 
   const resolveClickTarget = (event) => {
-    const origin = event.target instanceof Element ? event.target : null;
+    const origin = eventElement(event);
     if (!origin || isFocusOnlyControl(origin)) return null;
 
     const semantic = origin.closest(semanticClickSelector);
@@ -190,11 +206,11 @@ export const RECORDER_SCRIPT = String.raw`(() => {
     let value = "";
     if ("value" in element) value = element.value;
     else value = element.textContent || "";
-    emit({ type: "fill", name: actionName("Fill", element), target: describe(element), payload: { value }, sensitive: sensitive(element) });
+    emitAction({ type: "fill", name: targetName(element), target: describe(element), payload: { value }, sensitive: sensitive(element) });
   };
 
-  document.addEventListener("input", (event) => {
-    const element = event.target;
+  window.addEventListener("input", (event) => {
+    const element = eventElement(event);
     if (element instanceof HTMLInputElement && element.type === "date") {
       datePickerOpen = false;
       return;
@@ -203,23 +219,24 @@ export const RECORDER_SCRIPT = String.raw`(() => {
     dirtyFields.add(element);
   }, true);
 
-  document.addEventListener("focusout", (event) => {
-    const element = event.target;
+  window.addEventListener("focusout", (event) => {
+    const element = eventElement(event);
     if (element instanceof HTMLElement) flushInput(element);
   }, true);
 
-  document.addEventListener("click", (event) => {
-    const dateInput = event.target instanceof Element
-      ? event.target.closest('input[type="date"]')
+  window.addEventListener("click", (event) => {
+    const origin = eventElement(event);
+    const dateInput = origin
+      ? origin.closest('input[type="date"]')
       : null;
     if (dateInput instanceof HTMLInputElement) {
       event.preventDefault();
       datePickerOpen = true;
       const rect = dateInput.getBoundingClientRect();
-      emit({
+      emitAction({
         type: "date-picker.request",
         selector: cssPath(dateInput),
-        name: actionName("Set date", dateInput),
+        name: targetName(dateInput),
         target: describe(dateInput),
         value: dateInput.value,
         min: dateInput.min,
@@ -236,10 +253,10 @@ export const RECORDER_SCRIPT = String.raw`(() => {
     const element = resolveClickTarget(event);
     if (!(element instanceof HTMLElement)) return;
     [...dirtyFields].forEach((field) => flushInput(field));
-    emit({ type: "click", name: actionName("Click", element), target: describe(element), sensitive: false });
+    emitAction({ type: "click", name: targetName(element), target: describe(element), sensitive: false });
   }, true);
 
-  document.addEventListener("keydown", (event) => {
+  window.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && datePickerOpen) {
       datePickerOpen = false;
       emit({ type: "date-picker.dismiss" });

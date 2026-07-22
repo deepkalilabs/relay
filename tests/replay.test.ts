@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { Frame, Locator, Page, Request } from "playwright-core";
 import type { ServerMessage } from "@/lib/protocol";
 import { createWorkflow, type Workflow, type WorkflowStep } from "@/lib/workflow/schema";
-import { preflightReplay, ReplayEngine, resolveTarget } from "@/server/replay/engine";
+import { applyPositionBefore, preflightReplay, ReplayEngine, resolveTarget } from "@/server/replay/engine";
 
 const recordedAt = new Date().toISOString();
 const target = { candidates: [{ kind: "testId" as const, value: "target", exact: true }] };
@@ -65,6 +65,29 @@ describe("replay preflight", () => {
 });
 
 describe("replay engine", () => {
+  it("applies the recorded absolute position to the action frame", async () => {
+    const mainFrame = { url: vi.fn(() => "https://example.com") } as unknown as Frame;
+    const evaluate = vi.fn(async () => undefined);
+    const childFrame = {
+      evaluate,
+      url: vi.fn(() => "https://widgets.example.com/frame"),
+    } as unknown as Frame;
+    const page = {
+      frames: vi.fn(() => [mainFrame, childFrame]),
+      mainFrame: vi.fn(() => mainFrame),
+    } as unknown as Page;
+    const step: WorkflowStep = {
+      ...baseStep("click", 0),
+      type: "click",
+      position: { x: 40, y: 120, frameUrl: "https://widgets.example.com/frame" },
+    };
+
+    await applyPositionBefore(page, step);
+
+    expect(evaluate).toHaveBeenCalledOnce();
+    expect(evaluate).toHaveBeenCalledWith(expect.any(Function), { x: 40, y: 120 });
+  });
+
   it("uses the current main frame for legacy main-frame URLs", async () => {
     const locator = { count: vi.fn(async () => 1), isVisible: vi.fn(async () => true) } as unknown as Locator;
     const mainFrame = {
@@ -148,6 +171,70 @@ describe("replay engine", () => {
     expect(locator.uncheck).toHaveBeenCalledOnce();
     expect(locator.press).toHaveBeenCalledWith("Control+Enter", expect.anything());
     expect(locator.evaluate).toHaveBeenCalledOnce();
+    expect(messages.at(-1)).toMatchObject({ type: "replay.status", status: "completed" });
+  });
+
+  it("restores the action frame position before resolving its locator", async () => {
+    const click = vi.fn(async () => undefined);
+    const locator = { count: vi.fn(async () => 1), isVisible: vi.fn(async () => true), click } as unknown as Locator;
+    const evaluate = vi.fn(async () => undefined);
+    const mainFrame = {
+      evaluate,
+      getByTestId: vi.fn(() => locator),
+      url: vi.fn(() => "https://example.com"),
+    } as unknown as Frame;
+    const page = {
+      frames: vi.fn(() => [mainFrame]),
+      goto: vi.fn(async () => null),
+      mainFrame: vi.fn(() => mainFrame),
+    } as unknown as Page;
+    const step: WorkflowStep = {
+      ...baseStep("click", 0),
+      type: "click",
+      position: { x: 100, y: 250 },
+    };
+    const engine = new ReplayEngine(crypto.randomUUID(), page, preflightReplay(workflowWith([step])), vi.fn());
+
+    await engine.run();
+
+    expect(evaluate).toHaveBeenCalledWith(expect.any(Function), { x: 100, y: 250 });
+    expect(click).toHaveBeenCalledOnce();
+  });
+
+  it("reapplies attached positions idempotently when retrying a failed action", async () => {
+    const applyPosition = vi.fn<(callback: unknown, position?: { x: number; y: number }) => Promise<void>>()
+      .mockResolvedValue(undefined);
+    const click = vi.fn().mockRejectedValueOnce(new Error("Not ready")).mockResolvedValue(undefined);
+    const locator = { count: vi.fn(async () => 1), isVisible: vi.fn(async () => true), click } as unknown as Locator;
+    const frame = {
+      evaluate: applyPosition,
+      getByTestId: vi.fn(() => locator),
+      url: vi.fn(() => "https://example.com"),
+    } as unknown as Frame;
+    const page = {
+      frames: vi.fn(() => [frame]),
+      goto: vi.fn(async () => null),
+      mainFrame: vi.fn(() => frame),
+    } as unknown as Page;
+    const step: WorkflowStep = {
+      ...baseStep("click", 0),
+      type: "click",
+      position: { x: 0, y: 500 },
+    };
+    const messages: ServerMessage[] = [];
+    const engine = new ReplayEngine(crypto.randomUUID(), page, preflightReplay(workflowWith([step])), (message) => messages.push(message));
+    const running = engine.run();
+    await vi.waitFor(() => expect(messages.some((message) => message.type === "replay.step" && message.status === "failed")).toBe(true));
+
+    engine.retry();
+    await running;
+
+    expect(applyPosition).toHaveBeenCalledTimes(2);
+    expect(applyPosition.mock.calls.map((call) => call[1])).toEqual([
+      { x: 0, y: 500 },
+      { x: 0, y: 500 },
+    ]);
+    expect(click).toHaveBeenCalledTimes(2);
     expect(messages.at(-1)).toMatchObject({ type: "replay.status", status: "completed" });
   });
 

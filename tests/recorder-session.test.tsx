@@ -2,6 +2,7 @@ import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ServerMessage } from "@/lib/protocol";
 import { useRecorderSession } from "@/features/recorder/useRecorderSession";
+import { createWorkflow } from "@/lib/workflow/schema";
 
 const socket = vi.hoisted(() => ({
   onMessage: null as ((message: ServerMessage) => void) | null,
@@ -42,6 +43,7 @@ describe("useRecorderSession", () => {
         name: "Click Continue",
         sensitive: false,
         target: { candidates: [{ kind: "role", value: "button", name: "Continue", exact: true }] },
+        position: { x: 0, y: 480 },
         page: { id: "page-1", url: "https://example.com" },
         recordedAt: new Date().toISOString(),
       },
@@ -53,6 +55,7 @@ describe("useRecorderSession", () => {
       type: "click",
       name: "Click Continue",
       order: 0,
+      position: { x: 0, y: 480 },
     }));
   });
 
@@ -108,5 +111,13 @@ describe("useRecorderSession", () => {
 
     act(() => socket.onMessage?.({ type: "replay.status", runId, status: "stopped", totalSteps: 2 }));
     expect(result.current.liveViewUrl).toBe("https://example.com/live");
+  });
+
+  it("starts replay without browser-state options", () => {
+    const { result } = renderHook(() => useRecorderSession({ onSessionStarted: vi.fn(), onReplaySessionStarted: vi.fn(), onStartUrl: vi.fn(), onStepRecorded: vi.fn() }));
+    const workflow = createWorkflow("session-1");
+
+    act(() => result.current.startReplay(workflow));
+    expect(socket.send).toHaveBeenLastCalledWith({ type: "replay.start", workflow, startStepId: undefined });
   });
 });

@@ -53,6 +53,12 @@ const StepMetadataSchema = z.object({
   sensitive: z.boolean(),
 });
 
+export const ViewportPositionSchema = z.object({
+  x: z.number().finite(),
+  y: z.number().finite(),
+  frameUrl: z.string().optional(),
+});
+
 const StepBase = z.object({
   id: z.string().min(1),
   order: z.number().int().nonnegative(),
@@ -60,6 +66,7 @@ const StepBase = z.object({
   enabled: z.boolean(),
   page: PageDescriptorSchema,
   target: TargetDescriptorSchema.optional(),
+  position: ViewportPositionSchema.optional(),
   waitAfter: ReplayWaitSchema.optional(),
   metadata: StepMetadataSchema,
 });
@@ -132,6 +139,7 @@ export type WorkflowStep = z.infer<typeof WorkflowStepSchema>;
 export type WorkflowActionType = WorkflowStep["type"];
 export type TargetDescriptor = z.infer<typeof TargetDescriptorSchema>;
 export type ReplayWait = z.infer<typeof ReplayWaitSchema>;
+export type ViewportPosition = z.infer<typeof ViewportPositionSchema>;
 
 const locatorPriority = new Map(locatorKinds.map((kind, index) => [kind, index]));
 

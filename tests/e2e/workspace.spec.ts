@@ -58,7 +58,7 @@ test("shows a centered, dismissible undo toast after deleting a step", async ({ 
   await page.goto("/");
   await page.getByRole("button", { name: "Or add a step manually" }).click();
   await page.getByRole("button", { name: "Insert step", exact: true }).click();
-  await page.getByRole("button", { name: "Delete Click element" }).click();
+  await page.getByRole("button", { name: "Delete Element" }).click();
 
   const toast = page.locator(".undo-toast");
   await expect(toast).toBeVisible();

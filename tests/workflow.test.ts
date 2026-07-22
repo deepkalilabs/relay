@@ -65,6 +65,20 @@ describe("workflow contract", () => {
     expect(step).toMatchObject({ type: "set_date", payload: { value: "2026-07-21" } });
     expect(WorkflowSchema.shape.steps.element.parse(step)).toEqual(step);
   });
+
+  it("keeps the absolute pre-action position, including the top of the page", () => {
+    const step = stepFromRecordedAction({
+      type: "click",
+      name: "Click Continue",
+      target: { candidates: [{ kind: "role", value: "button", name: "Continue", exact: true }] },
+      position: { x: 0, y: 0 },
+      sensitive: false,
+      page: { id: "page-1", url: "https://example.com" },
+      recordedAt: new Date().toISOString(),
+    }, 0);
+    expect(step.position).toEqual({ x: 0, y: 0 });
+    expect(WorkflowSchema.shape.steps.element.parse(step)).toEqual(step);
+  });
 });
 
 describe("workflow reducer", () => {
