@@ -48,3 +48,21 @@ test("completed fills preserve an intentionally cleared value", async ({ page })
   expect(actions.map((action) => action.type)).toEqual(["click", "fill", "click"]);
   expect((actions[1]?.payload as { value?: string })?.value).toBe("");
 });
+
+test("native date clicks request the custom picker without recording a fill", async ({ page }) => {
+  const actions: Array<Record<string, unknown>> = [];
+  await page.exposeFunction("__browserMemoryEmit", (action: Record<string, unknown>) => { actions.push(action); });
+  await page.addInitScript({ content: RECORDER_SCRIPT });
+  await page.goto("/fixture");
+
+  await page.getByLabel("Appointment date").click();
+
+  expect(actions).toHaveLength(1);
+  expect(actions[0]).toMatchObject({
+    type: "date-picker.request",
+    value: "2026-07-21",
+    min: "2026-07-01",
+    max: "2026-08-31",
+  });
+  expect((actions[0].target as { inputType?: string }).inputType).toBe("date");
+});

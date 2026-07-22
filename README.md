@@ -2,7 +2,7 @@
 
 Browser Memory Recorder turns a live browser session into an editable automation blueprint. Use an embedded Browserbase browser normally, and the app records completed field edits and semantic button clicks as structured workflow steps.
 
-Each step can be reviewed, renamed, reordered, disabled, duplicated, or deleted before the workflow is exported as validated, versioned JSON. The project tests whether browser automation can begin with human behavior instead of handwritten scripts.
+Each step can be reviewed, renamed, reordered, disabled, duplicated, or deleted before the workflow is exported as validated, versioned JSON. Exported files can be imported again and replayed in a fresh Browserbase session with live progress and failure recovery.
 
 ## What it does
 
@@ -12,8 +12,11 @@ Each step can be reviewed, renamed, reordered, disabled, duplicated, or deleted 
 - Displays recorded actions immediately in an editable workflow timeline.
 - Supports reconnecting to an active recording after a short network interruption.
 - Exports the completed workflow as portable JSON.
+- Imports schema `1.0` workflow JSON without server-side file persistence.
+- Replays full workflows or starts from a selected deterministic step.
+- Pauses on failures with Retry, Skip, Take Control, and Stop recovery actions.
 
-The current MVP focuses on accurate capture and review. It does not replay workflows or store them permanently.
+The current MVP focuses on accurate capture, review, and local interactive replay. It does not store workflows permanently.
 
 ## How it works
 
@@ -136,13 +139,13 @@ For local development, `npm run dev` also loads an existing, gitignored `secret.
 - Sessions are released on Stop, disconnect timeout, replacement, or server shutdown.
 - The default Browserbase session timeout is 30 minutes and may incur usage charges.
 
-This app is intended for local development or long-running Node hosting. The persistent WebSocket and Playwright connection make it unsuitable for serverless deployment.
+This app is intended for local development or long-running Node hosting. The persistent WebSocket and Playwright connections used by recording and replay make it unsuitable for serverless deployment.
 
 ## MVP boundaries
 
 The MVP supports a single active tab, with an explicit prompt when a popup opens. It is a desktop workspace intended for viewports at least 1024 pixels wide.
 
-Replay, persistence, authentication, collaboration, assertions, variables, branching, screenshots, secret management, and production deployment are intentionally out of scope.
+Persistence, authentication, collaboration, assertions, variables, branching, screenshots, secret management, and production deployment are intentionally out of scope. Replay remains linear and single-tab.
 
 ## Verification
 

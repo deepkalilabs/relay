@@ -9,6 +9,7 @@ export const RecordedActionSchema = z.object({
     "navigate",
     "click",
     "fill",
+    "set_date",
     "select",
     "check",
     "uncheck",
@@ -56,6 +57,8 @@ export function stepFromRecordedAction(action: RecordedAction, order: number): W
       return { ...common, type: "navigate", payload: { url: String(action.payload?.url ?? action.page.url) } };
     case "fill":
       return { ...common, type: "fill", target: action.target!, payload: { value: String(action.payload?.value ?? "") } };
+    case "set_date":
+      return { ...common, type: "set_date", target: action.target!, payload: { value: String(action.payload?.value ?? "") } };
     case "select":
       return {
         ...common,

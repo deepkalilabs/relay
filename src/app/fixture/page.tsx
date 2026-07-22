@@ -4,6 +4,7 @@ import { useState } from "react";
 
 export default function RecorderFixture() {
   const [submitted, setSubmitted] = useState(false);
+  const [appointmentDate, setAppointmentDate] = useState("2026-07-21");
   const navigateSpa = () => {
     history.pushState({ fixture: true }, "", "/fixture?view=details");
     dispatchEvent(new PopStateEvent("popstate"));
@@ -14,6 +15,8 @@ export default function RecorderFixture() {
       <form onSubmit={(event) => { event.preventDefault(); setSubmitted(true); }}>
         <p><label>Email <input name="email" type="email" data-testid="email-input" /></label></p>
         <p><label>Password <input name="password" type="password" autoComplete="current-password" /></label></p>
+        <p><label>Appointment date <input name="appointmentDate" type="date" value={appointmentDate} min="2026-07-01" max="2026-08-31" onChange={(event) => setAppointmentDate(event.target.value)} /></label></p>
+        <p data-testid="appointment-value">Selected: {appointmentDate}</p>
         <p><label>Plan <select name="plan"><option value="free">Free</option><option value="pro">Professional</option></select></label></p>
         <p><label><input name="terms" type="checkbox" /> Accept terms</label></p>
         <button type="submit">Continue</button>

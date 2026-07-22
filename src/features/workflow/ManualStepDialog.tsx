@@ -56,7 +56,7 @@ export function ManualStepDialog({ open, order, page, onClose, onInsert }: Manua
   };
 
   return (
-    <Modal open={open} title="Insert a workflow step" description="Add an action before replay is available." onClose={close}>
+    <Modal open={open} title="Insert a workflow step" description="Add an action to the editable workflow." onClose={close}>
       <div className="modal-form">
         <label className="field"><span>Action type</span><select value={type} onChange={(event) => setType(event.target.value as WorkflowActionType)}>{actionTypes.map((action) => <option key={action} value={action}>{action}</option>)}</select></label>
         <label className="field"><span>Step name</span><input value={name} onChange={(event) => setName(event.target.value)} autoFocus /></label>

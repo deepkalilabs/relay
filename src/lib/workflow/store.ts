@@ -14,6 +14,7 @@ export interface WorkflowState {
 
 export type WorkflowAction =
   | { type: "reset"; sessionId?: string }
+  | { type: "load"; workflow: Workflow }
   | { type: "renameWorkflow"; name: string }
   | { type: "append"; step: WorkflowStep }
   | { type: "select"; id: string | null }
@@ -61,6 +62,14 @@ export function workflowReducer(state: WorkflowState, action: WorkflowAction): W
         ...initialWorkflowState(),
         workflow: createWorkflow(action.sessionId ?? ""),
       };
+    case "load": {
+      const firstEnabled = action.workflow.steps.find((step) => step.enabled);
+      return {
+        ...initialWorkflowState(),
+        workflow: action.workflow,
+        selectedStepId: firstEnabled?.id ?? action.workflow.steps[0]?.id ?? null,
+      };
+    }
     case "renameWorkflow":
       return {
         ...state,
@@ -69,9 +78,19 @@ export function workflowReducer(state: WorkflowState, action: WorkflowAction): W
       };
     case "append": {
       const step = { ...action.step, order: state.workflow.steps.length };
-      return changed(state, [...state.workflow.steps, step], {
+      const next = changed(state, [...state.workflow.steps, step], {
         selectedStepId: state.followLiveTail ? step.id : state.selectedStepId,
       });
+      if (!state.workflow.steps.length && step.type === "navigate") {
+        return {
+          ...next,
+          workflow: {
+            ...next.workflow,
+            source: { ...next.workflow.source, startUrl: step.payload.url },
+          },
+        };
+      }
+      return next;
     }
     case "select":
       return { ...state, selectedStepId: action.id, followLiveTail: action.id === state.workflow.steps.at(-1)?.id };

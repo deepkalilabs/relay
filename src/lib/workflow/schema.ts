@@ -70,6 +70,10 @@ export const WorkflowStepSchema = z.discriminatedUnion("type", [
     payload: z.object({ value: z.string() }),
   }),
   ElementStepBase.extend({
+    type: z.literal("set_date"),
+    payload: z.object({ value: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD for dates.") }),
+  }),
+  ElementStepBase.extend({
     type: z.literal("select"),
     payload: z.object({ value: z.string(), label: z.string().optional() }),
   }),

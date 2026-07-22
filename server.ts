@@ -29,7 +29,7 @@ const app = next({ dev, hostname, port, httpServer: server });
 await app.prepare();
 requestHandler = app.getRequestHandler() as never;
 
-const webSockets = new WebSocketServer({ noServer: true, maxPayload: 1_048_576 });
+const webSockets = new WebSocketServer({ noServer: true, maxPayload: 2_097_152 });
 const runtimes = new Map<string, RecordingRuntime>();
 const apiKey = process.env.BROWSERBASE_API_KEY;
 const provider = apiKey ? new BrowserbaseProvider(apiKey, process.env.BROWSERBASE_PROJECT_ID) : null;
@@ -112,6 +112,37 @@ webSockets.on("connection", (socket: WebSocket) => {
         await runtime.goForward();
       } else if (message.type === "browser.reload") {
         await runtime.reload();
+      } else if (message.type === "date.picker.select") {
+        await runtime.selectDate(message.requestId, message.value);
+      } else if (message.type === "date.picker.dismiss") {
+        runtime.dismissDatePicker(message.requestId);
+      } else if (message.type === "replay.start") {
+        const clientId = runtime.clientId;
+        const nextSequence = runtime.sequence;
+        await runtime.release();
+        runtime = new RecordingRuntime(clientId, provider!, () => runtimes.delete(clientId), nextSequence);
+        runtimes.set(clientId, runtime);
+        runtime.attach(socket, nextSequence);
+        runtime.emit({ type: "server.ready", configured: true });
+        await runtime.startReplay(message.workflow, message.startStepId, { timeoutSeconds, region });
+      } else if (message.type === "replay.pause") {
+        runtime.pauseReplay();
+      } else if (message.type === "replay.resume") {
+        runtime.resumeReplay();
+      } else if (message.type === "replay.retry") {
+        runtime.retryReplay();
+      } else if (message.type === "replay.skip") {
+        runtime.skipReplay();
+      } else if (message.type === "replay.takeControl") {
+        runtime.takeControlOfReplay();
+      } else if (message.type === "replay.stop") {
+        const clientId = runtime.clientId;
+        await runtime.stopReplay();
+        const nextSequence = runtime.sequence;
+        runtime = new RecordingRuntime(clientId, provider!, () => runtimes.delete(clientId), nextSequence);
+        runtimes.set(clientId, runtime);
+        runtime.attach(socket, nextSequence);
+        runtime.emit({ type: "server.ready", configured: true });
       }
     } catch (error) {
       runtime?.emit({

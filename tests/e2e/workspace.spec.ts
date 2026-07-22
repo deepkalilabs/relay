@@ -66,3 +66,36 @@ test("shows the desktop-only guard below 1024px", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: /larger screen is required/i })).toBeVisible();
 });
+
+test("imports a validated workflow file into the timeline", async ({ page }) => {
+  await page.goto("/");
+  const recordedAt = "2026-07-21T12:00:00.000Z";
+  const workflow = {
+    schemaVersion: "1.0",
+    id: "workflow-1",
+    name: "Imported replay",
+    createdAt: recordedAt,
+    updatedAt: recordedAt,
+    source: { provider: "browserbase", sessionId: "recorded-session" },
+    steps: [{
+      id: "navigate-1",
+      order: 9,
+      name: "Open example",
+      enabled: true,
+      page: { id: "page-1", url: "https://example.com" },
+      metadata: { recordedAt, origin: "recorded", sensitive: false },
+      type: "navigate",
+      payload: { url: "https://example.com" },
+    }],
+  };
+
+  await page.locator('input[type="file"]').first().setInputFiles({
+    name: "workflow.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(workflow)),
+  });
+
+  await expect(page.getByRole("textbox", { name: /workflow name/i })).toHaveValue("Imported replay");
+  await expect(page.getByRole("button", { name: "Open example 1 · navigate", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /workflow ready to replay/i })).toBeVisible();
+});

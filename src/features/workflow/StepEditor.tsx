@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo } from "react";
-import { AlertCircle, ChevronRight, Crosshair, KeyRound, MousePointer2, Plus, Trash2 } from "lucide-react";
+import { AlertCircle, ChevronRight, Crosshair, KeyRound, MousePointer2, Play, Plus, Trash2 } from "lucide-react";
+import type { ReplayStepResultState } from "@/lib/recorder-session";
 import {
   WorkflowStepSchema,
   locatorKinds,
@@ -13,9 +14,12 @@ interface StepEditorProps {
   step: WorkflowStep | null;
   onUpdate: (step: WorkflowStep) => void;
   onCollapse?: () => void;
+  locked?: boolean;
+  replayResult?: ReplayStepResultState;
+  onRunFromHere?: () => void;
 }
 
-export function StepEditor({ step, onUpdate, onCollapse }: StepEditorProps) {
+export function StepEditor({ step, onUpdate, onCollapse, locked = false, replayResult, onRunFromHere }: StepEditorProps) {
   const validation = useMemo(() => (step ? WorkflowStepSchema.safeParse(step) : null), [step]);
   const updatePayload = (key: string, value: unknown) => step && onUpdate({ ...step, payload: { ...step.payload, [key]: value } } as WorkflowStep);
   const candidates = step?.target?.candidates ?? [];
@@ -42,6 +46,15 @@ export function StepEditor({ step, onUpdate, onCollapse }: StepEditorProps) {
       </header>
       {step ? (
         <div className="inspector-scroll">
+          <button className="button button-secondary run-from-here" type="button" disabled={locked || !step.enabled} onClick={onRunFromHere}><Play size={15} /> Run from here</button>
+          {replayResult ? (
+            <section className={`replay-result replay-result-${replayResult.status}`} aria-labelledby="replay-result-title">
+              <div id="replay-result-title" className="editor-section-title"><span>Replay result</span><small>{replayResult.status}</small></div>
+              {replayResult.durationMs !== undefined ? <p>{replayResult.durationMs} ms{replayResult.locatorKind ? ` · ${replayResult.locatorKind} locator` : ""}</p> : null}
+              {replayResult.diagnostic ? <><strong>{replayResult.diagnostic.message}</strong>{replayResult.diagnostic.attemptedLocators.length ? <ul>{replayResult.diagnostic.attemptedLocators.map((attempt, index) => <li key={`${attempt.kind}-${index}`}><code>{attempt.kind}</code> — {attempt.reason}</li>)}</ul> : null}</> : null}
+            </section>
+          ) : null}
+          <fieldset className="editor-fieldset" disabled={locked}>
           <section className="editor-section action-editor" aria-labelledby="action-details-title">
             <div id="action-details-title" className="editor-section-title"><MousePointer2 size={15} /><span>Action</span></div>
             <div className="editor-fields">
@@ -49,7 +62,7 @@ export function StepEditor({ step, onUpdate, onCollapse }: StepEditorProps) {
               <label className="field"><span>Action</span><input value={step.type} readOnly aria-readonly="true" /></label>
               <label className="toggle-field"><input type="checkbox" checked={step.enabled} onChange={(event) => onUpdate({ ...step, enabled: event.target.checked } as WorkflowStep)} /><span>Enabled</span></label>
               {step.type === "navigate" ? <label className="field field-wide"><span>Destination URL</span><input value={step.payload.url} onChange={(event) => updatePayload("url", event.target.value)} /></label> : null}
-              {step.type === "fill" || step.type === "select" ? <label className="field field-wide"><span>{step.type === "fill" ? "Recorded value" : "Selected value"}</span><input value={step.payload.value} onChange={(event) => updatePayload("value", event.target.value)} /></label> : null}
+              {step.type === "fill" || step.type === "set_date" || step.type === "select" ? <label className="field field-wide"><span>{step.type === "fill" ? "Recorded value" : step.type === "set_date" ? "Selected date" : "Selected value"}</span><input value={step.payload.value} onChange={(event) => updatePayload("value", event.target.value)} /></label> : null}
               {step.type === "keypress" ? <>
                 <label className="field"><span>Key</span><input value={step.payload.key} onChange={(event) => updatePayload("key", event.target.value)} /></label>
                 <div className="key-preview"><KeyRound size={14} />{[...step.payload.modifiers, step.payload.key].join(" + ")}</div>
@@ -77,6 +90,7 @@ export function StepEditor({ step, onUpdate, onCollapse }: StepEditorProps) {
             ) : <p className="muted-copy">Navigation steps do not require an element locator.</p>}
           </section>
           {validation && !validation.success ? <div className="validation-summary" role="alert"><AlertCircle size={15} /><span>{validation.error.issues[0]?.message}</span></div> : null}
+          </fieldset>
         </div>
       ) : (
         <div className="editor-empty">

@@ -36,6 +36,20 @@ describe("workflow contract", () => {
     expect(serializeWorkflow(workflow)).toContain('"schemaVersion": "1.0"');
     expect(workflowFilename(new Date("2026-07-21T12:34:56.000Z"))).toBe("browser-memory-workflow-2026-07-21T12-34-56-000Z.json");
   });
+
+  it("keeps a date selection as one replayable semantic step", () => {
+    const step = stepFromRecordedAction({
+      type: "set_date",
+      name: "Set date “Appointment date”",
+      target: { inputType: "date", candidates: [{ kind: "label", value: "Appointment date", exact: true }] },
+      payload: { value: "2026-07-21" },
+      sensitive: false,
+      page: { id: "page-1", url: "https://example.com" },
+      recordedAt: new Date().toISOString(),
+    }, 0);
+    expect(step).toMatchObject({ type: "set_date", payload: { value: "2026-07-21" } });
+    expect(WorkflowSchema.shape.steps.element.parse(step)).toEqual(step);
+  });
 });
 
 describe("workflow reducer", () => {
@@ -57,6 +71,13 @@ describe("workflow reducer", () => {
     expect(state.workflow.steps).toHaveLength(1);
     state = workflowReducer(state, { type: "undoDelete" });
     expect(state.workflow.steps.map((step) => step.name)).toEqual(["Second", "First"]);
+  });
+
+  it("stores the leading navigation as the workflow start URL", () => {
+    let state = initialWorkflowState();
+    const first = makeStep("Start", 0);
+    state = workflowReducer(state, { type: "append", step: first });
+    expect(state.workflow.source.startUrl).toBe("https://example.com/0");
   });
 
   it("duplicates with a new identity and origin", () => {

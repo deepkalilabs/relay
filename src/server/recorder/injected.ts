@@ -5,6 +5,7 @@ export const RECORDER_SCRIPT = String.raw`(() => {
   window.__browserMemoryRecorderInstalled = true;
 
   const dirtyFields = new Set();
+  let datePickerOpen = false;
   const normalize = (value) => String(value ?? "").replace(/\s+/g, " ").trim();
   const clip = (value, size = 180) => normalize(value).slice(0, size);
   const escapeCss = (value) => window.CSS?.escape ? CSS.escape(value) : value.replace(/[^a-zA-Z0-9_-]/g, "\\$&");
@@ -132,7 +133,7 @@ export const RECORDER_SCRIPT = String.raw`(() => {
   const isEditableField = (element) => {
     if (element instanceof HTMLTextAreaElement || element.isContentEditable) return true;
     if (!(element instanceof HTMLInputElement)) return false;
-    return !["button", "submit", "reset", "image", "checkbox", "radio", "file", "hidden"].includes(element.type);
+    return !["button", "submit", "reset", "image", "checkbox", "radio", "file", "hidden", "date"].includes(element.type);
   };
 
   const flushInput = (element) => {
@@ -146,6 +147,10 @@ export const RECORDER_SCRIPT = String.raw`(() => {
 
   document.addEventListener("input", (event) => {
     const element = event.target;
+    if (element instanceof HTMLInputElement && element.type === "date") {
+      datePickerOpen = false;
+      return;
+    }
     if (!(element instanceof HTMLElement) || !isEditableField(element)) return;
     dirtyFields.add(element);
   }, true);
@@ -156,11 +161,42 @@ export const RECORDER_SCRIPT = String.raw`(() => {
   }, true);
 
   document.addEventListener("click", (event) => {
+    const dateInput = event.target instanceof Element
+      ? event.target.closest('input[type="date"]')
+      : null;
+    if (dateInput instanceof HTMLInputElement) {
+      event.preventDefault();
+      datePickerOpen = true;
+      const rect = dateInput.getBoundingClientRect();
+      emit({
+        type: "date-picker.request",
+        selector: cssPath(dateInput),
+        name: actionName("Set date", dateInput),
+        target: describe(dateInput),
+        value: dateInput.value,
+        min: dateInput.min,
+        max: dateInput.max,
+        rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+      });
+      return;
+    }
+
+    if (datePickerOpen) {
+      datePickerOpen = false;
+      emit({ type: "date-picker.dismiss" });
+    }
     const element = event.target instanceof Element
       ? event.target.closest("button,[role='button'],input[type='button'],input[type='submit'],input[type='reset'],input[type='image']")
       : null;
     if (!(element instanceof HTMLElement)) return;
     [...dirtyFields].forEach((field) => flushInput(field));
     emit({ type: "click", name: actionName("Click", element), target: describe(element), sensitive: false });
+  }, true);
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && datePickerOpen) {
+      datePickerOpen = false;
+      emit({ type: "date-picker.dismiss" });
+    }
   }, true);
 })();`;

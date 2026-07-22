@@ -51,4 +51,50 @@ describe("useRecorderSession", () => {
       order: 0,
     }));
   });
+
+  it("opens the parent date picker and sends one semantic selection command", () => {
+    const { result } = renderHook(() => useRecorderSession({ onSessionStarted: vi.fn(), onStepRecorded: vi.fn() }));
+    const requestId = "c7daf0b9-d92a-44db-9967-db33d1516976";
+
+    act(() => socket.onMessage?.({
+      type: "date.picker.open",
+      requestId,
+      value: "2026-07-21",
+      min: "2026-07-01",
+      max: "2026-08-31",
+      rect: { x: 100, y: 120, width: 160, height: 32 },
+      viewport: { width: 1280, height: 720 },
+    }));
+    expect(result.current.datePicker?.value).toBe("2026-07-21");
+
+    act(() => result.current.selectDate(requestId, "2026-07-22"));
+    expect(result.current.datePicker).toBeNull();
+    expect(socket.send).toHaveBeenCalledWith({ type: "date.picker.select", requestId, value: "2026-07-22" });
+  });
+
+  it("tracks replay progress and exposes recovery commands", () => {
+    const onReplayStepChange = vi.fn();
+    const { result } = renderHook(() => useRecorderSession({ onSessionStarted: vi.fn(), onStepRecorded: vi.fn(), onReplayStepChange }));
+    const runId = "c7daf0b9-d92a-44db-9967-db33d1516976";
+
+    act(() => socket.onMessage?.({ type: "replay.status", runId, status: "running", currentStepId: "step-1", currentIndex: 0, totalSteps: 2 }));
+    act(() => socket.onMessage?.({
+      type: "replay.step",
+      runId,
+      stepId: "step-1",
+      status: "failed",
+      durationMs: 42,
+      diagnostic: { message: "No visible match", attemptedLocators: [{ kind: "role", reason: "No match." }] },
+    }));
+
+    expect(result.current.replayStatus).toBe("running");
+    expect(result.current.replayResults["step-1"]).toMatchObject({ status: "failed", durationMs: 42 });
+    expect(onReplayStepChange).toHaveBeenCalledWith("step-1", "failed");
+    act(() => result.current.retryReplay());
+    act(() => result.current.skipReplay());
+    act(() => result.current.takeControlOfReplay());
+    expect(socket.send).toHaveBeenCalledWith({ type: "replay.retry" });
+    expect(socket.send).toHaveBeenCalledWith({ type: "replay.skip" });
+    expect(socket.send).toHaveBeenCalledWith({ type: "replay.takeControl" });
+  });
 });

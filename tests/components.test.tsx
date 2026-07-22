@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { BrowserPanel } from "@/features/browser/BrowserPanel";
 import { RecorderControls } from "@/features/recorder/RecorderControls";
+import { ReplayControls } from "@/features/replay/ReplayControls";
 import { WorkspaceNavbar } from "@/features/recorder/WorkspaceNavbar";
 import { StepEditor } from "@/features/workflow/StepEditor";
 import { stepFromRecordedAction } from "@/lib/workflow/recorded-action";
@@ -71,6 +72,23 @@ describe("RecorderControls", () => {
     rerender(<RecorderControls status="starting" transportStatus="connected" elapsed="00:01" onStart={vi.fn()} onStop={vi.fn()} />);
     expect(controls.getByText("Starting")).toBeInTheDocument();
     expect(controls.getByRole("button", { name: /stop recording/i })).toBeDisabled();
+  });
+});
+
+describe("ReplayControls", () => {
+  it("shows normal pause/resume controls separately from failure recovery", async () => {
+    const user = userEvent.setup();
+    const onResume = vi.fn();
+    const handlers = { onPause: vi.fn(), onResume, onRetry: vi.fn(), onSkip: vi.fn(), onTakeControl: vi.fn(), onStop: vi.fn() };
+    const { rerender } = render(<ReplayControls status="paused" currentIndex={1} totalSteps={3} {...handlers} />);
+    await user.click(screen.getByRole("button", { name: "Resume" }));
+    expect(onResume).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
+
+    rerender(<ReplayControls status="paused" currentIndex={1} totalSteps={3} failed {...handlers} />);
+    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Skip" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Take control" })).toBeInTheDocument();
   });
 });
 
@@ -166,5 +184,54 @@ describe("BrowserPanel", () => {
     expect(onForward).toHaveBeenCalledOnce();
     expect(onReload).toHaveBeenCalledOnce();
     expect(onNavigate).toHaveBeenCalledWith("example.org");
+  });
+
+  it("selects and dismisses dates from the custom calendar", async () => {
+    vi.stubGlobal("ResizeObserver", class ResizeObserver {
+      observe() {}
+      disconnect() {}
+    });
+    const user = userEvent.setup();
+    const onDateSelect = vi.fn();
+    const onDateDismiss = vi.fn();
+    const { container } = render(
+      <BrowserPanel
+        status="recording"
+        transportStatus="connected"
+        elapsed="00:12"
+        liveViewUrl="https://example.com/live-view"
+        page={{ pageId: "page", title: "Booking", url: "https://example.com/booking" }}
+        error={null}
+        navigationError={null}
+        navigationPending={false}
+        popup={null}
+        datePicker={{
+          requestId: "c7daf0b9-d92a-44db-9967-db33d1516976",
+          value: "2026-07-21",
+          min: "2026-07-01",
+          max: "2026-08-31",
+          rect: { x: 100, y: 120, width: 160, height: 32 },
+          viewport: { width: 1280, height: 720 },
+        }}
+        onBack={vi.fn()}
+        onForward={vi.fn()}
+        onNavigate={vi.fn()}
+        onReload={vi.fn()}
+        onStart={vi.fn()}
+        onStop={vi.fn()}
+        onRetry={vi.fn()}
+        onSwitchPopup={vi.fn()}
+        onDateSelect={onDateSelect}
+        onDateDismiss={onDateDismiss}
+      />,
+    );
+    const panel = within(container);
+
+    expect(panel.getByRole("dialog", { name: "Choose date" })).toBeInTheDocument();
+    await user.click(panel.getByRole("button", { name: "July 22, 2026" }));
+    expect(onDateSelect).toHaveBeenCalledWith("c7daf0b9-d92a-44db-9967-db33d1516976", "2026-07-22");
+
+    await user.keyboard("{Escape}");
+    expect(onDateDismiss).toHaveBeenCalledWith("c7daf0b9-d92a-44db-9967-db33d1516976");
   });
 });

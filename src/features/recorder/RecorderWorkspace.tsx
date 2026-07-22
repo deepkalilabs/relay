@@ -11,17 +11,21 @@ import { ManualStepDialog } from "@/features/workflow/ManualStepDialog";
 import { StepEditor } from "@/features/workflow/StepEditor";
 import { WorkflowTimeline } from "@/features/workflow/WorkflowTimeline";
 import { downloadWorkflow } from "@/lib/workflow/export";
-import type { WorkflowStep } from "@/lib/workflow/schema";
+import { parseWorkflowJson } from "@/lib/workflow/import";
+import type { Workflow, WorkflowStep } from "@/lib/workflow/schema";
 import { WorkflowSchema } from "@/lib/workflow/schema";
 import { initialWorkflowState, workflowReducer } from "@/lib/workflow/store";
 
-type Confirmation = "new" | "sensitiveExport" | null;
+type Confirmation = "new" | "sensitiveExport" | "replaceImport" | "sensitiveReplay" | null;
 
 export function RecorderWorkspace() {
   const [workflowState, dispatch] = useReducer(workflowReducer, undefined, initialWorkflowState);
   const [manualOpen, setManualOpen] = useState(false);
   const [confirmation, setConfirmation] = useState<Confirmation>(null);
   const [announcement, setAnnouncement] = useState("");
+  const [pendingImport, setPendingImport] = useState<Workflow | null>(null);
+  const [pendingReplayStartId, setPendingReplayStartId] = useState<string | undefined>();
+  const [importError, setImportError] = useState<string | null>(null);
 
   const onSessionStarted = useCallback((sessionId: string) => {
     dispatch({ type: "reset", sessionId });
@@ -30,7 +34,12 @@ export function RecorderWorkspace() {
     dispatch({ type: "append", step });
     setAnnouncement(`${step.name} added to the workflow.`);
   }, []);
-  const session = useRecorderSession({ onSessionStarted, onStepRecorded });
+  const onReplayStepChange = useCallback((stepId: string, status: import("@/lib/recorder-session").ReplayStepResultState["status"]) => {
+    if (status === "running" || status === "failed") dispatch({ type: "select", id: stepId });
+    setAnnouncement(`Replay step ${status}.`);
+  }, []);
+  const session = useRecorderSession({ onSessionStarted, onStepRecorded, onReplayStepChange });
+  const replayLocked = ["preparing", "running", "pausing", "paused", "manual", "stopping"].includes(session.replayStatus);
   const panels = useWorkspacePanels({
     selectedStepId: workflowState.selectedStepId,
     overlayOpen: Boolean(confirmation || manualOpen),
@@ -43,11 +52,46 @@ export function RecorderWorkspace() {
   }, [workflowState.deletedStep]);
 
   const beginRecording = () => {
-    if (workflowState.dirty && workflowState.workflow.steps.length) {
+    if (workflowState.workflow.steps.length) {
       setConfirmation("new");
       return;
     }
     session.startRecording();
+  };
+
+  const loadWorkflow = (workflow: Workflow) => {
+    dispatch({ type: "load", workflow });
+    setPendingImport(null);
+    setConfirmation(null);
+    setAnnouncement(`${workflow.name} imported with ${workflow.steps.length} steps.`);
+  };
+
+  const importWorkflow = async (file: File) => {
+    setImportError(null);
+    try {
+      const workflow = parseWorkflowJson(await file.text(), file.size);
+      if (workflowState.workflow.steps.length || workflowState.dirty) {
+        setPendingImport(workflow);
+        setConfirmation("replaceImport");
+      } else loadWorkflow(workflow);
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : "The workflow file could not be imported.");
+    }
+  };
+
+  const startReplayNow = (startStepId = pendingReplayStartId) => {
+    setConfirmation(null);
+    setPendingReplayStartId(undefined);
+    session.startReplay(workflowState.workflow, startStepId);
+  };
+
+  const requestReplay = (startStepId?: string) => {
+    setPendingReplayStartId(startStepId);
+    if (workflowState.workflow.steps.some((step) => step.metadata.sensitive)) {
+      setConfirmation("sensitiveReplay");
+      return;
+    }
+    startReplayNow(startStepId);
   };
 
   const confirmNew = () => {
@@ -105,6 +149,10 @@ export function RecorderWorkspace() {
               onStart={beginRecording}
               onStop={session.stopRecording}
               onExport={requestExport}
+              onImport={(file) => void importWorkflow(file)}
+              onReplay={() => requestReplay()}
+              importDisabled={replayLocked}
+              replayDisabled={!workflowState.workflow.steps.some((step) => step.enabled) || replayLocked || session.displayStatus === "recording" || session.transportStatus === "offline"}
             />
             {!panels.timelineCollapsed ? (
               <>
@@ -118,6 +166,8 @@ export function RecorderWorkspace() {
                   onReorder={(activeId, overId) => dispatch({ type: "reorder", activeId, overId })}
                   onInsert={() => setManualOpen(true)}
                   onCollapse={panels.collapseTimeline}
+                  replayResults={session.replayResults}
+                  locked={replayLocked}
                 />
                 <div
                   className="panel-resizer timeline-resizer"
@@ -142,9 +192,12 @@ export function RecorderWorkspace() {
               liveViewUrl={session.liveViewUrl}
               page={session.browserPage}
               error={session.displayError}
+              errorContext={session.errorContext}
+              onDismissError={session.clearError}
               navigationError={session.navigationError}
               navigationPending={session.navigationPending}
               popup={session.popup}
+              datePicker={session.datePicker}
               onBack={() => session.sendBrowserCommand({ type: "browser.back" })}
               onForward={() => session.sendBrowserCommand({ type: "browser.forward" })}
               onNavigate={(url) => session.sendBrowserCommand({ type: "browser.navigate", url })}
@@ -153,6 +206,20 @@ export function RecorderWorkspace() {
               onStop={session.stopRecording}
               onRetry={beginRecording}
               onSwitchPopup={session.switchPopup}
+              onDateSelect={(requestId, value) => session.selectDate(requestId, value)}
+              onDateDismiss={(requestId) => session.dismissDatePicker(requestId)}
+              replayStatus={session.replayStatus}
+              replayCurrentIndex={session.replayCurrentIndex}
+              replayTotalSteps={session.replayTotalSteps}
+              replayCurrentResult={session.replayCurrentStepId ? session.replayResults[session.replayCurrentStepId] : undefined}
+              replayReadyCount={workflowState.workflow.steps.length}
+              onReplay={() => requestReplay()}
+              onReplayPause={session.pauseReplay}
+              onReplayResume={session.resumeReplay}
+              onReplayRetry={session.retryReplay}
+              onReplaySkip={session.skipReplay}
+              onReplayTakeControl={session.takeControlOfReplay}
+              onReplayStop={session.stopReplay}
             />
           </div>
           <aside className={`inspector-shell ${panels.inspectorCollapsed ? "collapsed" : ""}`} aria-label="Selected step editor">
@@ -176,7 +243,14 @@ export function RecorderWorkspace() {
                   onPointerDown={(event) => panels.beginPanelResize("inspector", event)}
                   onKeyDown={(event) => panels.resizePanelWithKeyboard("inspector", event)}
                 />
-                <StepEditor step={selectedStep} onUpdate={(step) => dispatch({ type: "update", step })} onCollapse={panels.collapseInspector} />
+                <StepEditor
+                  step={selectedStep}
+                  onUpdate={(step) => dispatch({ type: "update", step })}
+                  onCollapse={panels.collapseInspector}
+                  locked={replayLocked}
+                  replayResult={selectedStep ? session.replayResults[selectedStep.id] : undefined}
+                  onRunFromHere={() => selectedStep && requestReplay(selectedStep.id)}
+                />
               </>
             )}
           </aside>
@@ -204,6 +278,17 @@ export function RecorderWorkspace() {
       <Modal open={confirmation === "sensitiveExport"} title="This export contains sensitive values" description="Passwords, tokens, or payment-related fields were detected." onClose={() => setConfirmation(null)}>
         <p className="modal-copy">The downloaded JSON contains recorded values in plain text. Store it like a secret and do not commit it to source control.</p>
         <div className="modal-actions"><button className="button button-ghost" type="button" onClick={() => setConfirmation(null)}>Cancel</button><button className="button button-danger" type="button" onClick={exportNow}>Export sensitive JSON</button></div>
+      </Modal>
+      <Modal open={confirmation === "replaceImport"} title="Replace the current workflow?" description="The imported workflow will replace every step currently in the timeline." onClose={() => { setConfirmation(null); setPendingImport(null); }}>
+        <p className="modal-copy">Export the current workflow first if you want to keep it. Importing does not merge workflows.</p>
+        <div className="modal-actions"><button className="button button-ghost" type="button" onClick={() => { setConfirmation(null); setPendingImport(null); }}>Cancel</button><button className="button button-danger" type="button" onClick={() => pendingImport && loadWorkflow(pendingImport)}>Replace workflow</button></div>
+      </Modal>
+      <Modal open={confirmation === "sensitiveReplay"} title="Replay sensitive values?" description="This workflow contains fields marked as passwords, tokens, payment data, or other sensitive content." onClose={() => { setConfirmation(null); setPendingReplayStartId(undefined); }}>
+        <p className="modal-copy">Values will be sent to this local server and typed into the destination website. They are not written to disk or included in replay diagnostics.</p>
+        <div className="modal-actions"><button className="button button-ghost" type="button" onClick={() => { setConfirmation(null); setPendingReplayStartId(undefined); }}>Cancel</button><button className="button button-danger" type="button" onClick={() => startReplayNow()}>Replay sensitive workflow</button></div>
+      </Modal>
+      <Modal open={Boolean(importError)} title="Workflow could not be imported" description={importError ?? "The selected file is invalid."} onClose={() => setImportError(null)}>
+        <div className="modal-actions"><button className="button button-primary" type="button" onClick={() => setImportError(null)}>Choose another file</button></div>
       </Modal>
     </>
   );

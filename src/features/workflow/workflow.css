@@ -49,3 +49,10 @@
 .locator-kind select { height: 32px; text-transform: capitalize; }
 .add-locator { align-self: flex-start; min-height: 36px; font-size: 11px; }.muted-copy { margin: 4px 0 0; color: var(--subtle); font-size: 11px; line-height: 1.5; }
 .validation-summary { margin-top: 16px; padding: 9px 10px; display: flex; gap: 7px; align-items: flex-start; color: var(--danger); background: var(--danger-soft); border-radius: 7px; font-size: 10px; font-weight: 650; line-height: 1.45; }
+.replay-step-status { flex: 0 0 24px; height: 24px; display: grid; place-items: center; border-radius: 6px; color: var(--muted); }
+.replay-step-status-passed { color: var(--success); }
+.replay-step-status-failed { color: var(--danger); background: var(--danger-soft); }
+.replay-step-status-running { color: var(--primary); background: var(--primary-soft); }
+.replay-step-status-skipped { color: var(--muted); }
+.timeline-step.replay-running { box-shadow: inset 3px 0 0 var(--primary); }
+.timeline-step.replay-failed { box-shadow: inset 3px 0 0 var(--danger); }

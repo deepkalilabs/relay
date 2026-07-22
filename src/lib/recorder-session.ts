@@ -22,6 +22,25 @@ export interface PopupState {
   url: string;
 }
 
+export interface DatePickerState {
+  requestId: string;
+  value: string;
+  min: string;
+  max: string;
+  rect: { x: number; y: number; width: number; height: number };
+  viewport: { width: number; height: number };
+}
+
+export interface ReplayStepResultState {
+  status: "pending" | "running" | "passed" | "failed" | "skipped";
+  durationMs?: number;
+  locatorKind?: string;
+  diagnostic?: {
+    message: string;
+    attemptedLocators: Array<{ kind: string; reason: string }>;
+  };
+}
+
 export function getDisplayStatus(status: RecordingStatus, transportStatus: TransportStatus): RecordingStatus {
   if (transportStatus === "reconnecting" && status === "recording") return "reconnecting";
   if (transportStatus === "offline" && ["recording", "starting"].includes(status)) return "error";

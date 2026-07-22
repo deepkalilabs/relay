@@ -48,3 +48,22 @@
 .error-card strong { color: var(--ink); font-size: 13px; }.error-card p { margin: 5px 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .popup-card { position: absolute; z-index: 6; left: 16px; right: 16px; bottom: 16px; padding: 12px 12px 12px 16px; display: flex; align-items: center; justify-content: space-between; gap: 16px; border: 1px solid #cddcff; border-radius: 11px; background: white; box-shadow: var(--shadow-md); }
 .popup-card div { min-width: 0; display: flex; flex-direction: column; gap: 3px; }.popup-card strong { font-size: 12px; }.popup-card span { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.date-picker { position: absolute; z-index: 10; width: 304px; padding: 12px; border: 1px solid var(--line-strong); border-radius: 12px; color: var(--ink); background: white; box-shadow: 0 18px 42px rgb(15 23 42 / 22%); }
+.date-picker-heading { height: 40px; display: grid; grid-template-columns: 40px 1fr 40px; align-items: center; gap: 6px; }
+.date-picker-heading strong { text-align: center; font-size: 13px; font-weight: 750; }
+.date-picker-heading button { width: 40px; height: 40px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 8px; color: var(--muted); background: transparent; }
+.date-picker-heading button:hover:not(:disabled) { color: var(--ink); background: var(--surface-muted); }
+.date-picker-weekdays, .date-picker-grid { display: grid; grid-template-columns: repeat(7, 40px); }
+.date-picker-weekdays { margin-top: 4px; color: var(--subtle); font-size: 10px; font-weight: 750; text-align: center; text-transform: uppercase; }
+.date-picker-weekdays span { height: 28px; display: grid; place-items: center; }
+.date-picker-grid button { width: 40px; height: 38px; padding: 0; border: 2px solid transparent; border-radius: 8px; color: var(--ink); background: transparent; font-size: 12px; font-variant-numeric: tabular-nums; }
+.date-picker-grid button:hover:not(:disabled) { background: var(--primary-soft); color: var(--primary); }
+.date-picker-grid button[aria-pressed="true"] { color: white; background: var(--primary); font-weight: 750; }
+.date-picker-grid button[aria-current="date"] { border-color: #9db8f5; }
+.date-picker-grid button.outside-month { color: var(--subtle); }
+.date-picker-grid button:disabled { color: #b8c1ce; background: transparent; text-decoration: line-through; opacity: .55; }
+.replay-failure-card { position: absolute; z-index: 24; left: 16px; right: 16px; bottom: 16px; min-height: 72px; padding: 12px 14px; display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; align-items: center; gap: 10px; color: var(--danger); background: color-mix(in srgb, white 96%, var(--danger-soft)); border: 1px solid color-mix(in srgb, var(--danger) 28%, var(--line)); border-radius: 10px; box-shadow: 0 10px 30px rgb(15 23 42 / 18%); }
+.replay-failure-card p { margin: 3px 0 0; color: var(--ink); font-size: 12px; }
+.replay-failure-actions { display: flex; gap: 6px; }
+.replay-failure-actions button { min-height: 44px; padding: 0 12px; border: 1px solid var(--line); border-radius: 7px; color: var(--ink); background: white; font-size: 11px; font-weight: 750; cursor: pointer; }
+.replay-failure-actions button:hover { border-color: var(--line-strong); background: var(--surface-muted); }
