@@ -49,6 +49,13 @@ interface PendingDatePicker {
   max: string;
 }
 
+const AUTOMATICALLY_RECORDABLE_ACTION_TYPES: ReadonlySet<RecordedAction["type"]> = new Set([
+  "click",
+  "fill",
+  "select",
+  "set_date",
+]);
+
 export function normalizeBrowserUrl(input: string): string {
   const trimmed = input.trim();
   if (!trimmed) throw new Error("Enter a web address to navigate.");
@@ -64,7 +71,7 @@ export function normalizeBrowserUrl(input: string): string {
 }
 
 export function isAutomaticallyRecordableAction(action: RecordedAction): boolean {
-  return action.type === "fill" || action.type === "click" || action.type === "set_date";
+  return AUTOMATICALLY_RECORDABLE_ACTION_TYPES.has(action.type);
 }
 
 export function isRecordableNavigationUrl(input: string): boolean {

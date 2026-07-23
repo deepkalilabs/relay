@@ -66,6 +66,20 @@ describe("workflow contract", () => {
     expect(WorkflowSchema.shape.steps.element.parse(step)).toEqual(step);
   });
 
+  it("keeps a dropdown selection value and label in one replayable semantic step", () => {
+    const step = stepFromRecordedAction({
+      type: "select",
+      name: "Plan",
+      target: { tagName: "select", candidates: [{ kind: "label", value: "Plan", exact: true }] },
+      payload: { value: "pro", label: "Professional" },
+      sensitive: false,
+      page: { id: "page-1", url: "https://example.com" },
+      recordedAt: new Date().toISOString(),
+    }, 0);
+    expect(step).toMatchObject({ type: "select", payload: { value: "pro", label: "Professional" } });
+    expect(WorkflowSchema.shape.steps.element.parse(step)).toEqual(step);
+  });
+
   it("keeps the absolute pre-action position, including the top of the page", () => {
     const step = stepFromRecordedAction({
       type: "click",

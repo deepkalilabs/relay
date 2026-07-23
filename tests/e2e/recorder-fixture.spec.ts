@@ -3,7 +3,7 @@ import { RECORDER_SCRIPT } from "../../src/server/recorder/injected";
 import { applyPositionBefore } from "../../src/server/replay/engine";
 import type { WorkflowStep } from "../../src/lib/workflow/schema";
 
-test("injected recorder captures completed fills and semantic control clicks", async ({ page }) => {
+test("injected recorder captures completed fills, native selects, and semantic control clicks", async ({ page }) => {
   const actions: Array<Record<string, unknown>> = [];
   await page.exposeFunction("__browserMemoryEmit", (action: Record<string, unknown>) => { actions.push(action); });
   await page.addInitScript({ content: RECORDER_SCRIPT });
@@ -14,6 +14,7 @@ test("injected recorder captures completed fills and semantic control clicks", a
   expect(actions).toHaveLength(0);
 
   await page.getByLabel("Password").fill("secret-value");
+  await page.getByLabel("Plan").click();
   await page.getByLabel("Plan").selectOption("pro");
   await page.getByLabel("Accept terms").check();
   await page.getByRole("button", { name: "Continue" }).click();
@@ -24,15 +25,39 @@ test("injected recorder captures completed fills and semantic control clicks", a
   await page.keyboard.press("Control");
   await page.waitForTimeout(50);
 
-  expect(actions.map((action) => action.type)).toEqual(["fill", "fill", "click", "click", "click", "click", "click", "click"]);
+  expect(actions.map((action) => action.type)).toEqual(["fill", "fill", "click", "select", "click", "click", "click", "click", "click", "click"]);
   const emailFill = actions.find((action) => action.type === "fill" && (action.payload as { value?: string })?.value === "person@example.com");
   expect((emailFill?.target as { candidates: Array<{ kind: string }> }).candidates[0].kind).toBe("testId");
   const passwordFill = actions.find((action) => action.type === "fill" && (action.payload as { value?: string })?.value === "secret-value");
   expect(passwordFill?.sensitive).toBe(true);
+  const planClick = actions.find((action) => action.type === "click" && action.name === "Plan");
+  expect((planClick?.target as { tagName?: string }).tagName).toBe("select");
+  expect((planClick?.target as { candidates: Array<{ kind: string; value: string; name?: string }> }).candidates[0]).toMatchObject({ kind: "role", value: "combobox", name: "Plan" });
+  const planSelect = actions.find((action) => action.type === "select");
+  expect(planSelect).toMatchObject({ name: "Plan", payload: { value: "pro", label: "Professional" } });
+  expect((planSelect?.target as { candidates: Array<{ kind: string; value: string; name?: string }> }).candidates[0]).toMatchObject({ kind: "role", value: "combobox", name: "Plan" });
   expect((actions.find((action) => action.name === "Continue")?.target as { frameUrl?: string }).frameUrl).toBeUndefined();
   expect(actions.some((action) => action.name === "Accept terms")).toBe(true);
   expect(actions.some((action) => action.name === "Continue")).toBe(true);
   expect(actions.at(-1)?.name).toBe("Fixture help");
+});
+
+test("normalizes native dropdown click surfaces to the select control", async ({ page }) => {
+  const actions: Array<Record<string, unknown>> = [];
+  await page.exposeFunction("__browserMemoryEmit", (action: Record<string, unknown>) => { actions.push(action); });
+  await page.addInitScript({ content: RECORDER_SCRIPT });
+  await page.goto("/fixture");
+
+  const plan = page.getByLabel("Plan");
+  await plan.click();
+  await page.getByTestId("plan-label").click();
+  await plan.locator("option").first().dispatchEvent("click");
+  expect(actions.length).toBeGreaterThanOrEqual(3);
+  expect(actions.every((action) => action.type === "click" && action.name === "Plan" && (action.target as { tagName?: string }).tagName === "select")).toBe(true);
+
+  actions.length = 0;
+  await page.getByLabel("Regions").selectOption(["west", "east"]);
+  expect(actions).toHaveLength(0);
 });
 
 test("records frame URLs only for child-frame actions", async ({ page }) => {
@@ -173,6 +198,241 @@ test("falls back to lowercase element names when targets have no accessible name
     { type: "fill", name: "input" },
     { type: "click", name: "button" },
   ]);
+});
+
+test("names field actions from semantic labels before nearby visible text", async ({ page }) => {
+  const actions: Array<Record<string, unknown>> = [];
+  await page.exposeFunction("__browserMemoryEmit", (action: Record<string, unknown>) => { actions.push(action); });
+  await page.addInitScript({ content: RECORDER_SCRIPT });
+  await page.goto("/fixture");
+  await page.evaluate(() => {
+    const section = document.createElement("section");
+    section.innerHTML = `
+      <style>
+        .naming-case { width: 260px; display: grid; gap: 4px; margin: 24px 0; }
+        .naming-case input, .naming-case textarea, .naming-case select { width: 240px; min-height: 28px; }
+        .structural-name .input-wrapper { margin-top: 24px; }
+      </style>
+      <div class="naming-case">
+        <div>Account email</div>
+        <input data-testid="inferred-input" placeholder="Email placeholder" />
+      </div>
+      <div class="naming-case structural-name">
+        <label>First name <span>*</span></label>
+        <div class="input-wrapper">
+          <input data-testid="structural-input" formcontrolname="firstName" placeholder="First name placeholder" />
+        </div>
+        <p class="field-error">First name is required</p>
+      </div>
+      <div class="naming-case">
+        <label for="semantic-input">Visible email *</label>
+        <div>Wrong nearby text</div>
+        <input id="semantic-input" data-testid="semantic-input" aria-label="ARIA email" />
+      </div>
+      <div class="naming-case">
+        <span id="account-reference">Referenced account</span>
+        <div>Wrong nearby text</div>
+        <input data-testid="labelledby-input" aria-labelledby="account-reference" aria-label="ARIA fallback" />
+      </div>
+      <div class="naming-case structural-name">
+        <label>Wrong structural label</label>
+        <div class="input-wrapper"><input data-testid="aria-input" aria-label="ARIA field" /></div>
+      </div>
+      <div class="naming-case">
+        <div>Notes</div>
+        <textarea data-testid="inferred-textarea"></textarea>
+      </div>
+      <div class="naming-case">
+        <div>Preferred plan</div>
+        <select data-testid="inferred-select"><option value="free">Free</option><option value="pro">Pro</option></select>
+      </div>
+      <div class="naming-case">
+        <div>Start date</div>
+        <input data-testid="inferred-date" type="date" value="2026-07-22" />
+      </div>
+      <div class="naming-case">
+        <div>Subscribe</div>
+        <input data-testid="inferred-checkbox" type="checkbox" />
+      </div>
+      <button type="button" data-testid="finish-fields">Finish fields</button>
+    `;
+    document.body.append(section);
+  });
+
+  await page.getByTestId("inferred-input").fill("person@example.com");
+  await page.getByTestId("structural-input").fill("Jamie");
+  await page.getByTestId("semantic-input").fill("billing@example.com");
+  await page.getByTestId("labelledby-input").fill("account@example.com");
+  await page.getByTestId("aria-input").fill("search");
+  await page.getByTestId("inferred-textarea").fill("Remember this");
+  await page.getByTestId("inferred-select").selectOption("pro");
+  await page.getByTestId("inferred-date").click();
+  await page.getByTestId("inferred-checkbox").click();
+  await page.getByTestId("finish-fields").click();
+
+  const actionFor = (testId: string) => actions.find((action) => {
+    const candidates = (action.target as { candidates?: Array<{ kind: string; value: string; name?: string }> } | undefined)?.candidates ?? [];
+    return candidates.some((candidate) => candidate.kind === "testId" && candidate.value === testId);
+  });
+  await expect.poll(() => Boolean(actionFor("inferred-checkbox"))).toBe(true);
+
+  expect(actionFor("inferred-input")?.name).toBe("Account email");
+  expect(actionFor("structural-input")?.name).toBe("First name");
+  expect(actionFor("semantic-input")?.name).toBe("Visible email");
+  expect(actionFor("labelledby-input")?.name).toBe("Referenced account");
+  expect(actionFor("aria-input")?.name).toBe("ARIA field");
+  expect(actionFor("inferred-textarea")?.name).toBe("Notes");
+  expect(actionFor("inferred-select")).toMatchObject({ type: "select", name: "Preferred plan" });
+  expect(actionFor("inferred-date")).toMatchObject({ type: "date-picker.request", name: "Start date" });
+  expect(actionFor("inferred-checkbox")).toMatchObject({ type: "click", name: "Subscribe" });
+
+  const inferredCandidates = (actionFor("inferred-input")?.target as { candidates: Array<{ kind: string; value: string; name?: string }> }).candidates;
+  expect(inferredCandidates).not.toContainEqual(expect.objectContaining({ kind: "label", value: "Account email" }));
+  expect(inferredCandidates).toContainEqual(expect.objectContaining({ kind: "role", name: "Email placeholder" }));
+
+  const structuralCandidates = (actionFor("structural-input")?.target as { candidates: Array<{ kind: string; value: string; name?: string }> }).candidates;
+  expect(structuralCandidates).not.toContainEqual(expect.objectContaining({ kind: "label", value: "First name" }));
+  expect(structuralCandidates).toContainEqual(expect.objectContaining({ kind: "role", name: "First name placeholder" }));
+  expect((actionFor("semantic-input")?.target as { candidates: Array<{ kind: string; value: string }> }).candidates)
+    .toContainEqual(expect.objectContaining({ kind: "label", value: "Visible email *" }));
+});
+
+test("falls back through field hints and humanized identity attributes", async ({ page }) => {
+  const actions: Array<Record<string, unknown>> = [];
+  await page.exposeFunction("__browserMemoryEmit", (action: Record<string, unknown>) => { actions.push(action); });
+  await page.addInitScript({ content: RECORDER_SCRIPT });
+  await page.goto("/fixture");
+  await page.evaluate(() => {
+    const section = document.createElement("section");
+    section.innerHTML = `
+      <input data-testid="hint-name" placeholder="Placeholder wins" autocomplete="given-name" name="ignoredName" />
+      <input data-testid="title-name" title="Title wins" name="ignoredTitleName" />
+      <input data-testid="autocomplete-name" autocomplete="section-blue shipping given-name" name="ignoredName" />
+      <input data-testid="standard-name" name="policyHolderEmail" />
+      <input data-testid="id-name" id="mailing_address" />
+      <input data-testid="angular-name" formcontrolname="effective-date" />
+      <input data-testid="opaque-id" id="mat-input-17" />
+      <button type="button" data-testid="finish-identities">Finish identity fields</button>
+    `;
+    document.body.append(section);
+  });
+
+  for (const testId of ["hint-name", "title-name", "autocomplete-name", "standard-name", "id-name", "angular-name", "opaque-id"]) {
+    await page.getByTestId(testId).fill("value");
+  }
+  await page.getByTestId("finish-identities").click();
+
+  const nameFor = (testId: string) => actions.find((action) => {
+    const candidates = (action.target as { candidates?: Array<{ kind: string; value: string }> } | undefined)?.candidates ?? [];
+    return candidates.some((candidate) => candidate.kind === "testId" && candidate.value === testId);
+  })?.name;
+  await expect.poll(() => nameFor("opaque-id")).toBe("input");
+
+  expect(nameFor("hint-name")).toBe("Placeholder wins");
+  expect(nameFor("title-name")).toBe("Title wins");
+  expect(nameFor("autocomplete-name")).toBe("Given name");
+  expect(nameFor("standard-name")).toBe("Policy holder email");
+  expect(nameFor("id-name")).toBe("Mailing address");
+  expect(nameFor("angular-name")).toBe("Effective date");
+  expect(nameFor("opaque-id")).toBe("input");
+
+  const standardNameCandidates = (actions.find((action) => action.name === "Policy holder email")?.target as {
+    candidates: Array<{ kind: string; value: string; name?: string }>;
+  }).candidates;
+  expect(standardNameCandidates).not.toContainEqual(expect.objectContaining({ value: "Policy holder email" }));
+});
+
+test("rejects unsafe visual label candidates and preserves field fallbacks", async ({ page }) => {
+  const actions: Array<Record<string, unknown>> = [];
+  await page.exposeFunction("__browserMemoryEmit", (action: Record<string, unknown>) => { actions.push(action); });
+  await page.addInitScript({ content: RECORDER_SCRIPT });
+  await page.goto("/fixture");
+  await page.evaluate(() => {
+    const section = document.createElement("section");
+    section.innerHTML = `
+      <style>
+        .rejection-case { width: 280px; display: grid; gap: 4px; margin: 24px 0; }
+        .rejection-case input { width: 240px; min-height: 28px; }
+        .distant-label { margin-bottom: 20px; }
+        .structural-rejection-label { margin-bottom: 24px; }
+        .side-label { display: grid; grid-template-columns: 100px 160px; align-items: center; }
+        .side-label input { width: 150px; }
+      </style>
+      <div class="rejection-case">
+        <div class="distant-label">Distant text</div>
+        <input data-testid="distant-input" placeholder="Distant placeholder" />
+      </div>
+      <div class="rejection-case side-label">
+        <div>Side text</div>
+        <input data-testid="side-input" placeholder="Side placeholder" />
+      </div>
+      <div class="rejection-case">
+        <div aria-hidden="true">Hidden text</div>
+        <input data-testid="hidden-input" placeholder="Hidden placeholder" />
+      </div>
+      <div class="rejection-case">
+        <button type="button">Interactive text</button>
+        <input data-testid="interactive-input" placeholder="Interactive placeholder" />
+      </div>
+      <div class="rejection-case">
+        <small class="field-help">Helper text</small>
+        <input data-testid="helper-input" placeholder="Helper placeholder" />
+      </div>
+      <div class="rejection-case">
+        <label class="structural-rejection-label">Ambiguous label</label>
+        <div><input data-testid="ambiguous-input" placeholder="Ambiguous placeholder" /><input aria-label="Second field" /></div>
+      </div>
+      <input id="other-control" aria-label="Other control" />
+      <div class="rejection-case">
+        <label class="structural-rejection-label" for="other-control">Other control label</label>
+        <div><input data-testid="other-associated-input" placeholder="Association placeholder" /></div>
+      </div>
+      <div class="rejection-case">
+        <label class="structural-rejection-label" hidden>Hidden label</label>
+        <div><input data-testid="hidden-label-input" placeholder="Hidden label placeholder" /></div>
+      </div>
+      <div class="rejection-case">
+        <div><input data-testid="following-label-input" placeholder="Following placeholder" /></div>
+        <label>Following label</label>
+      </div>
+      <div class="rejection-case">
+        <label class="structural-rejection-label">Interactive <a href="#">link</a></label>
+        <div><input data-testid="interactive-label-input" placeholder="Interactive label placeholder" /></div>
+      </div>
+      <div class="rejection-case">
+        <label class="structural-rejection-label field-error">Validation label</label>
+        <div><input data-testid="error-label-input" placeholder="Error label placeholder" /></div>
+      </div>
+      <button type="button" data-testid="finish-rejections">Finish rejection fields</button>
+    `;
+    document.body.append(section);
+  });
+
+  for (const testId of [
+    "distant-input", "side-input", "hidden-input", "interactive-input", "helper-input", "ambiguous-input",
+    "other-associated-input", "hidden-label-input", "following-label-input", "interactive-label-input", "error-label-input",
+  ]) {
+    await page.getByTestId(testId).fill("value");
+  }
+  await page.getByTestId("finish-rejections").click();
+
+  const nameFor = (testId: string) => actions.find((action) => {
+    const candidates = (action.target as { candidates?: Array<{ kind: string; value: string }> } | undefined)?.candidates ?? [];
+    return candidates.some((candidate) => candidate.kind === "testId" && candidate.value === testId);
+  })?.name;
+  await expect.poll(() => nameFor("helper-input")).toBe("Helper placeholder");
+
+  expect(nameFor("distant-input")).toBe("Distant placeholder");
+  expect(nameFor("side-input")).toBe("Side placeholder");
+  expect(nameFor("hidden-input")).toBe("Hidden placeholder");
+  expect(nameFor("interactive-input")).toBe("Interactive placeholder");
+  expect(nameFor("helper-input")).toBe("Helper placeholder");
+  expect(nameFor("ambiguous-input")).toBe("Ambiguous placeholder");
+  expect(nameFor("other-associated-input")).toBe("Association placeholder");
+  expect(nameFor("hidden-label-input")).toBe("Hidden label placeholder");
+  expect(nameFor("following-label-input")).toBe("Following placeholder");
+  expect(nameFor("interactive-label-input")).toBe("Interactive label placeholder");
+  expect(nameFor("error-label-input")).toBe("Error label placeholder");
 });
 
 test("captures the absolute viewport position only when an action is emitted", async ({ page }) => {

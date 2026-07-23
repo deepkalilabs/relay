@@ -18,7 +18,8 @@ export default function RecorderFixture() {
         <p><label>Password <input name="password" type="password" autoComplete="current-password" /></label></p>
         <p><label>Appointment date <input name="appointmentDate" type="date" value={appointmentDate} min="2026-07-01" max="2026-08-31" onChange={(event) => setAppointmentDate(event.target.value)} /></label></p>
         <p data-testid="appointment-value">Selected: {appointmentDate}</p>
-        <p><label>Plan <select name="plan"><option value="free">Free</option><option value="pro">Professional</option></select></label></p>
+        <p><label><span data-testid="plan-label">Plan</span> <select name="plan"><option value="free">Free</option><option value="pro">Professional</option></select></label></p>
+        <p><label>Regions <select name="regions" multiple><option value="west">West</option><option value="east">East</option></select></label></p>
         <p><label><input name="terms" type="checkbox" /> Accept terms</label></p>
         <button type="submit">Continue</button>
       </form>

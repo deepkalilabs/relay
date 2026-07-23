@@ -1,12 +1,37 @@
 import type { RecordedAction } from "@/lib/workflow/recorded-action";
 
+function actionPayloadFingerprint(action: RecordedAction): string {
+  switch (action.type) {
+    case "navigate":
+      return String(action.payload?.url ?? "");
+    case "fill":
+    case "set_date":
+      return String(action.payload?.value ?? "");
+    case "select":
+      return JSON.stringify([
+        String(action.payload?.value ?? ""),
+        String(action.payload?.label ?? ""),
+      ]);
+    case "keypress":
+      return JSON.stringify([
+        String(action.payload?.key ?? ""),
+        Array.isArray(action.payload?.modifiers) ? action.payload.modifiers : [],
+      ]);
+    case "click":
+    case "check":
+    case "uncheck":
+    case "submit":
+      return "";
+  }
+}
+
 export function actionFingerprint(action: RecordedAction): string {
-  return [
+  return JSON.stringify([
     action.page.id,
     action.type,
-    action.type === "navigate" ? String(action.payload?.url) : action.target?.candidates[0]?.value ?? "",
-    action.type === "fill" ? String(action.payload?.value) : "",
-  ].join(":");
+    action.target?.candidates[0]?.value ?? "",
+    actionPayloadFingerprint(action),
+  ]);
 }
 
 export class ActionDeduplicator {

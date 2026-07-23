@@ -22,6 +22,20 @@ describe("recorder normalization", () => {
     expect(actionFingerprint(fill)).not.toBe(actionFingerprint({ ...fill, payload: { value: "two" } }));
   });
 
+  it("deduplicates repeated selections without dropping different values", () => {
+    const deduplicator = new ActionDeduplicator();
+    const select: RecordedAction = {
+      ...action,
+      type: "select",
+      name: "Plan",
+      target: { candidates: [{ kind: "label", value: "Plan", exact: true }] },
+      payload: { value: "free", label: "Free" },
+    };
+    expect(deduplicator.shouldForward(select, 1_000)).toBe(true);
+    expect(deduplicator.shouldForward(select, 1_100)).toBe(false);
+    expect(deduplicator.shouldForward({ ...select, payload: { value: "pro", label: "Professional" } }, 1_200)).toBe(true);
+  });
+
   it("captures completed fields and semantic buttons only", () => {
     expect(RECORDER_SCRIPT).toContain("const dirtyFields = new Set()");
     expect(RECORDER_SCRIPT).toContain('window.addEventListener("focusout"');
@@ -30,6 +44,11 @@ describe("recorder normalization", () => {
     expect(RECORDER_SCRIPT).toContain('kind: "testId"');
     expect(RECORDER_SCRIPT).toContain('input[type="date"]');
     expect(RECORDER_SCRIPT).toContain('type: "date-picker.request"');
+    expect(RECORDER_SCRIPT).toContain('window.addEventListener("change"');
+    expect(RECORDER_SCRIPT).toContain('type: "select"');
+    expect(RECORDER_SCRIPT).toContain("select.multiple");
+    expect(RECORDER_SCRIPT).toContain("nativeSelectForInteraction");
+    expect(RECORDER_SCRIPT).toContain("label?.control instanceof HTMLSelectElement");
     expect(RECORDER_SCRIPT).toContain("position: viewportPosition()");
     expect(RECORDER_SCRIPT).not.toContain('type: "scroll.position"');
     expect(RECORDER_SCRIPT).not.toContain('window.addEventListener("scroll"');
@@ -37,14 +56,27 @@ describe("recorder normalization", () => {
     expect(RECORDER_SCRIPT).not.toContain('"pushState", "replaceState"');
   });
 
-  it("allows fill, click, and final semantic date actions through the automatic recorder", () => {
+  it("allows fill, click, select, and final semantic date actions through the automatic recorder", () => {
     const withType = (type: RecordedAction["type"]): RecordedAction => ({ ...action, type });
     expect(isAutomaticallyRecordableAction(withType("fill"))).toBe(true);
     expect(isAutomaticallyRecordableAction(withType("click"))).toBe(true);
+    expect(isAutomaticallyRecordableAction(withType("select"))).toBe(true);
     expect(isAutomaticallyRecordableAction(withType("set_date"))).toBe(true);
-    for (const type of ["navigate", "select", "check", "uncheck", "keypress", "submit"] as const) {
+    for (const type of ["navigate", "check", "uncheck", "keypress", "submit"] as const) {
       expect(isAutomaticallyRecordableAction(withType(type))).toBe(false);
     }
+  });
+
+  it("keeps select-control clicks so replay can open a dropdown before selecting", () => {
+    const click = {
+      ...action,
+      type: "click" as const,
+      name: "Plan",
+      target: { tagName: "select", candidates: [{ kind: "label" as const, value: "Plan", exact: true }] },
+    };
+    expect(isAutomaticallyRecordableAction(click)).toBe(true);
+    expect(isAutomaticallyRecordableAction({ ...click, target: { ...click.target, tagName: "option" } })).toBe(true);
+    expect(isAutomaticallyRecordableAction({ ...click, target: { ...click.target, tagName: "button" } })).toBe(true);
   });
 
   it("rejects impossible calendar dates", () => {

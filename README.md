@@ -1,6 +1,6 @@
 # Browser Memory Recorder
 
-Browser Memory Recorder turns a live browser session into an editable automation blueprint. Use an embedded Browserbase browser normally, and the app records completed field edits and semantic button clicks as structured workflow steps.
+Browser Memory Recorder turns a live browser session into an editable automation blueprint. Use an embedded Browserbase browser normally, and the app records completed field edits, native dropdown selections, and semantic button clicks as structured workflow steps.
 
 Each step can be reviewed, renamed, reordered, disabled, or deleted before the workflow is exported as validated, versioned JSON. The current tree can be replayed at any point in the active recorder session, then extended with more recorded actions.
 
@@ -90,7 +90,7 @@ browser_replay/
 
 ## Workflow model
 
-Exports use schema version `1.0`. A workflow contains its Browserbase source, timestamps, and an ordered list of steps. Automatic recording produces `fill` and `click` steps. Manual steps and existing workflows continue to support:
+Exports use schema version `1.0`. A workflow contains its Browserbase source, timestamps, and an ordered list of steps. Automatic recording produces `fill`, `set_date`, `select`, and `click` steps. Manual steps and existing workflows continue to support:
 
 ```text
 navigate · click · fill · select · check · uncheck · keypress · submit
