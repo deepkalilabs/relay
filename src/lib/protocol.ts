@@ -6,8 +6,8 @@ const PickerRequestIdSchema = z.string().uuid();
 
 export const ClientMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("client.hello"), clientId: z.string().uuid(), lastSequence: z.number().int().nonnegative() }),
-  z.object({ type: z.literal("session.start") }),
-  z.object({ type: z.literal("session.restart") }),
+  z.object({ type: z.literal("session.start"), nativeSelects: z.boolean() }),
+  z.object({ type: z.literal("session.restart"), nativeSelects: z.boolean() }),
   z.object({ type: z.literal("session.stop") }),
   z.object({ type: z.literal("popup.switch"), pageId: z.string() }),
   z.object({ type: z.literal("browser.navigate"), url: z.string().trim().min(1).max(2_048) }),
@@ -18,7 +18,8 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("date.picker.dismiss"), requestId: PickerRequestIdSchema }),
   z.object({ type: z.literal("select.picker.select"), requestId: PickerRequestIdSchema, value: z.string() }),
   z.object({ type: z.literal("select.picker.dismiss"), requestId: PickerRequestIdSchema }),
-  z.object({ type: z.literal("replay.start"), workflow: WorkflowSchema, startStepId: z.string().optional() }),
+  z.object({ type: z.literal("select.native.set"), enabled: z.boolean() }),
+  z.object({ type: z.literal("replay.start"), workflow: WorkflowSchema, startStepId: z.string().optional(), nativeSelects: z.boolean() }),
   z.object({ type: z.literal("replay.pause") }),
   z.object({ type: z.literal("replay.resume") }),
   z.object({ type: z.literal("replay.retry") }),

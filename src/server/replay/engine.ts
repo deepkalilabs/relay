@@ -8,6 +8,7 @@ import {
   type Workflow,
   type WorkflowStep,
 } from "@/lib/workflow/schema";
+import { isRedundantOptionClickBeforeSelect } from "@/server/replay/redundant-option-click";
 
 export const REPLAY_STEP_TIMEOUT_MS = 15_000;
 export const UI_SETTLE_QUIET_MS = 500;
@@ -527,6 +528,11 @@ export class ReplayEngine {
         this.currentStepId = step.id;
 
         if (!step.enabled) {
+          this.emit({ type: "replay.step", runId: this.runId, stepId: step.id, status: "skipped" });
+          continue;
+        }
+
+        if (isRedundantOptionClickBeforeSelect(step, steps[index + 1])) {
           this.emit({ type: "replay.step", runId: this.runId, stepId: step.id, status: "skipped" });
           continue;
         }

@@ -132,6 +132,7 @@ export class RecordingRuntime {
   private readonly deduplicator = new ActionDeduplicator();
   private pendingDatePicker: PendingDatePicker | null = null;
   private pendingSelectPicker: PendingSelectPicker | null = null;
+  private nativeSelects = false;
   private mode: "recording" | "replay" | null = null;
   private recordingReady = false;
   private startUrlSource: "observed" | "requested" | null = null;
@@ -204,6 +205,38 @@ export class RecordingRuntime {
     await context.addInitScript({ content: RECORDER_SCRIPT });
   }
 
+  private async applyNativeSelectsToFrame(frame: Frame): Promise<void> {
+    if (typeof frame.evaluate !== "function") return;
+    const enabled = this.nativeSelects;
+    await frame.evaluate((enabled) => {
+      const recorderWindow = window as Window & {
+        __browserMemoryNativeSelects?: boolean;
+        __browserMemorySetNativeSelects?: (value: boolean) => void;
+      };
+      if (typeof recorderWindow.__browserMemorySetNativeSelects === "function") {
+        recorderWindow.__browserMemorySetNativeSelects(enabled);
+      } else {
+        recorderWindow.__browserMemoryNativeSelects = enabled;
+      }
+    }, enabled).catch(() => undefined);
+    if (enabled !== this.nativeSelects) await this.applyNativeSelectsToFrame(frame);
+  }
+
+  private pageFrames(page: Page): Frame[] {
+    const frames = typeof page.frames === "function" ? page.frames() : [];
+    return frames.length ? frames : [page.mainFrame()];
+  }
+
+  async setNativeSelects(enabled: boolean): Promise<void> {
+    this.nativeSelects = enabled;
+    if (enabled && this.pendingSelectPicker) {
+      this.dismissSelectPickersForPage(this.pendingSelectPicker.pageState);
+    }
+    await Promise.all(
+      [...this.pages.keys()].flatMap((page) => this.pageFrames(page)).map((frame) => this.applyNativeSelectsToFrame(frame)),
+    );
+  }
+
   async start(options: { timeoutSeconds: number; region: "us-west-2" | "us-east-1" | "eu-central-1" | "ap-southeast-1" }): Promise<void> {
     if (this.sessionId) return;
     this.emit({ type: "session.status", status: "starting" });
@@ -254,6 +287,7 @@ export class RecordingRuntime {
     if (active || !this.activePageId) this.activePageId = state.id;
 
     page.on("framenavigated", (frame) => {
+      void this.applyNativeSelectsToFrame(frame);
       if (frame !== page.mainFrame() || state.id !== this.activePageId) return;
       void this.emitPageState(state);
       this.dismissDatePickersForPage(state);
@@ -272,6 +306,7 @@ export class RecordingRuntime {
     });
 
     if (installRecorder) await page.evaluate(RECORDER_SCRIPT).catch(() => undefined);
+    await Promise.all(this.pageFrames(page).map((frame) => this.applyNativeSelectsToFrame(frame)));
     if (!active && this.sessionId) {
       await page.waitForLoadState("domcontentloaded", { timeout: 5_000 }).catch(() => undefined);
       this.emit({
@@ -381,6 +416,10 @@ export class RecordingRuntime {
     event: z.infer<typeof SelectPickerBrowserEventSchema>,
   ): Promise<void> {
     if (event.type === "select-picker.dismiss") {
+      this.dismissSelectPickersForPage(state);
+      return;
+    }
+    if (this.nativeSelects) {
       this.dismissSelectPickersForPage(state);
       return;
     }

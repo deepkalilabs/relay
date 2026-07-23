@@ -51,6 +51,8 @@ describe("recorder normalization", () => {
     expect(RECORDER_SCRIPT).toContain("label?.control instanceof HTMLSelectElement");
     expect(RECORDER_SCRIPT).toContain('type: "select-picker.request"');
     expect(RECORDER_SCRIPT).toContain("__browserMemorySuppressSelectChange");
+    expect(RECORDER_SCRIPT).toContain("__browserMemorySetNativeSelects");
+    expect(RECORDER_SCRIPT).toContain("window.__browserMemoryNativeSelects");
     expect(RECORDER_SCRIPT).toContain("position: viewportPosition()");
     expect(RECORDER_SCRIPT).not.toContain('type: "scroll.position"');
     expect(RECORDER_SCRIPT).toContain('window.addEventListener("scroll"');

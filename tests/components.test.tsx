@@ -339,6 +339,43 @@ describe("BrowserPanel", () => {
     expect(onNavigate).toHaveBeenCalledWith("example.org");
   });
 
+  it("exposes native dropdown mode as a labeled accessible switch", async () => {
+    const user = userEvent.setup();
+    const onNativeSelectsChange = vi.fn();
+    const props = {
+      status: "recording" as const,
+      transportStatus: "connected" as const,
+      startedAt: Date.now() - 12_000,
+      liveViewUrl: "https://example.com/live-view",
+      page: { pageId: "page", title: "Example", url: "https://example.com/" },
+      error: null,
+      navigationError: null,
+      navigationPending: false,
+      popup: null,
+      onBack: vi.fn(),
+      onForward: vi.fn(),
+      onNavigate: vi.fn(),
+      onReload: vi.fn(),
+      onStart: vi.fn(),
+      onStop: vi.fn(),
+      onRetry: vi.fn(),
+      onSwitchPopup: vi.fn(),
+      onNativeSelectsChange,
+    };
+    const view = render(<BrowserPanel {...props} nativeSelects={false} />);
+    const panel = within(view.container);
+    const toggle = panel.getByRole("switch", { name: "Use native dropdowns" });
+
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+    expect(toggle).toHaveTextContent("Off");
+    await user.click(toggle);
+    expect(onNativeSelectsChange).toHaveBeenCalledWith(true);
+
+    view.rerender(<BrowserPanel {...props} nativeSelects />);
+    expect(panel.getByRole("switch", { name: "Use native dropdowns" })).toHaveAttribute("aria-checked", "true");
+    expect(panel.getByRole("switch", { name: "Use native dropdowns" })).toHaveTextContent("On");
+  });
+
   it("returns to recorder controls when an incremental replay completes", () => {
     const { container } = render(
       <BrowserPanel

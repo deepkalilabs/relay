@@ -115,6 +115,30 @@ describe("useRecorderSession", () => {
     expect(socket.send).toHaveBeenCalledWith({ type: "select.picker.dismiss", requestId });
   });
 
+  it("keeps native dropdown mode for the task and includes it in new sessions", () => {
+    const { result } = renderHook(() => useRecorderSession({ onSessionStarted: vi.fn(), onReplaySessionStarted: vi.fn(), onStartUrl: vi.fn(), onStepRecorded: vi.fn() }));
+    const requestId = "c7daf0b9-d92a-44db-9967-db33d1516976";
+    expect(result.current.nativeSelects).toBe(false);
+
+    act(() => socket.onMessage?.({
+      type: "select.picker.open",
+      requestId,
+      name: "Plan",
+      value: "free",
+      options: [{ value: "free", label: "Free", disabled: false }],
+      rect: { x: 100, y: 120, width: 240, height: 40 },
+      viewport: { width: 1280, height: 720 },
+    }));
+    act(() => result.current.setNativeSelects(true));
+
+    expect(result.current.nativeSelects).toBe(true);
+    expect(result.current.selectPicker).toBeNull();
+    expect(socket.send).toHaveBeenCalledWith({ type: "select.native.set", enabled: true });
+
+    act(() => result.current.startRecording());
+    expect(socket.send).toHaveBeenLastCalledWith({ type: "session.start", nativeSelects: true });
+  });
+
   it("tracks replay progress and exposes recovery commands", () => {
     const onReplayStepChange = vi.fn();
     const onReplaySessionStarted = vi.fn();
@@ -149,11 +173,11 @@ describe("useRecorderSession", () => {
     expect(result.current.liveViewUrl).toBe("https://example.com/live");
   });
 
-  it("starts replay without browser-state options", () => {
+  it("starts replay with the current native dropdown preference", () => {
     const { result } = renderHook(() => useRecorderSession({ onSessionStarted: vi.fn(), onReplaySessionStarted: vi.fn(), onStartUrl: vi.fn(), onStepRecorded: vi.fn() }));
     const workflow = createWorkflow("session-1");
 
     act(() => result.current.startReplay(workflow));
-    expect(socket.send).toHaveBeenLastCalledWith({ type: "replay.start", workflow, startStepId: undefined });
+    expect(socket.send).toHaveBeenLastCalledWith({ type: "replay.start", workflow, startStepId: undefined, nativeSelects: false });
   });
 });

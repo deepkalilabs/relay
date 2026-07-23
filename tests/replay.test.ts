@@ -3,9 +3,12 @@ import type { Frame, Locator, Page, Request } from "playwright-core";
 import type { ServerMessage } from "@/lib/protocol";
 import { createWorkflow, type Workflow, type WorkflowStep } from "@/lib/workflow/schema";
 import { applyPositionBefore, preflightReplay, ReplayEngine, resolveTarget } from "@/server/replay/engine";
+import { isRedundantOptionClickBeforeSelect } from "@/server/replay/redundant-option-click";
 
 const recordedAt = new Date().toISOString();
 const target = { candidates: [{ kind: "testId" as const, value: "target", exact: true }] };
+type ClickStep = Extract<WorkflowStep, { type: "click" }>;
+type SelectStep = Extract<WorkflowStep, { type: "select" }>;
 
 function baseStep(type: WorkflowStep["type"], order: number) {
   return {
@@ -46,6 +49,29 @@ function replayPage(click = vi.fn(async () => undefined)) {
   return { page, locator };
 }
 
+function nativeSelectPair(): [ClickStep, SelectStep] {
+  const click: ClickStep = {
+    ...baseStep("click", 0),
+    type: "click",
+    name: "Illinois",
+    target: {
+      tagName: "div",
+      candidates: [{ kind: "role", value: "option", name: "Illinois", exact: true }],
+    },
+  };
+  const select: SelectStep = {
+    ...baseStep("select", 1),
+    type: "select",
+    name: "State",
+    target: {
+      tagName: "select",
+      candidates: [{ kind: "testId", value: "state", exact: true }],
+    },
+    payload: { value: "IL", label: "Illinois" },
+  };
+  return [click, select];
+}
+
 describe("replay preflight", () => {
   it("uses recorded page context when an explicit start URL is absent", () => {
     const click = { ...baseStep("click", 0), type: "click" as const };
@@ -64,7 +90,82 @@ describe("replay preflight", () => {
   });
 });
 
+describe("redundant native select clicks", () => {
+  it("recognizes a recorded option click immediately followed by its semantic select", () => {
+    const [click, select] = nativeSelectPair();
+    expect(isRedundantOptionClickBeforeSelect(click, select)).toBe(true);
+  });
+
+  it("does not match unrelated, manual, disabled, delayed, cross-page, or cross-frame steps", () => {
+    const [click, select] = nativeSelectPair();
+    const cases: Array<[WorkflowStep, WorkflowStep]> = [
+      [click, { ...select, payload: { ...select.payload, label: "California" } }],
+      [{ ...click, metadata: { ...click.metadata, origin: "manual" } }, select],
+      [click, { ...select, enabled: false }],
+      [{ ...click, waitAfter: { delayMs: 100 } }, select],
+      [click, { ...select, page: { ...select.page, id: "another-page" } }],
+      [
+        { ...click, target: { ...click.target, frameUrl: "https://example.com/first-frame" } },
+        { ...select, target: { ...select.target, frameUrl: "https://example.com/second-frame" } },
+      ],
+    ];
+
+    for (const pair of cases) expect(isRedundantOptionClickBeforeSelect(...pair)).toBe(false);
+  });
+});
+
 describe("replay engine", () => {
+  it("skips a legacy option click and replays the following semantic select", async () => {
+    const [click, select] = nativeSelectPair();
+    const messages: ServerMessage[] = [];
+    const { page, locator } = replayPage();
+    const engine = new ReplayEngine(
+      crypto.randomUUID(),
+      page,
+      preflightReplay(workflowWith([click, select])),
+      (message) => messages.push(message),
+    );
+
+    await engine.run();
+
+    expect(locator.click).not.toHaveBeenCalled();
+    expect(locator.selectOption).toHaveBeenCalledWith({ value: "IL" }, expect.anything());
+    expect(messages).toContainEqual(expect.objectContaining({
+      type: "replay.step",
+      stepId: click.id,
+      status: "skipped",
+    }));
+    expect(messages).toContainEqual(expect.objectContaining({
+      type: "replay.step",
+      stepId: select.id,
+      status: "passed",
+    }));
+  });
+
+  it("replays an unrelated option-like click before a select", async () => {
+    const [click, select] = nativeSelectPair();
+    const unrelated: ClickStep = {
+      ...click,
+      name: "California",
+      target: {
+        tagName: "option",
+        candidates: [{ kind: "testId", value: "target", exact: true }],
+      },
+    };
+    const { page, locator } = replayPage();
+    const engine = new ReplayEngine(
+      crypto.randomUUID(),
+      page,
+      preflightReplay(workflowWith([unrelated, select])),
+      vi.fn(),
+    );
+
+    await engine.run();
+
+    expect(locator.click).toHaveBeenCalledOnce();
+    expect(locator.selectOption).toHaveBeenCalledOnce();
+  });
+
   it("applies the recorded absolute position to the action frame", async () => {
     const mainFrame = { url: vi.fn(() => "https://example.com") } as unknown as Frame;
     const evaluate = vi.fn(async () => undefined);

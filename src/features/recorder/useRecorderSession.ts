@@ -34,6 +34,7 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
   const [popup, setPopup] = useState<PopupState | null>(null);
   const [datePicker, setDatePicker] = useState<DatePickerState | null>(null);
   const [selectPicker, setSelectPicker] = useState<SelectPickerState | null>(null);
+  const [nativeSelects, setNativeSelectsState] = useState(false);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [replayStatus, setReplayStatus] = useState<ReplayStatus>("idle");
   const [replayRunId, setReplayRunId] = useState<string | null>(null);
@@ -215,6 +216,7 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
 
   const sessionStartCommand = (): ClientMessage => ({
     type: status === "error" || liveViewUrl ? "session.restart" : "session.start",
+    nativeSelects,
   });
 
   const startRecording = () => {
@@ -250,7 +252,7 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
     setPopup(null);
     setDatePicker(null);
     setSelectPicker(null);
-    if (!send({ type: "replay.start", workflow, startStepId })) {
+    if (!send({ type: "replay.start", workflow, startStepId, nativeSelects })) {
       setReplayStatus("stopped");
       setError("The recorder connection is unavailable. Wait a moment and try again.");
     }
@@ -284,6 +286,11 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
     setSelectPicker((current) => current?.requestId === requestId ? null : current);
     send({ type: "select.picker.dismiss", requestId });
   }, [send]);
+  const setNativeSelects = useCallback((enabled: boolean) => {
+    setNativeSelectsState(enabled);
+    if (enabled) setSelectPicker(null);
+    send({ type: "select.native.set", enabled });
+  }, [send]);
 
   return {
     browserPage,
@@ -302,6 +309,7 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
     replayRunId,
     replayStatus,
     replayTotalSteps,
+    nativeSelects,
     selectPicker,
     reportError: setError,
     clearError: () => setError(null),
@@ -310,6 +318,7 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
     dismissDatePicker,
     selectPickerOption,
     dismissSelectPicker,
+    setNativeSelects,
     startAfterDiscard,
     startReplay,
     startRecording,

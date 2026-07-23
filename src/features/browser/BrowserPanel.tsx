@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   ArrowLeft,
   ArrowRight,
+  ChevronsUpDown,
   Cloud,
   Globe2,
   LoaderCircle,
@@ -40,6 +41,7 @@ interface BrowserPanelProps {
   popup: PopupState | null;
   datePicker?: DatePickerState | null;
   selectPicker?: SelectPickerState | null;
+  nativeSelects?: boolean;
   onBack: () => void;
   onForward: () => void;
   onNavigate: (url: string) => void;
@@ -52,6 +54,7 @@ interface BrowserPanelProps {
   onDateDismiss?: (requestId: string) => void;
   onSelectPickerSelect?: (requestId: string, value: string) => void;
   onSelectPickerDismiss?: (requestId: string) => void;
+  onNativeSelectsChange?: (enabled: boolean) => void;
   replayStatus?: ReplayStatus;
   replayCurrentIndex?: number;
   replayTotalSteps?: number;
@@ -97,13 +100,14 @@ function BrowserAddress({ disabled, error, initialAddress, pending, onNavigate }
   );
 }
 
-export function BrowserPanel({ status, transportStatus, startedAt, liveViewUrl, error, errorContext = "recording", onDismissError, navigationError, navigationPending, page, popup, datePicker, selectPicker, replayStatus = "idle", replayCurrentIndex = 0, replayTotalSteps = 0, replayCurrentResult, replayReadyCount = 0, onReplay, onReplayPause, onReplayResume, onReplayRetry, onReplaySkip, onReplayTakeControl, onReplayStop, onBack, onForward, onNavigate, onReload, onStart, onStop, onRetry, onSwitchPopup, onDateSelect, onDateDismiss, onSelectPickerSelect, onSelectPickerDismiss }: BrowserPanelProps) {
+export function BrowserPanel({ status, transportStatus, startedAt, liveViewUrl, error, errorContext = "recording", onDismissError, navigationError, navigationPending, page, popup, datePicker, selectPicker, nativeSelects = false, replayStatus = "idle", replayCurrentIndex = 0, replayTotalSteps = 0, replayCurrentResult, replayReadyCount = 0, onReplay, onReplayPause, onReplayResume, onReplayRetry, onReplaySkip, onReplayTakeControl, onReplayStop, onBack, onForward, onNavigate, onReload, onStart, onStop, onRetry, onSwitchPopup, onDateSelect, onDateDismiss, onSelectPickerSelect, onSelectPickerDismiss, onNativeSelectsChange }: BrowserPanelProps) {
   const [loadedUrl, setLoadedUrl] = useState<string | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const liveViewRef = useRef<HTMLIFrameElement>(null);
   const restoreLiveViewFocus = () => requestAnimationFrame(() => liveViewRef.current?.focus());
   const loading = status === "starting" || replayStatus === "preparing" || (liveViewUrl && loadedUrl !== liveViewUrl);
   const replayMode = ["preparing", "running", "pausing", "paused", "manual", "stopping"].includes(replayStatus);
+  const nativeSelectsDisabled = !liveViewUrl || transportStatus !== "connected" || ["preparing", "running", "pausing", "paused", "stopping"].includes(replayStatus);
   const navigationDisabled = !liveViewUrl || navigationPending || (!["recording", "reconnecting"].includes(status) && replayStatus !== "manual");
   const tabTitle = page?.title && page.title !== "about:blank" ? page.title : liveViewUrl ? "Browserbase" : "New cloud browser";
   const pageAddress = page?.url === "about:blank" ? "" : page?.url ?? "";
@@ -111,12 +115,28 @@ export function BrowserPanel({ status, transportStatus, startedAt, liveViewUrl, 
   return (
     <section className="browser-panel" aria-labelledby="browser-title">
       <div className="browser-chrome">
-        <div className="browser-tab-strip" aria-hidden="true">
-          <div className="traffic-lights"><span /><span /><span /></div>
-          <div className="browser-tab">
+        <div className="browser-tab-strip">
+          <div className="traffic-lights" aria-hidden="true"><span /><span /><span /></div>
+          <div className="browser-tab" aria-hidden="true">
             <Globe2 size={15} />
             <span>{tabTitle}</span>
           </div>
+          <button
+            className="native-dropdown-toggle"
+            type="button"
+            role="switch"
+            aria-checked={nativeSelects}
+            disabled={nativeSelectsDisabled}
+            onClick={() => onNativeSelectsChange?.(!nativeSelects)}
+            title={nativeSelects
+              ? "Website dropdowns are active"
+              : "Use the website's own dropdowns instead of the recorder picker"}
+          >
+            <ChevronsUpDown size={14} aria-hidden="true" />
+            <span className="native-dropdown-label">Use native <span className="native-dropdown-detail">dropdowns</span></span>
+            <span className="native-dropdown-track" aria-hidden="true"><span /></span>
+            <span className="native-dropdown-state" aria-hidden="true">{nativeSelects ? "On" : "Off"}</span>
+          </button>
         </div>
         <div className="browser-navigation">
           <div className="browser-nav-controls">

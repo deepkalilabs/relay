@@ -7,7 +7,9 @@ export const RECORDER_SCRIPT = String.raw`(() => {
   const dirtyFields = new Set();
   let datePickerOpen = false;
   let selectPickerOpen = false;
+  let pendingOptionClick = null;
   window.__browserMemorySuppressSelectChange = false;
+  window.__browserMemoryNativeSelects = window.__browserMemoryNativeSelects === true;
   const normalize = (value) => String(value ?? "").replace(/\s+/g, " ").trim();
   const clip = (value, size = 180) => normalize(value).slice(0, size);
   const escapeCss = (value) => window.CSS?.escape ? CSS.escape(value) : value.replace(/[^a-zA-Z0-9_-]/g, "\\$&");
@@ -17,6 +19,10 @@ export const RECORDER_SCRIPT = String.raw`(() => {
       const result = window.${RECORDER_BINDING}?.(payload);
       if (result?.catch) result.catch(() => undefined);
     } catch {}
+  };
+  window.__browserMemorySetNativeSelects = (enabled) => {
+    window.__browserMemoryNativeSelects = enabled === true;
+    if (window.__browserMemoryNativeSelects) selectPickerOpen = false;
   };
 
   const viewportPosition = () => ({
@@ -312,6 +318,7 @@ export const RECORDER_SCRIPT = String.raw`(() => {
     "[role='menuitem']",
     "[role='menuitemcheckbox']",
     "[role='menuitemradio']",
+    "[role='option']",
     "[role='tab']",
     "input[type='button']",
     "input[type='submit']",
@@ -372,14 +379,43 @@ export const RECORDER_SCRIPT = String.raw`(() => {
     emitAction({ type: "fill", name: targetName(element), target: describe(element), payload: { value }, sensitive: sensitive(element) });
   };
 
+  const isOptionLikeClick = (element) =>
+    element instanceof HTMLOptionElement ||
+    Boolean(element.closest("[role='option'],[role='menuitemradio']"));
+
+  const flushPendingOptionClick = () => {
+    if (!pendingOptionClick) return;
+    clearTimeout(pendingOptionClick.timer);
+    const action = pendingOptionClick.action;
+    pendingOptionClick = null;
+    emitAction(action);
+  };
+
+  const holdOptionClick = (action, label) => {
+    flushPendingOptionClick();
+    const timer = setTimeout(() => flushPendingOptionClick(), 300);
+    pendingOptionClick = { action, label: normalize(label).toLocaleLowerCase(), timer };
+  };
+
+  const cancelMatchingOptionClick = (label) => {
+    if (!pendingOptionClick) return;
+    if (pendingOptionClick.label !== normalize(label).toLocaleLowerCase()) {
+      flushPendingOptionClick();
+      return;
+    }
+    clearTimeout(pendingOptionClick.timer);
+    pendingOptionClick = null;
+  };
+
   const recordControlChange = (element) => {
     const select = nativeSelectForInteraction(element);
     if (!select || select.multiple) return false;
     selectPickerOpen = false;
-    if (window.__browserMemorySuppressSelectChange) return true;
-    [...dirtyFields].forEach((field) => flushInput(field));
     const selectedOption = select.selectedOptions[0];
     const label = selectedOption ? clip(selectedOption.label || selectedOption.textContent || "") : "";
+    cancelMatchingOptionClick(label);
+    if (window.__browserMemorySuppressSelectChange) return true;
+    [...dirtyFields].forEach((field) => flushInput(field));
     emitAction({
       type: "select",
       name: targetName(select),
@@ -414,6 +450,14 @@ export const RECORDER_SCRIPT = String.raw`(() => {
     const origin = eventElement(event);
     const select = origin ? nativeSelectForInteraction(origin) : null;
     if (select instanceof HTMLSelectElement && !select.disabled && !select.multiple && select.size <= 1) {
+      if (window.__browserMemoryNativeSelects) {
+        if (datePickerOpen) {
+          datePickerOpen = false;
+          emit({ type: "date-picker.dismiss" });
+        }
+        selectPickerOpen = false;
+        return;
+      }
       event.preventDefault();
       if (datePickerOpen) {
         datePickerOpen = false;
@@ -469,7 +513,13 @@ export const RECORDER_SCRIPT = String.raw`(() => {
     const element = resolveClickTarget(event);
     if (!(element instanceof HTMLElement)) return;
     [...dirtyFields].forEach((field) => flushInput(field));
-    emitAction({ type: "click", name: targetName(element), target: describe(element), sensitive: false });
+    const action = { type: "click", name: targetName(element), target: describe(element), sensitive: false };
+    if (isOptionLikeClick(element)) {
+      holdOptionClick(action, action.name);
+      return;
+    }
+    flushPendingOptionClick();
+    emitAction(action);
   }, true);
 
   window.addEventListener("keydown", (event) => {

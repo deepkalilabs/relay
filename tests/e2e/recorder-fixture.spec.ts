@@ -66,6 +66,80 @@ test("opens application pickers for consecutive native selects without recording
   expect(actions).toHaveLength(0);
 });
 
+test("uses website-native dropdowns without picker or click noise", async ({ page }) => {
+  const actions: Array<Record<string, unknown>> = [];
+  await page.exposeFunction("__browserMemoryEmit", (action: Record<string, unknown>) => { actions.push(action); });
+  await page.addInitScript({ content: RECORDER_SCRIPT });
+  await page.goto("/fixture");
+  await page.evaluate(() => {
+    (window as Window & { __browserMemorySetNativeSelects?: (enabled: boolean) => void })
+      .__browserMemorySetNativeSelects?.(true);
+  });
+
+  await page.getByLabel("Plan").click();
+  await page.getByLabel("Plan").selectOption("pro");
+  await expect.poll(() => actions.filter((action) => action.type === "select").length).toBe(1);
+
+  expect(actions.some((action) => action.type === "select-picker.request")).toBe(false);
+  expect(actions.some((action) => action.type === "click" && (action.target as { tagName?: string })?.tagName === "select")).toBe(false);
+  expect(actions.find((action) => action.type === "select")).toMatchObject({
+    name: "Plan",
+    payload: { value: "pro", label: "Professional" },
+  });
+});
+
+test("collapses an option-like click followed by a matching native select change", async ({ page }) => {
+  const actions: Array<Record<string, unknown>> = [];
+  await page.exposeFunction("__browserMemoryEmit", (action: Record<string, unknown>) => { actions.push(action); });
+  await page.addInitScript({ content: RECORDER_SCRIPT });
+  await page.goto("/fixture");
+  await page.evaluate(() => {
+    const select = document.createElement("select");
+    select.id = "state";
+    select.setAttribute("aria-label", "State");
+    select.innerHTML = '<option value="">Choose</option><option value="IL">Illinois</option>';
+
+    const option = document.createElement("div");
+    option.dataset.testid = "state-option";
+    option.setAttribute("role", "option");
+    option.tabIndex = 0;
+    option.textContent = "Illinois";
+    option.addEventListener("click", () => {
+      select.value = "IL";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    document.body.append(select, option);
+  });
+
+  await page.getByTestId("state-option").click();
+  await expect.poll(() => actions.length).toBe(1);
+
+  expect(actions[0]).toMatchObject({
+    type: "select",
+    name: "State",
+    payload: { value: "IL", label: "Illinois" },
+  });
+});
+
+test("flushes a custom option click when no native select change follows", async ({ page }) => {
+  const actions: Array<Record<string, unknown>> = [];
+  await page.exposeFunction("__browserMemoryEmit", (action: Record<string, unknown>) => { actions.push(action); });
+  await page.addInitScript({ content: RECORDER_SCRIPT });
+  await page.goto("/fixture");
+  await page.evaluate(() => {
+    const option = document.createElement("div");
+    option.setAttribute("role", "menuitemradio");
+    option.tabIndex = 0;
+    option.textContent = "Custom Illinois";
+    document.body.append(option);
+  });
+
+  await page.getByRole("menuitemradio", { name: "Custom Illinois" }).click();
+  await expect.poll(() => actions.length).toBe(1);
+
+  expect(actions[0]).toMatchObject({ type: "click", name: "Custom Illinois" });
+});
+
 test("records frame URLs only for child-frame actions", async ({ page }) => {
   const actions: Array<Record<string, unknown>> = [];
   await page.exposeFunction("__browserMemoryEmit", (action: Record<string, unknown>) => { actions.push(action); });

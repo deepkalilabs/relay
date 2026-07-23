@@ -209,6 +209,7 @@ export function RecorderWorkspace() {
               popup={session.popup}
               datePicker={session.datePicker}
               selectPicker={session.selectPicker}
+              nativeSelects={session.nativeSelects}
               onBack={() => session.sendBrowserCommand({ type: "browser.back" })}
               onForward={() => session.sendBrowserCommand({ type: "browser.forward" })}
               onNavigate={(url) => session.sendBrowserCommand({ type: "browser.navigate", url })}
@@ -221,6 +222,7 @@ export function RecorderWorkspace() {
               onDateDismiss={(requestId) => session.dismissDatePicker(requestId)}
               onSelectPickerSelect={(requestId, value) => session.selectPickerOption(requestId, value)}
               onSelectPickerDismiss={(requestId) => session.dismissSelectPicker(requestId)}
+              onNativeSelectsChange={session.setNativeSelects}
               replayStatus={session.replayStatus}
               replayCurrentIndex={session.replayCurrentIndex}
               replayTotalSteps={session.replayTotalSteps}

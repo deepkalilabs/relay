@@ -274,6 +274,7 @@ describe("browser navigation", () => {
     };
     const runtime = new RecordingRuntime(crypto.randomUUID(), provider, vi.fn());
     await runtime.start({ timeoutSeconds: 120, region: "us-west-2" });
+    mainFrame.evaluate.mockClear();
     runtime.buffer.splice(0);
 
     const request = {
@@ -326,8 +327,21 @@ describe("browser navigation", () => {
     if (navigationOpen?.type !== "select.picker.open") throw new Error("Select picker did not reopen for navigation");
     handlers.get("framenavigated")?.(mainFrame);
     expect(runtime.buffer.some((item) => item.message.type === "select.picker.closed" && item.message.requestId === navigationOpen.requestId)).toBe(true);
+    expect(mainFrame.evaluate).toHaveBeenCalledTimes(3);
     await runtime.selectPickerOption(navigationOpen.requestId, "masonry");
     expect(locator.selectOption).toHaveBeenCalledOnce();
+
+    await binding?.({ page, frame: mainFrame }, request);
+    const toggleOpen = runtime.buffer.filter((item) => item.message.type === "select.picker.open").at(-1)?.message;
+    if (toggleOpen?.type !== "select.picker.open") throw new Error("Select picker did not reopen for native mode");
+    mainFrame.evaluate.mockClear();
+    await runtime.setNativeSelects(true);
+    expect(mainFrame.evaluate).toHaveBeenCalledOnce();
+    expect(runtime.buffer.some((item) => item.message.type === "select.picker.closed" && item.message.requestId === toggleOpen.requestId)).toBe(true);
+
+    const openCount = runtime.buffer.filter((item) => item.message.type === "select.picker.open").length;
+    await binding?.({ page, frame: mainFrame }, request);
+    expect(runtime.buffer.filter((item) => item.message.type === "select.picker.open")).toHaveLength(openCount);
   });
 
   it("stores only the first main-frame URL while ignoring later navigations", async () => {
@@ -610,8 +624,13 @@ describe("browser navigation", () => {
     expect(ClientMessageSchema.safeParse({ type: "select.picker.select", requestId, value: "masonry" }).success).toBe(true);
     expect(ClientMessageSchema.safeParse({ type: "select.picker.dismiss", requestId }).success).toBe(true);
     expect(ClientMessageSchema.safeParse({ type: "select.picker.select", requestId: "not-a-uuid", value: "masonry" }).success).toBe(false);
+    expect(ClientMessageSchema.safeParse({ type: "select.native.set", enabled: true }).success).toBe(true);
+    expect(ClientMessageSchema.safeParse({ type: "select.native.set", enabled: "yes" }).success).toBe(false);
+    expect(ClientMessageSchema.safeParse({ type: "session.start", nativeSelects: false }).success).toBe(true);
+    expect(ClientMessageSchema.safeParse({ type: "session.start" }).success).toBe(false);
     const workflow = createWorkflow("session");
-    expect(ClientMessageSchema.safeParse({ type: "replay.start", workflow }).success).toBe(true);
+    expect(ClientMessageSchema.safeParse({ type: "replay.start", workflow, nativeSelects: true }).success).toBe(true);
+    expect(ClientMessageSchema.safeParse({ type: "replay.start", workflow }).success).toBe(false);
   });
 
   it("runs commands against the active page and emits recoverable page state", async () => {
