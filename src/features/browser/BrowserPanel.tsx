@@ -16,6 +16,7 @@ import {
 import { RecorderControls } from "@/features/recorder/RecorderControls";
 import { ReplayControls } from "@/features/replay/ReplayControls";
 import { DatePickerOverlay } from "@/features/browser/DatePickerOverlay";
+import { SelectPickerOverlay } from "@/features/browser/SelectPickerOverlay";
 import type {
   BrowserPageState,
   DatePickerState,
@@ -23,13 +24,14 @@ import type {
   RecordingStatus,
   TransportStatus,
   ReplayStepResultState,
+  SelectPickerState,
 } from "@/lib/recorder-session";
 import type { ReplayStatus } from "@/lib/protocol";
 
 interface BrowserPanelProps {
   status: RecordingStatus;
   transportStatus: TransportStatus;
-  elapsed: string;
+  startedAt: number | null;
   liveViewUrl: string | null;
   error: string | null;
   navigationError: string | null;
@@ -37,6 +39,7 @@ interface BrowserPanelProps {
   page: BrowserPageState | null;
   popup: PopupState | null;
   datePicker?: DatePickerState | null;
+  selectPicker?: SelectPickerState | null;
   onBack: () => void;
   onForward: () => void;
   onNavigate: (url: string) => void;
@@ -47,6 +50,8 @@ interface BrowserPanelProps {
   onSwitchPopup: (pageId: string) => void;
   onDateSelect?: (requestId: string, value: string) => void;
   onDateDismiss?: (requestId: string) => void;
+  onSelectPickerSelect?: (requestId: string, value: string) => void;
+  onSelectPickerDismiss?: (requestId: string) => void;
   replayStatus?: ReplayStatus;
   replayCurrentIndex?: number;
   replayTotalSteps?: number;
@@ -92,9 +97,11 @@ function BrowserAddress({ disabled, error, initialAddress, pending, onNavigate }
   );
 }
 
-export function BrowserPanel({ status, transportStatus, elapsed, liveViewUrl, error, errorContext = "recording", onDismissError, navigationError, navigationPending, page, popup, datePicker, replayStatus = "idle", replayCurrentIndex = 0, replayTotalSteps = 0, replayCurrentResult, replayReadyCount = 0, onReplay, onReplayPause, onReplayResume, onReplayRetry, onReplaySkip, onReplayTakeControl, onReplayStop, onBack, onForward, onNavigate, onReload, onStart, onStop, onRetry, onSwitchPopup, onDateSelect, onDateDismiss }: BrowserPanelProps) {
+export function BrowserPanel({ status, transportStatus, startedAt, liveViewUrl, error, errorContext = "recording", onDismissError, navigationError, navigationPending, page, popup, datePicker, selectPicker, replayStatus = "idle", replayCurrentIndex = 0, replayTotalSteps = 0, replayCurrentResult, replayReadyCount = 0, onReplay, onReplayPause, onReplayResume, onReplayRetry, onReplaySkip, onReplayTakeControl, onReplayStop, onBack, onForward, onNavigate, onReload, onStart, onStop, onRetry, onSwitchPopup, onDateSelect, onDateDismiss, onSelectPickerSelect, onSelectPickerDismiss }: BrowserPanelProps) {
   const [loadedUrl, setLoadedUrl] = useState<string | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+  const liveViewRef = useRef<HTMLIFrameElement>(null);
+  const restoreLiveViewFocus = () => requestAnimationFrame(() => liveViewRef.current?.focus());
   const loading = status === "starting" || replayStatus === "preparing" || (liveViewUrl && loadedUrl !== liveViewUrl);
   const replayMode = ["preparing", "running", "pausing", "paused", "manual", "stopping"].includes(replayStatus);
   const navigationDisabled = !liveViewUrl || navigationPending || (!["recording", "reconnecting"].includes(status) && replayStatus !== "manual");
@@ -141,7 +148,7 @@ export function BrowserPanel({ status, transportStatus, elapsed, liveViewUrl, er
               onTakeControl={() => onReplayTakeControl?.()}
               onStop={() => onReplayStop?.()}
             />
-          ) : <RecorderControls status={status} transportStatus={transportStatus} elapsed={elapsed} onStart={onStart} onStop={onStop} announce />}
+          ) : <RecorderControls status={status} transportStatus={transportStatus} startedAt={startedAt} onStart={onStart} onStop={onStop} announce />}
         </div>
         {navigationError ? <div className="browser-address-error" role="alert">{navigationError}</div> : null}
       </div>
@@ -149,6 +156,7 @@ export function BrowserPanel({ status, transportStatus, elapsed, liveViewUrl, er
       <div className="browser-content" ref={contentRef}>
         {liveViewUrl ? (
           <iframe
+            ref={liveViewRef}
             className="live-view"
             src={liveViewUrl}
             title="Interactive Browserbase browser"
@@ -191,6 +199,21 @@ export function BrowserPanel({ status, transportStatus, elapsed, liveViewUrl, er
             containerRef={contentRef}
             onSelect={(value) => onDateSelect?.(datePicker.requestId, value)}
             onDismiss={() => onDateDismiss?.(datePicker.requestId)}
+          />
+        ) : null}
+        {selectPicker ? (
+          <SelectPickerOverlay
+            key={selectPicker.requestId}
+            picker={selectPicker}
+            containerRef={contentRef}
+            onSelect={(value) => {
+              onSelectPickerSelect?.(selectPicker.requestId, value);
+              restoreLiveViewFocus();
+            }}
+            onDismiss={() => {
+              onSelectPickerDismiss?.(selectPicker.requestId);
+              restoreLiveViewFocus();
+            }}
           />
         ) : null}
       </div>

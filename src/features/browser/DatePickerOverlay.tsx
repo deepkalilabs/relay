@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { useDismissibleOverlay } from "@/features/browser/useDismissibleOverlay";
 import type { DatePickerState } from "@/lib/recorder-session";
 
 interface DatePickerOverlayProps {
@@ -12,11 +13,26 @@ interface DatePickerOverlayProps {
 }
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTHS = Array.from({ length: 12 }, (_, month) =>
+  new Intl.DateTimeFormat(undefined, { month: "long" }).format(new Date(2020, month, 1)),
+);
+const DATE_INITIAL_FOCUS_SELECTORS = [
+  "button[aria-pressed='true']:not(:disabled)",
+  "button:not(:disabled)",
+] as const;
+
+function createMonth(year: number, month: number): Date {
+  const date = new Date(0);
+  date.setHours(0, 0, 0, 0);
+  date.setFullYear(year, month, 1);
+  return date;
+}
 
 function parseDate(value: string): Date | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
   if (!match) return null;
-  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  const date = createMonth(Number(match[1]), Number(match[2]) - 1);
+  date.setDate(Number(match[3]));
   return date.getFullYear() === Number(match[1]) && date.getMonth() === Number(match[2]) - 1 && date.getDate() === Number(match[3])
     ? date
     : null;
@@ -33,7 +49,16 @@ function clampDate(date: Date, min: Date | null, max: Date | null): Date {
 }
 
 function monthStart(date: Date): Date {
-  return new Date(date.getFullYear(), date.getMonth(), 1);
+  return createMonth(date.getFullYear(), date.getMonth());
+}
+
+function clampMonth(date: Date, min: Date | null, max: Date | null): Date {
+  const candidate = monthStart(date);
+  const minimum = min ? monthStart(min) : null;
+  const maximum = max ? monthStart(max) : null;
+  if (minimum && candidate < minimum) return minimum;
+  if (maximum && candidate > maximum) return maximum;
+  return candidate;
 }
 
 export function DatePickerOverlay({ picker, containerRef, onDismiss, onSelect }: DatePickerOverlayProps) {
@@ -43,7 +68,15 @@ export function DatePickerOverlay({ picker, containerRef, onDismiss, onSelect }:
   const maxDate = useMemo(() => parseDate(picker.max), [picker.max]);
   const initialDate = useMemo(() => clampDate(selectedDate ?? new Date(), minDate, maxDate), [selectedDate, minDate, maxDate]);
   const [month, setMonth] = useState(() => monthStart(initialDate));
+  const [yearDraft, setYearDraft] = useState(() => String(initialDate.getFullYear()));
   const [position, setPosition] = useState({ left: 8, top: 8 });
+
+  useDismissibleOverlay({
+    overlayRef: dialogRef,
+    focusKey: picker.requestId,
+    initialFocusSelectors: DATE_INITIAL_FOCUS_SELECTORS,
+    onDismiss,
+  });
 
   useLayoutEffect(() => {
     const container = containerRef.current;
@@ -66,35 +99,37 @@ export function DatePickerOverlay({ picker, containerRef, onDismiss, onSelect }:
     return () => observer.disconnect();
   }, [containerRef, picker]);
 
-  useEffect(() => {
-    const dismissOnPointerDown = (event: PointerEvent) => {
-      if (!dialogRef.current?.contains(event.target as Node)) onDismiss();
-    };
-    const dismissOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onDismiss();
-      }
-    };
-    document.addEventListener("pointerdown", dismissOnPointerDown, true);
-    document.addEventListener("keydown", dismissOnEscape, true);
-    const focusTimer = requestAnimationFrame(() => {
-      dialogRef.current?.querySelector<HTMLElement>("[aria-pressed='true'], button:not(:disabled)")?.focus();
-    });
-    return () => {
-      document.removeEventListener("pointerdown", dismissOnPointerDown, true);
-      document.removeEventListener("keydown", dismissOnEscape, true);
-      cancelAnimationFrame(focusTimer);
-    };
-  }, [onDismiss, picker.requestId]);
+  const updateMonth = (nextMonth: Date) => {
+    setMonth(nextMonth);
+    setYearDraft(String(nextMonth.getFullYear()));
+  };
+  const showMonth = (year: number, monthIndex: number) => {
+    updateMonth(clampMonth(createMonth(year, monthIndex), minDate, maxDate));
+  };
+  const commitYear = () => {
+    const year = Number(yearDraft);
+    const minimumYear = minDate?.getFullYear() ?? 1;
+    const maximumYear = maxDate?.getFullYear() ?? 9999;
+    if (!/^\d{1,4}$/.test(yearDraft) || year < minimumYear || year > maximumYear) {
+      setYearDraft(String(month.getFullYear()));
+      return;
+    }
+    showMonth(year, month.getMonth());
+  };
 
   const firstVisible = new Date(month);
   firstVisible.setDate(1 - firstVisible.getDay());
-  const days = Array.from({ length: 42 }, (_, index) => new Date(firstVisible.getFullYear(), firstVisible.getMonth(), firstVisible.getDate() + index));
-  const previousMonth = new Date(month.getFullYear(), month.getMonth() - 1, 1);
-  const nextMonth = new Date(month.getFullYear(), month.getMonth() + 1, 1);
+  const days = Array.from({ length: 42 }, (_, index) => {
+    const day = new Date(firstVisible);
+    day.setDate(firstVisible.getDate() + index);
+    return day;
+  });
+  const previousMonth = createMonth(month.getFullYear(), month.getMonth() - 1);
+  const nextMonth = createMonth(month.getFullYear(), month.getMonth() + 1);
   const previousDisabled = Boolean(minDate && new Date(month.getFullYear(), month.getMonth(), 0) < minDate);
   const nextDisabled = Boolean(maxDate && nextMonth > maxDate);
+  const minimumMonth = minDate ? monthStart(minDate) : null;
+  const maximumMonth = maxDate ? monthStart(maxDate) : null;
   const today = formatDate(new Date());
 
   return (
@@ -107,9 +142,41 @@ export function DatePickerOverlay({ picker, containerRef, onDismiss, onSelect }:
       aria-modal="false"
     >
       <div className="date-picker-heading">
-        <button type="button" onClick={() => setMonth(previousMonth)} disabled={previousDisabled} aria-label="Previous month"><ChevronLeft size={17} /></button>
-        <strong aria-live="polite">{new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" }).format(month)}</strong>
-        <button type="button" onClick={() => setMonth(nextMonth)} disabled={nextDisabled} aria-label="Next month"><ChevronRight size={17} /></button>
+        <button type="button" onClick={() => updateMonth(previousMonth)} disabled={previousDisabled} aria-label="Previous month"><ChevronLeft size={17} /></button>
+        <div className="date-picker-jump">
+          <select
+            aria-label="Month"
+            value={month.getMonth()}
+            onChange={(event) => showMonth(month.getFullYear(), Number(event.target.value))}
+          >
+            {MONTHS.map((label, monthIndex) => {
+              const optionMonth = createMonth(month.getFullYear(), monthIndex);
+              const disabled = Boolean((minimumMonth && optionMonth < minimumMonth) || (maximumMonth && optionMonth > maximumMonth));
+              return <option key={label} value={monthIndex} disabled={disabled}>{label}</option>;
+            })}
+          </select>
+          <input
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            maxLength={4}
+            aria-label="Year"
+            value={yearDraft}
+            onChange={(event) => setYearDraft(event.target.value)}
+            onBlur={commitYear}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                commitYear();
+                event.currentTarget.blur();
+              }
+            }}
+          />
+          <span className="sr-only" aria-live="polite">
+            Showing {new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" }).format(month)}
+          </span>
+        </div>
+        <button type="button" onClick={() => updateMonth(nextMonth)} disabled={nextDisabled} aria-label="Next month"><ChevronRight size={17} /></button>
       </div>
       <div className="date-picker-weekdays" aria-hidden="true">
         {WEEKDAYS.map((day) => <span key={day}>{day.slice(0, 2)}</span>)}

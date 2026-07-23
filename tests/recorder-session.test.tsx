@@ -27,7 +27,7 @@ describe("useRecorderSession", () => {
     const onReplaySessionStarted = vi.fn();
     const onStartUrl = vi.fn();
     const onStepRecorded = vi.fn();
-    renderHook(() => useRecorderSession({ onSessionStarted, onReplaySessionStarted, onStartUrl, onStepRecorded }));
+    const { result } = renderHook(() => useRecorderSession({ onSessionStarted, onReplaySessionStarted, onStartUrl, onStepRecorded }));
 
     act(() => socket.onMessage?.({
       type: "session.started",
@@ -50,6 +50,7 @@ describe("useRecorderSession", () => {
     }));
 
     expect(onSessionStarted).toHaveBeenCalledWith("session-1");
+    expect(result.current.startedAt).toEqual(expect.any(Number));
     expect(onStartUrl).toHaveBeenCalledWith("https://example.com/start");
     expect(onStepRecorded).toHaveBeenCalledWith(expect.objectContaining({
       type: "click",
@@ -77,6 +78,41 @@ describe("useRecorderSession", () => {
     act(() => result.current.selectDate(requestId, "2026-07-22"));
     expect(result.current.datePicker).toBeNull();
     expect(socket.send).toHaveBeenCalledWith({ type: "date.picker.select", requestId, value: "2026-07-22" });
+  });
+
+  it("opens the parent select picker and sends selection and dismissal commands", () => {
+    const { result } = renderHook(() => useRecorderSession({ onSessionStarted: vi.fn(), onReplaySessionStarted: vi.fn(), onStartUrl: vi.fn(), onStepRecorded: vi.fn() }));
+    const requestId = "c7daf0b9-d92a-44db-9967-db33d1516976";
+
+    act(() => socket.onMessage?.({
+      type: "select.picker.open",
+      requestId,
+      name: "Construction type",
+      value: "frame",
+      options: [
+        { value: "frame", label: "Frame", disabled: false },
+        { value: "masonry", label: "Masonry", disabled: false },
+      ],
+      rect: { x: 100, y: 120, width: 240, height: 40 },
+      viewport: { width: 1280, height: 720 },
+    }));
+    expect(result.current.selectPicker?.name).toBe("Construction type");
+
+    act(() => result.current.selectPickerOption(requestId, "masonry"));
+    expect(result.current.selectPicker).toBeNull();
+    expect(socket.send).toHaveBeenCalledWith({ type: "select.picker.select", requestId, value: "masonry" });
+
+    act(() => socket.onMessage?.({
+      type: "select.picker.open",
+      requestId,
+      name: "Construction type",
+      value: "masonry",
+      options: [{ value: "masonry", label: "Masonry", disabled: false }],
+      rect: { x: 100, y: 120, width: 240, height: 40 },
+      viewport: { width: 1280, height: 720 },
+    }));
+    act(() => result.current.dismissSelectPicker(requestId));
+    expect(socket.send).toHaveBeenCalledWith({ type: "select.picker.dismiss", requestId });
   });
 
   it("tracks replay progress and exposes recovery commands", () => {

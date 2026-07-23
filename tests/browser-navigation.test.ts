@@ -180,11 +180,12 @@ describe("browser navigation", () => {
       locator: vi.fn(() => locator),
       url: vi.fn(() => currentUrl),
     };
+    const handlers = new Map<string, (...args: unknown[]) => void>();
     const page = {
       evaluate: vi.fn(async () => ({ width: 1280, height: 720 })),
       isClosed: vi.fn(() => false),
       mainFrame: vi.fn(() => mainFrame),
-      on: vi.fn(),
+      on: vi.fn((name: string, handler: (...args: unknown[]) => void) => { handlers.set(name, handler); }),
       title: vi.fn(async () => "Example"),
       url: vi.fn(() => currentUrl),
     } as unknown as Page;
@@ -230,6 +231,103 @@ describe("browser navigation", () => {
         position: { x: 0, y: 480 },
       },
     });
+  });
+
+  it("applies native select picker choices once and rejects disabled options", async () => {
+    const currentUrl = "https://example.com/form";
+    let binding: ((source: { page: Page; frame: unknown }, raw: unknown) => Promise<void>) | undefined;
+    const locator = {
+      boundingBox: vi.fn(async () => ({ x: 20, y: 80, width: 240, height: 40 })),
+      evaluate: vi.fn(async (_callback: unknown, value: string) => value === "wood"
+        ? { label: "Wood", disabled: true }
+        : { label: "Masonry", disabled: false }),
+      focus: vi.fn(async () => undefined),
+      selectOption: vi.fn(async ({ value }: { value: string }) => [value]),
+    };
+    const mainFrame = {
+      evaluate: vi.fn(async () => undefined),
+      locator: vi.fn(() => locator),
+      url: vi.fn(() => currentUrl),
+    };
+    const handlers = new Map<string, (...args: unknown[]) => void>();
+    const page = {
+      evaluate: vi.fn(async () => ({ width: 1280, height: 720 })),
+      isClosed: vi.fn(() => false),
+      mainFrame: vi.fn(() => mainFrame),
+      on: vi.fn((name: string, handler: (...args: unknown[]) => void) => {
+        handlers.set(name, handler);
+      }),
+      title: vi.fn(async () => "Example"),
+      url: vi.fn(() => currentUrl),
+    } as unknown as Page;
+    const context = {
+      addInitScript: vi.fn(async () => undefined),
+      exposeBinding: vi.fn(async (_name: string, callback: typeof binding) => { binding = callback; }),
+      on: vi.fn(),
+      pages: vi.fn(() => [page]),
+    } as unknown as BrowserContext;
+    const provider: BrowserProvider = {
+      connect: vi.fn(async () => ({ browser: { close: vi.fn(async () => undefined) } as unknown as Browser, context })),
+      createSession: vi.fn(async () => ({ id: "session", connectUrl: "ws://example.com" })),
+      getLiveView: vi.fn(async () => ({ id: "page", title: "Example", url: currentUrl, liveViewUrl: "https://example.com/live" })),
+      releaseSession: vi.fn(async () => undefined),
+    };
+    const runtime = new RecordingRuntime(crypto.randomUUID(), provider, vi.fn());
+    await runtime.start({ timeoutSeconds: 120, region: "us-west-2" });
+    runtime.buffer.splice(0);
+
+    const request = {
+      type: "select-picker.request",
+      selector: "#construction-type",
+      name: "Construction type",
+      target: { candidates: [{ kind: "label", value: "Construction type", exact: true }] },
+      value: "frame",
+      options: [
+        { value: "frame", label: "Frame", disabled: false },
+        { value: "masonry", label: "Masonry", disabled: false },
+        { value: "wood", label: "Wood", disabled: true },
+      ],
+      sensitive: false,
+      position: { x: 0, y: 480 },
+      rect: { x: 20, y: 80, width: 240, height: 40 },
+    };
+    await binding?.({ page, frame: mainFrame }, request);
+    const open = runtime.buffer.find((item) => item.message.type === "select.picker.open")?.message;
+    expect(open).toMatchObject({ type: "select.picker.open", name: "Construction type", value: "frame", options: request.options });
+    if (open?.type !== "select.picker.open") throw new Error("Select picker did not open");
+
+    await runtime.selectPickerOption(open.requestId, "masonry");
+
+    expect(locator.selectOption).toHaveBeenCalledWith({ value: "masonry" });
+    expect(locator.focus).toHaveBeenCalledOnce();
+    expect(mainFrame.evaluate).toHaveBeenCalledTimes(2);
+    expect(runtime.buffer.filter((item) => item.message.type === "recorded.action")).toHaveLength(1);
+    expect(runtime.buffer.find((item) => item.message.type === "recorded.action")?.message).toMatchObject({
+      type: "recorded.action",
+      action: {
+        type: "select",
+        name: "Construction type",
+        payload: { value: "masonry", label: "Masonry" },
+        position: { x: 0, y: 480 },
+      },
+    });
+
+    await runtime.selectPickerOption(open.requestId, "masonry");
+    expect(locator.selectOption).toHaveBeenCalledOnce();
+
+    await binding?.({ page, frame: mainFrame }, request);
+    const disabledOpen = runtime.buffer.filter((item) => item.message.type === "select.picker.open").at(-1)?.message;
+    if (disabledOpen?.type !== "select.picker.open") throw new Error("Select picker did not reopen");
+    await expect(runtime.selectPickerOption(disabledOpen.requestId, "wood")).rejects.toThrow(/disabled/i);
+    expect(locator.selectOption).toHaveBeenCalledOnce();
+
+    await binding?.({ page, frame: mainFrame }, request);
+    const navigationOpen = runtime.buffer.filter((item) => item.message.type === "select.picker.open").at(-1)?.message;
+    if (navigationOpen?.type !== "select.picker.open") throw new Error("Select picker did not reopen for navigation");
+    handlers.get("framenavigated")?.(mainFrame);
+    expect(runtime.buffer.some((item) => item.message.type === "select.picker.closed" && item.message.requestId === navigationOpen.requestId)).toBe(true);
+    await runtime.selectPickerOption(navigationOpen.requestId, "masonry");
+    expect(locator.selectOption).toHaveBeenCalledOnce();
   });
 
   it("stores only the first main-frame URL while ignoring later navigations", async () => {
@@ -508,6 +606,10 @@ describe("browser navigation", () => {
     expect(ClientMessageSchema.safeParse({ type: "browser.forward" }).success).toBe(true);
     expect(ClientMessageSchema.safeParse({ type: "browser.reload" }).success).toBe(true);
     expect(ClientMessageSchema.safeParse({ type: "browser.navigate", url: "" }).success).toBe(false);
+    const requestId = "c7daf0b9-d92a-44db-9967-db33d1516976";
+    expect(ClientMessageSchema.safeParse({ type: "select.picker.select", requestId, value: "masonry" }).success).toBe(true);
+    expect(ClientMessageSchema.safeParse({ type: "select.picker.dismiss", requestId }).success).toBe(true);
+    expect(ClientMessageSchema.safeParse({ type: "select.picker.select", requestId: "not-a-uuid", value: "masonry" }).success).toBe(false);
     const workflow = createWorkflow("session");
     expect(ClientMessageSchema.safeParse({ type: "replay.start", workflow }).success).toBe(true);
   });

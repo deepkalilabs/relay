@@ -9,7 +9,6 @@ interface WorkspaceNavbarProps {
   workflowName: string;
   status: RecordingStatus;
   transportStatus: TransportStatus;
-  elapsed: string;
   stepCount: number;
   onNameChange: (name: string) => void;
   onExpand: () => void;
@@ -27,7 +26,6 @@ export function WorkspaceNavbar({
   workflowName,
   status,
   transportStatus,
-  elapsed,
   stepCount,
   onNameChange,
   onExpand,
@@ -48,7 +46,7 @@ export function WorkspaceNavbar({
         <button id="timeline-expand" className="workspace-rail-button" type="button" onClick={onExpand} aria-label="Expand workflow timeline" title="Expand timeline">
           <ChevronRight size={19} aria-hidden="true" />
         </button>
-        <RecorderControls status={status} transportStatus={transportStatus} elapsed={elapsed} onStart={onStart} onStop={onStop} variant="rail" />
+        <RecorderControls status={status} transportStatus={transportStatus} onStart={onStart} onStop={onStop} variant="rail" />
         <span className="workspace-rail-spacer" />
         <label className={`workspace-rail-button file-button ${importDisabled ? "disabled" : ""}`} aria-label="Import workflow" title="Import workflow">
           <Upload size={18} aria-hidden="true" />

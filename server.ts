@@ -116,6 +116,10 @@ webSockets.on("connection", (socket: WebSocket) => {
         await runtime.selectDate(message.requestId, message.value);
       } else if (message.type === "date.picker.dismiss") {
         runtime.dismissDatePicker(message.requestId);
+      } else if (message.type === "select.picker.select") {
+        await runtime.selectPickerOption(message.requestId, message.value);
+      } else if (message.type === "select.picker.dismiss") {
+        runtime.dismissSelectPicker(message.requestId);
       } else if (message.type === "replay.start") {
         await runtime.startReplay(message.workflow, message.startStepId, { timeoutSeconds, region });
       } else if (message.type === "replay.pause") {

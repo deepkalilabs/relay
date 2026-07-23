@@ -37,6 +37,25 @@ const DatePickerBrowserEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("date-picker.dismiss") }),
 ]);
 
+const SelectPickerBrowserEventSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("select-picker.request"),
+    selector: z.string().min(1),
+    name: z.string().min(1),
+    target: TargetDescriptorSchema,
+    value: z.string(),
+    options: z.array(z.object({
+      value: z.string(),
+      label: z.string(),
+      disabled: z.boolean(),
+    })),
+    sensitive: z.boolean(),
+    position: ViewportPositionSchema,
+    rect: z.object({ x: z.number(), y: z.number(), width: z.number(), height: z.number() }),
+  }),
+  z.object({ type: z.literal("select-picker.dismiss") }),
+]);
+
 interface PendingDatePicker {
   requestId: string;
   pageState: PageState;
@@ -47,6 +66,17 @@ interface PendingDatePicker {
   position: ViewportPosition;
   min: string;
   max: string;
+}
+
+interface PendingSelectPicker {
+  requestId: string;
+  pageState: PageState;
+  frame: Frame;
+  selector: string;
+  name: string;
+  target: TargetDescriptor;
+  position: ViewportPosition;
+  sensitive: boolean;
 }
 
 const AUTOMATICALLY_RECORDABLE_ACTION_TYPES: ReadonlySet<RecordedAction["type"]> = new Set([
@@ -101,6 +131,7 @@ export class RecordingRuntime {
   private activePageId: string | null = null;
   private readonly deduplicator = new ActionDeduplicator();
   private pendingDatePicker: PendingDatePicker | null = null;
+  private pendingSelectPicker: PendingSelectPicker | null = null;
   private mode: "recording" | "replay" | null = null;
   private recordingReady = false;
   private startUrlSource: "observed" | "requested" | null = null;
@@ -155,6 +186,11 @@ export class RecordingRuntime {
       const dateEvent = DatePickerBrowserEventSchema.safeParse(raw);
       if (dateEvent.success) {
         await this.handleDatePickerBrowserEvent(state, frame, dateEvent.data);
+        return;
+      }
+      const selectEvent = SelectPickerBrowserEventSchema.safeParse(raw);
+      if (selectEvent.success) {
+        await this.handleSelectPickerBrowserEvent(state, frame, selectEvent.data);
         return;
       }
       const parsed = RecordedActionSchema.omit({ page: true, recordedAt: true }).safeParse(raw);
@@ -221,6 +257,7 @@ export class RecordingRuntime {
       if (frame !== page.mainFrame() || state.id !== this.activePageId) return;
       void this.emitPageState(state);
       this.dismissDatePickersForPage(state);
+      this.dismissSelectPickersForPage(state);
       this.forwardStartUrl(state);
     });
     page.on("domcontentloaded", () => {
@@ -229,6 +266,7 @@ export class RecordingRuntime {
     });
     page.on("close", () => {
       this.dismissDatePickersForPage(state);
+      this.dismissSelectPickersForPage(state);
       this.pages.delete(page);
       if (this.activePageId === state.id) this.activePageId = [...this.pages.values()][0]?.id ?? null;
     });
@@ -252,6 +290,13 @@ export class RecordingRuntime {
     this.emit({ type: "date.picker.closed", requestId });
   }
 
+  private dismissSelectPickersForPage(state: PageState): void {
+    if (this.pendingSelectPicker?.pageState !== state) return;
+    const { requestId } = this.pendingSelectPicker;
+    this.pendingSelectPicker = null;
+    this.emit({ type: "select.picker.closed", requestId });
+  }
+
   private async handleDatePickerBrowserEvent(
     state: PageState,
     frame: Frame,
@@ -263,6 +308,7 @@ export class RecordingRuntime {
     }
 
     this.dismissDatePickersForPage(state);
+    this.dismissSelectPickersForPage(state);
     const requestId = crypto.randomUUID();
     const locator = frame.locator(event.selector);
     const box = await locator.boundingBox().catch(() => null) ?? event.rect;
@@ -327,6 +373,101 @@ export class RecordingRuntime {
     if (this.pendingDatePicker?.requestId !== requestId) return;
     this.pendingDatePicker = null;
     this.emit({ type: "date.picker.closed", requestId });
+  }
+
+  private async handleSelectPickerBrowserEvent(
+    state: PageState,
+    frame: Frame,
+    event: z.infer<typeof SelectPickerBrowserEventSchema>,
+  ): Promise<void> {
+    if (event.type === "select-picker.dismiss") {
+      this.dismissSelectPickersForPage(state);
+      return;
+    }
+
+    this.dismissDatePickersForPage(state);
+    this.dismissSelectPickersForPage(state);
+    const requestId = crypto.randomUUID();
+    const locator = frame.locator(event.selector);
+    const box = await locator.boundingBox().catch(() => null) ?? event.rect;
+    const viewport = await state.page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
+    this.pendingSelectPicker = {
+      requestId,
+      pageState: state,
+      frame,
+      selector: event.selector,
+      name: event.name,
+      target: event.target,
+      position: event.position,
+      sensitive: event.sensitive,
+    };
+    this.emit({
+      type: "select.picker.open",
+      requestId,
+      name: event.name,
+      value: event.value,
+      options: event.options,
+      rect: box,
+      viewport,
+    });
+  }
+
+  async selectPickerOption(requestId: string, value: string): Promise<void> {
+    const pending = this.pendingSelectPicker;
+    if (!pending || pending.requestId !== requestId) return;
+    this.pendingSelectPicker = null;
+    this.emit({ type: "select.picker.closed", requestId });
+    if (pending.pageState.id !== this.activePageId || pending.pageState.page.isClosed()) return;
+
+    const locator = pending.frame.locator(pending.selector);
+    const option = await locator.evaluate((element, requestedValue) => {
+      if (!(element instanceof HTMLSelectElement) || element.multiple || element.size > 1) return null;
+      const match = [...element.options].find((candidate) => candidate.value === requestedValue);
+      if (!match) return null;
+      return {
+        label: String(match.label || match.textContent || "").replace(/\s+/g, " ").trim(),
+        disabled: match.disabled || (match.parentElement instanceof HTMLOptGroupElement && match.parentElement.disabled),
+      };
+    }, value);
+    if (!option) throw new Error("The selected option is no longer available.");
+    if (option.disabled) throw new Error("The selected option is disabled.");
+
+    await pending.frame.evaluate(() => {
+      (window as Window & { __browserMemorySuppressSelectChange?: boolean }).__browserMemorySuppressSelectChange = true;
+    });
+    try {
+      const selected = await locator.selectOption({ value });
+      if (!selected.includes(value)) throw new Error("The browser did not apply the selected option.");
+    } finally {
+      await pending.frame.evaluate(() => {
+        (window as Window & { __browserMemorySuppressSelectChange?: boolean }).__browserMemorySuppressSelectChange = false;
+      }).catch(() => undefined);
+    }
+    await locator.focus().catch(() => undefined);
+
+    await this.forwardAction({
+      type: "select",
+      name: pending.name,
+      target: pending.target,
+      position: pending.position,
+      payload: { value, ...(option.label ? { label: option.label } : {}) },
+      sensitive: pending.sensitive,
+      page: {
+        id: pending.pageState.id,
+        url: pending.pageState.page.url(),
+        title: await pending.pageState.page.title().catch(() => undefined),
+      },
+      recordedAt: new Date().toISOString(),
+    });
+  }
+
+  dismissSelectPicker(requestId: string): void {
+    if (this.pendingSelectPicker?.requestId !== requestId) return;
+    const pending = this.pendingSelectPicker;
+    this.pendingSelectPicker = null;
+    this.emit({ type: "select.picker.closed", requestId });
+    if (pending.pageState.id !== this.activePageId || pending.pageState.page.isClosed()) return;
+    void pending.frame.locator(pending.selector).focus().catch(() => undefined);
   }
 
   private async forwardAction(action: RecordedAction): Promise<void> {
@@ -419,6 +560,11 @@ export class RecordingRuntime {
     if (!this.sessionId) return;
     const state = [...this.pages.values()].find((candidate) => candidate.id === pageId);
     if (!state) throw new Error("That browser tab is no longer open.");
+    const previous = [...this.pages.values()].find((candidate) => candidate.id === this.activePageId);
+    if (previous) {
+      this.dismissDatePickersForPage(previous);
+      this.dismissSelectPickersForPage(previous);
+    }
     this.activePageId = pageId;
     const liveView = await this.provider.getLiveView(this.sessionId, state.index);
     this.emit({ type: "popup.switched", pageId, liveViewUrl: liveView.liveViewUrl });
@@ -447,6 +593,7 @@ export class RecordingRuntime {
       this.pages.clear();
       this.activePageId = null;
       this.pendingDatePicker = null;
+      this.pendingSelectPicker = null;
       this.startUrlSource = null;
       this.hasRecordedAction = false;
       if (existingSessionId) await this.provider.releaseSession(existingSessionId);
@@ -501,6 +648,7 @@ export class RecordingRuntime {
       this.pages.clear();
       this.activePageId = null;
       this.pendingDatePicker = null;
+      this.pendingSelectPicker = null;
       this.mode = null;
       this.startUrlSource = null;
       this.hasRecordedAction = false;
@@ -555,6 +703,7 @@ export class RecordingRuntime {
     this.replayEngine?.stop();
     const sessionId = this.sessionId;
     this.pendingDatePicker = null;
+    this.pendingSelectPicker = null;
     this.sessionId = null;
     await this.browser?.close().catch(() => undefined);
     if (sessionId) await this.provider.releaseSession(sessionId);

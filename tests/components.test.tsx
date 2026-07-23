@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { BrowserPanel } from "@/features/browser/BrowserPanel";
@@ -82,14 +82,14 @@ describe("WorkspaceNavbar", () => {
     const user = userEvent.setup();
     const onNameChange = vi.fn();
     const onExport = vi.fn();
-    const { rerender } = render(<WorkspaceNavbar collapsed={false} workflowName="Checkout" status="idle" transportStatus="connected" elapsed="00:00" stepCount={0} onNameChange={onNameChange} onExpand={vi.fn()} onStart={vi.fn()} onStop={vi.fn()} onExport={onExport} />);
+    const { rerender } = render(<WorkspaceNavbar collapsed={false} workflowName="Checkout" status="idle" transportStatus="connected" stepCount={0} onNameChange={onNameChange} onExpand={vi.fn()} onStart={vi.fn()} onStop={vi.fn()} onExport={onExport} />);
 
     expect(screen.getByText("Memory Recorder")).toBeInTheDocument();
     await user.type(screen.getByRole("textbox", { name: /workflow name/i }), " flow");
     expect(onNameChange).toHaveBeenCalled();
     expect(screen.getByRole("button", { name: /export/i })).toBeDisabled();
 
-    rerender(<WorkspaceNavbar collapsed={false} workflowName="Checkout" status="idle" transportStatus="connected" elapsed="00:00" stepCount={1} onNameChange={onNameChange} onExpand={vi.fn()} onStart={vi.fn()} onStop={vi.fn()} onExport={onExport} />);
+    rerender(<WorkspaceNavbar collapsed={false} workflowName="Checkout" status="idle" transportStatus="connected" stepCount={1} onNameChange={onNameChange} onExpand={vi.fn()} onStart={vi.fn()} onStop={vi.fn()} onExport={onExport} />);
     await user.click(screen.getByRole("button", { name: /export/i }));
     expect(onExport).toHaveBeenCalledOnce();
   });
@@ -99,7 +99,7 @@ describe("WorkspaceNavbar", () => {
     const onExpand = vi.fn();
     const onStart = vi.fn();
     const onExport = vi.fn();
-    const { container } = render(<WorkspaceNavbar collapsed workflowName="Checkout" status="idle" transportStatus="connected" elapsed="00:00" stepCount={1} onNameChange={vi.fn()} onExpand={onExpand} onStart={onStart} onStop={vi.fn()} onExport={onExport} />);
+    const { container } = render(<WorkspaceNavbar collapsed workflowName="Checkout" status="idle" transportStatus="connected" stepCount={1} onNameChange={vi.fn()} onExpand={onExpand} onStart={onStart} onStop={vi.fn()} onExport={onExport} />);
     const rail = within(container);
 
     await user.click(rail.getByRole("button", { name: /expand workflow timeline/i }));
@@ -117,7 +117,7 @@ describe("RecorderControls", () => {
     const user = userEvent.setup();
     const onStart = vi.fn();
     const onStop = vi.fn();
-    const { container, rerender } = render(<RecorderControls status="idle" transportStatus="connected" elapsed="00:00" onStart={onStart} onStop={onStop} announce />);
+    const { container, rerender } = render(<RecorderControls status="idle" transportStatus="connected" onStart={onStart} onStop={onStop} announce />);
     const controls = within(container);
 
     expect(controls.getByText("Ready")).toBeInTheDocument();
@@ -125,7 +125,7 @@ describe("RecorderControls", () => {
     await user.click(controls.getByRole("button", { name: /start recording/i }));
     expect(onStart).toHaveBeenCalledOnce();
 
-    rerender(<RecorderControls status="recording" transportStatus="connected" elapsed="01:24" onStart={onStart} onStop={onStop} announce />);
+    rerender(<RecorderControls status="recording" transportStatus="connected" startedAt={Date.now() - 84_000} onStart={onStart} onStop={onStop} announce />);
     expect(controls.getByText("Recording")).toBeInTheDocument();
     expect(controls.getByText("01:24")).toBeInTheDocument();
     await user.click(controls.getByRole("button", { name: /stop recording/i }));
@@ -133,14 +133,38 @@ describe("RecorderControls", () => {
   });
 
   it("labels and disables unavailable or busy recorder states", () => {
-    const { container, rerender } = render(<RecorderControls status="idle" transportStatus="offline" elapsed="00:00" onStart={vi.fn()} onStop={vi.fn()} />);
+    const { container, rerender } = render(<RecorderControls status="idle" transportStatus="offline" onStart={vi.fn()} onStop={vi.fn()} />);
     const controls = within(container);
     expect(controls.getByText("Offline")).toBeInTheDocument();
     expect(controls.getByRole("button", { name: /start recording/i })).toBeDisabled();
 
-    rerender(<RecorderControls status="starting" transportStatus="connected" elapsed="00:01" onStart={vi.fn()} onStop={vi.fn()} />);
+    rerender(<RecorderControls status="starting" transportStatus="connected" startedAt={Date.now() - 1_000} onStart={vi.fn()} onStop={vi.fn()} />);
     expect(controls.getByText("Starting")).toBeInTheDocument();
     expect(controls.getByRole("button", { name: /stop recording/i })).toBeDisabled();
+  });
+
+  it("updates elapsed time without rerendering its parent", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-23T12:00:00Z"));
+    try {
+      const parentRender = vi.fn();
+      const startedAt = Date.now() - 84_000;
+      function Harness() {
+        parentRender();
+        return <RecorderControls status="recording" transportStatus="connected" startedAt={startedAt} onStart={vi.fn()} onStop={vi.fn()} />;
+      }
+      const { container } = render(<Harness />);
+      const controls = within(container);
+
+      expect(controls.getByText("01:24")).toBeInTheDocument();
+      expect(parentRender).toHaveBeenCalledOnce();
+
+      act(() => vi.advanceTimersByTime(1_000));
+      expect(controls.getByText("01:25")).toBeInTheDocument();
+      expect(parentRender).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -241,7 +265,7 @@ describe("BrowserPanel", () => {
       <BrowserPanel
         status="reconnecting"
         transportStatus="reconnecting"
-        elapsed="00:42"
+        startedAt={Date.now() - 42_000}
         liveViewUrl="https://example.com/live-view"
         page={{ pageId: "page", title: "Example Domain", url: "https://example.com/" }}
         error="The browser connection was interrupted."
@@ -283,7 +307,7 @@ describe("BrowserPanel", () => {
       <BrowserPanel
         status="recording"
         transportStatus="connected"
-        elapsed="00:12"
+        startedAt={Date.now() - 12_000}
         liveViewUrl="https://example.com/live-view?navbar=false"
         page={{ pageId: "page", title: "Example Domain", url: "https://example.com/" }}
         error={null}
@@ -320,7 +344,7 @@ describe("BrowserPanel", () => {
       <BrowserPanel
         status="recording"
         transportStatus="connected"
-        elapsed="00:12"
+        startedAt={Date.now() - 12_000}
         liveViewUrl="https://example.com/live-view"
         page={{ pageId: "page", title: "Example", url: "https://example.com/" }}
         error={null}
@@ -359,7 +383,7 @@ describe("BrowserPanel", () => {
       <BrowserPanel
         status="recording"
         transportStatus="connected"
-        elapsed="00:12"
+        startedAt={Date.now() - 12_000}
         liveViewUrl="https://example.com/live-view"
         page={{ pageId: "page", title: "Booking", url: "https://example.com/booking" }}
         error={null}
@@ -370,7 +394,7 @@ describe("BrowserPanel", () => {
           requestId: "c7daf0b9-d92a-44db-9967-db33d1516976",
           value: "2026-07-21",
           min: "2026-07-01",
-          max: "2026-08-31",
+          max: "2028-08-31",
           rect: { x: 100, y: 120, width: 160, height: 32 },
           viewport: { width: 1280, height: 720 },
         }}
@@ -389,10 +413,258 @@ describe("BrowserPanel", () => {
     const panel = within(container);
 
     expect(panel.getByRole("dialog", { name: "Choose date" })).toBeInTheDocument();
-    await user.click(panel.getByRole("button", { name: "July 22, 2026" }));
-    expect(onDateSelect).toHaveBeenCalledWith("c7daf0b9-d92a-44db-9967-db33d1516976", "2026-07-22");
+    await user.selectOptions(panel.getByRole("combobox", { name: "Month" }), "August");
+    const year = panel.getByRole("textbox", { name: "Year" });
+    await user.clear(year);
+    await user.type(year, "2027");
+    await user.tab();
+    await user.click(panel.getByRole("button", { name: "August 22, 2027" }));
+    expect(onDateSelect).toHaveBeenCalledWith("c7daf0b9-d92a-44db-9967-db33d1516976", "2027-08-22");
 
     await user.keyboard("{Escape}");
     expect(onDateDismiss).toHaveBeenCalledWith("c7daf0b9-d92a-44db-9967-db33d1516976");
+  });
+
+  it("keeps date-picker header focus across unrelated parent rerenders", async () => {
+    vi.stubGlobal("ResizeObserver", class ResizeObserver {
+      observe() {}
+      disconnect() {}
+    });
+    const focusFrames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      focusFrames.push(callback);
+      return focusFrames.length;
+    });
+    const user = userEvent.setup();
+    const firstDismiss = vi.fn();
+    const latestDismiss = vi.fn();
+    const requestId = "c7daf0b9-d92a-44db-9967-db33d1516976";
+    const datePicker = {
+      requestId,
+      value: "2026-07-16",
+      min: "2024-01-01",
+      max: "2028-12-31",
+      rect: { x: 100, y: 120, width: 160, height: 32 },
+      viewport: { width: 1280, height: 720 },
+    };
+    const panel = (renderTick: number, onDateDismiss: (requestId: string) => void, picker = datePicker) => (
+      <BrowserPanel
+        status="recording"
+        transportStatus="connected"
+        startedAt={Date.now() - 12_000}
+        liveViewUrl="https://example.com/live-view"
+        page={{ pageId: "page", title: "Booking", url: "https://example.com/booking" }}
+        error={null}
+        navigationError={null}
+        navigationPending={false}
+        popup={null}
+        replayCurrentIndex={renderTick}
+        datePicker={picker}
+        onBack={vi.fn()}
+        onForward={vi.fn()}
+        onNavigate={vi.fn()}
+        onReload={vi.fn()}
+        onStart={vi.fn()}
+        onStop={vi.fn()}
+        onRetry={vi.fn()}
+        onSwitchPopup={vi.fn()}
+        onDateSelect={vi.fn()}
+        onDateDismiss={onDateDismiss}
+      />
+    );
+    const view = render(panel(12, firstDismiss));
+    const browser = within(view.container);
+
+    focusFrames.splice(0).forEach((callback) => callback(0));
+    expect(browser.getByRole("button", { name: "July 16, 2026" })).toHaveFocus();
+
+    const year = browser.getByRole("textbox", { name: "Year" });
+    await user.clear(year);
+    await user.type(year, "2027");
+    expect(year).toHaveFocus();
+
+    view.rerender(panel(13, latestDismiss));
+    expect(focusFrames).toHaveLength(0);
+    expect(year).toHaveFocus();
+    expect(year).toHaveValue("2027");
+
+    const month = browser.getByRole("combobox", { name: "Month" });
+    await user.selectOptions(month, "August");
+    expect(month).toHaveFocus();
+
+    view.rerender(panel(14, latestDismiss));
+    expect(focusFrames).toHaveLength(0);
+    expect(month).toHaveFocus();
+    expect(month).toHaveValue("7");
+
+    await user.keyboard("{Escape}");
+    expect(firstDismiss).not.toHaveBeenCalled();
+    expect(latestDismiss).toHaveBeenCalledWith(requestId);
+
+    await user.click(document.body);
+    expect(latestDismiss).toHaveBeenCalledTimes(2);
+
+    const fallbackPicker = {
+      ...datePicker,
+      requestId: "3392f271-504c-4ee1-b240-746ffeba3fb7",
+      value: "",
+    };
+    view.rerender(panel(15, latestDismiss, fallbackPicker));
+    focusFrames.splice(0).forEach((callback) => callback(0));
+    expect(browser.getByRole("button", { name: "Previous month" })).toHaveFocus();
+  });
+
+  it("operates the Chrome-like native select overlay with pointer and keyboard input", async () => {
+    vi.stubGlobal("ResizeObserver", class ResizeObserver {
+      observe() {}
+      disconnect() {}
+    });
+    const user = userEvent.setup();
+    const onSelectPickerSelect = vi.fn();
+    const onSelectPickerDismiss = vi.fn();
+    const requestId = "c7daf0b9-d92a-44db-9967-db33d1516976";
+    const { container } = render(
+      <BrowserPanel
+        status="recording"
+        transportStatus="connected"
+        startedAt={Date.now() - 12_000}
+        liveViewUrl="https://example.com/live-view"
+        page={{ pageId: "page", title: "Property", url: "https://example.com/property" }}
+        error={null}
+        navigationError={null}
+        navigationPending={false}
+        popup={null}
+        selectPicker={{
+          requestId,
+          name: "Construction type",
+          value: "frame",
+          options: [
+            { value: "frame", label: "Frame", disabled: false },
+            { value: "masonry", label: "Masonry", disabled: false },
+            { value: "wood", label: "Wood", disabled: true },
+          ],
+          rect: { x: 100, y: 120, width: 240, height: 40 },
+          viewport: { width: 1280, height: 720 },
+        }}
+        onBack={vi.fn()}
+        onForward={vi.fn()}
+        onNavigate={vi.fn()}
+        onReload={vi.fn()}
+        onStart={vi.fn()}
+        onStop={vi.fn()}
+        onRetry={vi.fn()}
+        onSwitchPopup={vi.fn()}
+        onSelectPickerSelect={onSelectPickerSelect}
+        onSelectPickerDismiss={onSelectPickerDismiss}
+      />,
+    );
+    const panel = within(container);
+    const listbox = panel.getByRole("listbox", { name: "Construction type options" });
+    const frame = within(listbox).getByRole("option", { name: "Frame" });
+    const masonry = within(listbox).getByRole("option", { name: "Masonry" });
+    expect(within(listbox).getByRole("option", { name: "Wood" })).toBeDisabled();
+
+    frame.focus();
+    await user.keyboard("{ArrowDown}{Enter}");
+    expect(onSelectPickerSelect).toHaveBeenCalledWith(requestId, "masonry");
+
+    frame.focus();
+    await user.keyboard("m{Enter}");
+    expect(onSelectPickerSelect).toHaveBeenLastCalledWith(requestId, "masonry");
+
+    await user.click(masonry);
+    expect(onSelectPickerSelect).toHaveBeenLastCalledWith(requestId, "masonry");
+    await user.keyboard("{Escape}");
+    expect(onSelectPickerDismiss).toHaveBeenCalledWith(requestId);
+  });
+
+  it("keeps select-picker focus stable across unrelated parent rerenders", async () => {
+    vi.stubGlobal("ResizeObserver", class ResizeObserver {
+      observe() {}
+      disconnect() {}
+    });
+    const focusFrames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      focusFrames.push(callback);
+      return focusFrames.length;
+    });
+    const user = userEvent.setup();
+    const firstDismiss = vi.fn();
+    const latestDismiss = vi.fn();
+    const requestId = "c7daf0b9-d92a-44db-9967-db33d1516976";
+    const selectPicker = {
+      requestId,
+      name: "Construction type",
+      value: "frame",
+      options: [
+        { value: "frame", label: "Frame", disabled: false },
+        { value: "masonry", label: "Masonry", disabled: false },
+        { value: "wood", label: "Wood", disabled: true },
+      ],
+      rect: { x: 100, y: 120, width: 240, height: 40 },
+      viewport: { width: 1280, height: 720 },
+    };
+    const panel = (renderTick: number, onDismiss: (requestId: string) => void, picker = selectPicker) => (
+      <BrowserPanel
+        status="recording"
+        transportStatus="connected"
+        startedAt={Date.now() - 12_000}
+        liveViewUrl="https://example.com/live-view"
+        page={{ pageId: "page", title: "Property", url: "https://example.com/property" }}
+        error={null}
+        navigationError={null}
+        navigationPending={false}
+        popup={null}
+        replayCurrentIndex={renderTick}
+        selectPicker={picker}
+        onBack={vi.fn()}
+        onForward={vi.fn()}
+        onNavigate={vi.fn()}
+        onReload={vi.fn()}
+        onStart={vi.fn()}
+        onStop={vi.fn()}
+        onRetry={vi.fn()}
+        onSwitchPopup={vi.fn()}
+        onSelectPickerSelect={vi.fn()}
+        onSelectPickerDismiss={onDismiss}
+      />
+    );
+    const view = render(panel(12, firstDismiss));
+    const browser = within(view.container);
+    const frame = browser.getByRole("option", { name: "Frame" });
+    const masonry = browser.getByRole("option", { name: "Masonry" });
+    frame.scrollIntoView = vi.fn();
+    masonry.scrollIntoView = vi.fn();
+
+    focusFrames.splice(0).forEach((callback) => callback(0));
+    expect(frame).toHaveFocus();
+    expect(frame.scrollIntoView).toHaveBeenCalledOnce();
+
+    await user.keyboard("{ArrowDown}");
+    expect(masonry).toHaveFocus();
+    expect(masonry.scrollIntoView).toHaveBeenCalledOnce();
+
+    view.rerender(panel(13, latestDismiss));
+    expect(focusFrames).toHaveLength(0);
+    expect(masonry).toHaveFocus();
+    expect(frame.scrollIntoView).toHaveBeenCalledOnce();
+    expect(masonry.scrollIntoView).toHaveBeenCalledOnce();
+
+    await user.keyboard("{Escape}");
+    expect(firstDismiss).not.toHaveBeenCalled();
+    expect(latestDismiss).toHaveBeenCalledWith(requestId);
+
+    await user.click(document.body);
+    expect(latestDismiss).toHaveBeenCalledTimes(2);
+
+    const fallbackPicker = {
+      ...selectPicker,
+      requestId: "3392f271-504c-4ee1-b240-746ffeba3fb7",
+      value: "wood",
+    };
+    view.rerender(panel(14, latestDismiss, fallbackPicker));
+    const fallbackFrame = browser.getByRole("option", { name: "Frame" });
+    focusFrames.splice(0).forEach((callback) => callback(0));
+    expect(fallbackFrame).toHaveFocus();
   });
 });

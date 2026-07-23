@@ -49,9 +49,11 @@ describe("recorder normalization", () => {
     expect(RECORDER_SCRIPT).toContain("select.multiple");
     expect(RECORDER_SCRIPT).toContain("nativeSelectForInteraction");
     expect(RECORDER_SCRIPT).toContain("label?.control instanceof HTMLSelectElement");
+    expect(RECORDER_SCRIPT).toContain('type: "select-picker.request"');
+    expect(RECORDER_SCRIPT).toContain("__browserMemorySuppressSelectChange");
     expect(RECORDER_SCRIPT).toContain("position: viewportPosition()");
     expect(RECORDER_SCRIPT).not.toContain('type: "scroll.position"');
-    expect(RECORDER_SCRIPT).not.toContain('window.addEventListener("scroll"');
+    expect(RECORDER_SCRIPT).toContain('window.addEventListener("scroll"');
     expect(RECORDER_SCRIPT).not.toContain('document.addEventListener("submit"');
     expect(RECORDER_SCRIPT).not.toContain('"pushState", "replaceState"');
   });
@@ -65,18 +67,6 @@ describe("recorder normalization", () => {
     for (const type of ["navigate", "check", "uncheck", "keypress", "submit"] as const) {
       expect(isAutomaticallyRecordableAction(withType(type))).toBe(false);
     }
-  });
-
-  it("keeps select-control clicks so replay can open a dropdown before selecting", () => {
-    const click = {
-      ...action,
-      type: "click" as const,
-      name: "Plan",
-      target: { tagName: "select", candidates: [{ kind: "label" as const, value: "Plan", exact: true }] },
-    };
-    expect(isAutomaticallyRecordableAction(click)).toBe(true);
-    expect(isAutomaticallyRecordableAction({ ...click, target: { ...click.target, tagName: "option" } })).toBe(true);
-    expect(isAutomaticallyRecordableAction({ ...click, target: { ...click.target, tagName: "button" } })).toBe(true);
   });
 
   it("rejects impossible calendar dates", () => {

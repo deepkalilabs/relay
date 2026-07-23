@@ -6,6 +6,8 @@ export const RECORDER_SCRIPT = String.raw`(() => {
 
   const dirtyFields = new Set();
   let datePickerOpen = false;
+  let selectPickerOpen = false;
+  window.__browserMemorySuppressSelectChange = false;
   const normalize = (value) => String(value ?? "").replace(/\s+/g, " ").trim();
   const clip = (value, size = 180) => normalize(value).slice(0, size);
   const escapeCss = (value) => window.CSS?.escape ? CSS.escape(value) : value.replace(/[^a-zA-Z0-9_-]/g, "\\$&");
@@ -373,6 +375,8 @@ export const RECORDER_SCRIPT = String.raw`(() => {
   const recordControlChange = (element) => {
     const select = nativeSelectForInteraction(element);
     if (!select || select.multiple) return false;
+    selectPickerOpen = false;
+    if (window.__browserMemorySuppressSelectChange) return true;
     [...dirtyFields].forEach((field) => flushInput(field));
     const selectedOption = select.selectedOptions[0];
     const label = selectedOption ? clip(selectedOption.label || selectedOption.textContent || "") : "";
@@ -408,6 +412,32 @@ export const RECORDER_SCRIPT = String.raw`(() => {
 
   window.addEventListener("click", (event) => {
     const origin = eventElement(event);
+    const select = origin ? nativeSelectForInteraction(origin) : null;
+    if (select instanceof HTMLSelectElement && !select.disabled && !select.multiple && select.size <= 1) {
+      event.preventDefault();
+      if (datePickerOpen) {
+        datePickerOpen = false;
+        emit({ type: "date-picker.dismiss" });
+      }
+      if (selectPickerOpen) emit({ type: "select-picker.dismiss" });
+      selectPickerOpen = true;
+      const rect = select.getBoundingClientRect();
+      emitAction({
+        type: "select-picker.request",
+        selector: cssPath(select),
+        name: targetName(select),
+        target: describe(select),
+        value: select.value,
+        options: [...select.options].map((option) => ({
+          value: option.value,
+          label: clip(option.label || option.textContent || ""),
+          disabled: option.disabled || (option.parentElement instanceof HTMLOptGroupElement && option.parentElement.disabled),
+        })),
+        sensitive: sensitive(select),
+        rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+      });
+      return;
+    }
     const dateInput = origin
       ? origin.closest('input[type="date"]')
       : null;
@@ -432,6 +462,10 @@ export const RECORDER_SCRIPT = String.raw`(() => {
       datePickerOpen = false;
       emit({ type: "date-picker.dismiss" });
     }
+    if (selectPickerOpen) {
+      selectPickerOpen = false;
+      emit({ type: "select-picker.dismiss" });
+    }
     const element = resolveClickTarget(event);
     if (!(element instanceof HTMLElement)) return;
     [...dirtyFields].forEach((field) => flushInput(field));
@@ -443,5 +477,15 @@ export const RECORDER_SCRIPT = String.raw`(() => {
       datePickerOpen = false;
       emit({ type: "date-picker.dismiss" });
     }
+    if (event.key === "Escape" && selectPickerOpen) {
+      selectPickerOpen = false;
+      emit({ type: "select-picker.dismiss" });
+    }
+  }, true);
+
+  window.addEventListener("scroll", () => {
+    if (!selectPickerOpen) return;
+    selectPickerOpen = false;
+    emit({ type: "select-picker.dismiss" });
   }, true);
 })();`;

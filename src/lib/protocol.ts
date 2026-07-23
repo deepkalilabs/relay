@@ -2,7 +2,7 @@ import { z } from "zod";
 import { RecordedActionSchema } from "@/lib/workflow/recorded-action";
 import { WorkflowSchema } from "@/lib/workflow/schema";
 
-const DatePickerRequestIdSchema = z.string().uuid();
+const PickerRequestIdSchema = z.string().uuid();
 
 export const ClientMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("client.hello"), clientId: z.string().uuid(), lastSequence: z.number().int().nonnegative() }),
@@ -14,8 +14,10 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("browser.back") }),
   z.object({ type: z.literal("browser.forward") }),
   z.object({ type: z.literal("browser.reload") }),
-  z.object({ type: z.literal("date.picker.select"), requestId: DatePickerRequestIdSchema, value: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }),
-  z.object({ type: z.literal("date.picker.dismiss"), requestId: DatePickerRequestIdSchema }),
+  z.object({ type: z.literal("date.picker.select"), requestId: PickerRequestIdSchema, value: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }),
+  z.object({ type: z.literal("date.picker.dismiss"), requestId: PickerRequestIdSchema }),
+  z.object({ type: z.literal("select.picker.select"), requestId: PickerRequestIdSchema, value: z.string() }),
+  z.object({ type: z.literal("select.picker.dismiss"), requestId: PickerRequestIdSchema }),
   z.object({ type: z.literal("replay.start"), workflow: WorkflowSchema, startStepId: z.string().optional() }),
   z.object({ type: z.literal("replay.pause") }),
   z.object({ type: z.literal("replay.resume") }),
@@ -65,14 +67,28 @@ export const SequencedServerMessageSchema = z.object({
     z.object({ type: z.literal("browser.navigation.error"), message: z.string() }),
     z.object({
       type: z.literal("date.picker.open"),
-      requestId: DatePickerRequestIdSchema,
+      requestId: PickerRequestIdSchema,
       value: z.string(),
       min: z.string(),
       max: z.string(),
       rect: z.object({ x: z.number(), y: z.number(), width: z.number(), height: z.number() }),
       viewport: z.object({ width: z.number().positive(), height: z.number().positive() }),
     }),
-    z.object({ type: z.literal("date.picker.closed"), requestId: DatePickerRequestIdSchema }),
+    z.object({ type: z.literal("date.picker.closed"), requestId: PickerRequestIdSchema }),
+    z.object({
+      type: z.literal("select.picker.open"),
+      requestId: PickerRequestIdSchema,
+      name: z.string().min(1),
+      value: z.string(),
+      options: z.array(z.object({
+        value: z.string(),
+        label: z.string(),
+        disabled: z.boolean(),
+      })),
+      rect: z.object({ x: z.number(), y: z.number(), width: z.number(), height: z.number() }),
+      viewport: z.object({ width: z.number().positive(), height: z.number().positive() }),
+    }),
+    z.object({ type: z.literal("select.picker.closed"), requestId: PickerRequestIdSchema }),
     z.object({
       type: z.literal("replay.started"),
       runId: z.string().uuid(),

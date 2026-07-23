@@ -11,6 +11,7 @@ import type {
   PopupState,
   RecordingStatus,
   ReplayStepResultState,
+  SelectPickerState,
 } from "@/lib/recorder-session";
 import { getDisplayError, getDisplayStatus } from "@/lib/recorder-session";
 
@@ -20,12 +21,6 @@ interface RecorderSessionOptions {
   onStartUrl: (url: string) => void;
   onStepRecorded: (step: WorkflowStep) => void;
   onReplayStepChange?: (stepId: string, status: ReplayStepResultState["status"]) => void;
-}
-
-function formatElapsed(startedAt: number | null, now: number): string {
-  if (!startedAt) return "00:00";
-  const seconds = Math.max(0, Math.floor((now - startedAt) / 1000));
-  return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
 export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, onStartUrl, onStepRecorded, onReplayStepChange }: RecorderSessionOptions) {
@@ -38,8 +33,8 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
   const [navigationPending, setNavigationPending] = useState(false);
   const [popup, setPopup] = useState<PopupState | null>(null);
   const [datePicker, setDatePicker] = useState<DatePickerState | null>(null);
+  const [selectPicker, setSelectPicker] = useState<SelectPickerState | null>(null);
   const [startedAt, setStartedAt] = useState<number | null>(null);
-  const [now, setNow] = useState(0);
   const [replayStatus, setReplayStatus] = useState<ReplayStatus>("idle");
   const [replayRunId, setReplayRunId] = useState<string | null>(null);
   const [replayCurrentStepId, setReplayCurrentStepId] = useState<string | null>(null);
@@ -59,6 +54,7 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
         setNavigationError(null);
         setNavigationPending(false);
         setDatePicker(null);
+        setSelectPicker(null);
         setStartedAt(Date.now());
         setError(null);
         setErrorContext("recording");
@@ -72,6 +68,7 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
           setBrowserPage(null);
           setLiveViewUrl(null);
           setDatePicker(null);
+          setSelectPicker(null);
         }
         break;
       case "recording.startUrl":
@@ -87,6 +84,8 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
         setLiveViewUrl(message.liveViewUrl);
         setBrowserPage(null);
         setPopup(null);
+        setDatePicker(null);
+        setSelectPicker(null);
         break;
       case "browser.page":
         setBrowserPage({ pageId: message.pageId, title: message.title, url: message.url });
@@ -98,6 +97,7 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
         setNavigationPending(false);
         break;
       case "date.picker.open":
+        setSelectPicker(null);
         setDatePicker({
           requestId: message.requestId,
           value: message.value,
@@ -109,6 +109,20 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
         break;
       case "date.picker.closed":
         setDatePicker((current) => current?.requestId === message.requestId ? null : current);
+        break;
+      case "select.picker.open":
+        setDatePicker(null);
+        setSelectPicker({
+          requestId: message.requestId,
+          name: message.name,
+          value: message.value,
+          options: message.options,
+          rect: message.rect,
+          viewport: message.viewport,
+        });
+        break;
+      case "select.picker.closed":
+        setSelectPicker((current) => current?.requestId === message.requestId ? null : current);
         break;
       case "replay.started":
         onReplaySessionStarted(message.sessionId);
@@ -124,6 +138,7 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
         setNavigationPending(false);
         setPopup(null);
         setDatePicker(null);
+        setSelectPicker(null);
         break;
       case "replay.status":
         setReplayRunId(message.runId);
@@ -171,12 +186,6 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
   const { transportStatus, send } = useRecorderSocket(handleServerMessage);
 
   useEffect(() => {
-    if (!startedAt) return;
-    const timer = setInterval(() => setNow(Date.now()), 1_000);
-    return () => clearInterval(timer);
-  }, [startedAt]);
-
-  useEffect(() => {
     const onMessage = (event: MessageEvent) => {
       if (event.data !== "browserbase-disconnected") return;
       setStatus("error");
@@ -184,6 +193,7 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
       setLiveViewUrl(null);
       setBrowserPage(null);
       setDatePicker(null);
+      setSelectPicker(null);
       setNavigationPending(false);
     };
     addEventListener("message", onMessage);
@@ -200,6 +210,7 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
     setPopup(null);
     setLiveViewUrl(null);
     setDatePicker(null);
+    setSelectPicker(null);
   };
 
   const sessionStartCommand = (): ClientMessage => ({
@@ -238,6 +249,7 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
     setErrorContext("replay");
     setPopup(null);
     setDatePicker(null);
+    setSelectPicker(null);
     if (!send({ type: "replay.start", workflow, startStepId })) {
       setReplayStatus("stopped");
       setError("The recorder connection is unavailable. Wait a moment and try again.");
@@ -264,6 +276,14 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
     setDatePicker((current) => current?.requestId === requestId ? null : current);
     send({ type: "date.picker.dismiss", requestId });
   }, [send]);
+  const selectPickerOption = useCallback((requestId: string, value: string) => {
+    setSelectPicker((current) => current?.requestId === requestId ? null : current);
+    send({ type: "select.picker.select", requestId, value });
+  }, [send]);
+  const dismissSelectPicker = useCallback((requestId: string) => {
+    setSelectPicker((current) => current?.requestId === requestId ? null : current);
+    send({ type: "select.picker.dismiss", requestId });
+  }, [send]);
 
   return {
     browserPage,
@@ -271,7 +291,7 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
     displayError,
     errorContext,
     displayStatus,
-    elapsed: formatElapsed(startedAt, now),
+    startedAt,
     liveViewUrl,
     navigationError,
     navigationPending,
@@ -282,11 +302,14 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
     replayRunId,
     replayStatus,
     replayTotalSteps,
+    selectPicker,
     reportError: setError,
     clearError: () => setError(null),
     sendBrowserCommand,
     selectDate,
     dismissDatePicker,
+    selectPickerOption,
+    dismissSelectPicker,
     startAfterDiscard,
     startReplay,
     startRecording,

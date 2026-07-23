@@ -25,14 +25,14 @@ test("injected recorder captures completed fills, native selects, and semantic c
   await page.keyboard.press("Control");
   await page.waitForTimeout(50);
 
-  expect(actions.map((action) => action.type)).toEqual(["fill", "fill", "click", "select", "click", "click", "click", "click", "click", "click"]);
+  expect(actions.map((action) => action.type)).toEqual(["fill", "fill", "select-picker.request", "select", "click", "click", "click", "click", "click", "click"]);
   const emailFill = actions.find((action) => action.type === "fill" && (action.payload as { value?: string })?.value === "person@example.com");
   expect((emailFill?.target as { candidates: Array<{ kind: string }> }).candidates[0].kind).toBe("testId");
   const passwordFill = actions.find((action) => action.type === "fill" && (action.payload as { value?: string })?.value === "secret-value");
   expect(passwordFill?.sensitive).toBe(true);
-  const planClick = actions.find((action) => action.type === "click" && action.name === "Plan");
-  expect((planClick?.target as { tagName?: string }).tagName).toBe("select");
-  expect((planClick?.target as { candidates: Array<{ kind: string; value: string; name?: string }> }).candidates[0]).toMatchObject({ kind: "role", value: "combobox", name: "Plan" });
+  const planRequest = actions.find((action) => action.type === "select-picker.request" && action.name === "Plan");
+  expect((planRequest?.target as { tagName?: string }).tagName).toBe("select");
+  expect((planRequest?.target as { candidates: Array<{ kind: string; value: string; name?: string }> }).candidates[0]).toMatchObject({ kind: "role", value: "combobox", name: "Plan" });
   const planSelect = actions.find((action) => action.type === "select");
   expect(planSelect).toMatchObject({ name: "Plan", payload: { value: "pro", label: "Professional" } });
   expect((planSelect?.target as { candidates: Array<{ kind: string; value: string; name?: string }> }).candidates[0]).toMatchObject({ kind: "role", value: "combobox", name: "Plan" });
@@ -42,18 +42,24 @@ test("injected recorder captures completed fills, native selects, and semantic c
   expect(actions.at(-1)?.name).toBe("Fixture help");
 });
 
-test("normalizes native dropdown click surfaces to the select control", async ({ page }) => {
+test("opens application pickers for consecutive native selects without recording click actions", async ({ page }) => {
   const actions: Array<Record<string, unknown>> = [];
   await page.exposeFunction("__browserMemoryEmit", (action: Record<string, unknown>) => { actions.push(action); });
   await page.addInitScript({ content: RECORDER_SCRIPT });
   await page.goto("/fixture");
 
-  const plan = page.getByLabel("Plan");
-  await plan.click();
-  await page.getByTestId("plan-label").click();
-  await plan.locator("option").first().dispatchEvent("click");
-  expect(actions.length).toBeGreaterThanOrEqual(3);
-  expect(actions.every((action) => action.type === "click" && action.name === "Plan" && (action.target as { tagName?: string }).tagName === "select")).toBe(true);
+  for (const name of ["Plan", "Construction type", "Roof material"]) {
+    await page.getByLabel(name).click();
+  }
+  await expect.poll(() => actions.filter((action) => action.type === "select-picker.request").length).toBe(3);
+  const requests = actions.filter((action) => action.type === "select-picker.request");
+  expect(requests.map((action) => action.name)).toEqual(["Plan", "Construction type", "Roof material"]);
+  expect(actions.some((action) => action.type === "click" && (action.target as { tagName?: string })?.tagName === "select")).toBe(false);
+  expect(requests.at(-1)?.options).toEqual([
+    { value: "metal", label: "Metal", disabled: false },
+    { value: "composition", label: "Composition", disabled: false },
+    { value: "wood", label: "Wood", disabled: true },
+  ]);
 
   actions.length = 0;
   await page.getByLabel("Regions").selectOption(["west", "east"]);

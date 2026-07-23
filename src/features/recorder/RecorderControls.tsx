@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useReducer } from "react";
 import { CircleStop, LoaderCircle, Play } from "lucide-react";
 import type { RecordingStatus, TransportStatus } from "@/lib/recorder-session";
 
@@ -17,17 +18,35 @@ const labels: Record<RecordingStatus, string> = {
 interface RecorderControlsProps {
   status: RecordingStatus;
   transportStatus: TransportStatus;
-  elapsed: string;
+  startedAt?: number | null;
   onStart: () => void;
   onStop: () => void;
   variant?: "chrome" | "rail";
   announce?: boolean;
 }
 
+function formatElapsed(startedAt: number | null): string {
+  if (!startedAt) return "00:00";
+  const seconds = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+  return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+function RecorderTimer({ startedAt }: { startedAt: number | null }) {
+  const [, tick] = useReducer((value: number) => value + 1, 0);
+
+  useEffect(() => {
+    if (!startedAt) return;
+    const timer = setInterval(tick, 1_000);
+    return () => clearInterval(timer);
+  }, [startedAt]);
+
+  return <span className="recorder-timer">{formatElapsed(startedAt)}</span>;
+}
+
 export function RecorderControls({
   status,
   transportStatus,
-  elapsed,
+  startedAt = null,
   onStart,
   onStop,
   variant = "chrome",
@@ -62,7 +81,7 @@ export function RecorderControls({
       <span className="recorder-status" aria-label={`Recorder status: ${label}`} title={variant === "rail" ? label : undefined}>
         <span className={`recorder-status-dot recorder-status-${visualStatus}`} aria-hidden="true" />
         {variant === "chrome" ? <strong className="recorder-status-label">{label}</strong> : null}
-        {variant === "chrome" && active ? <span className="recorder-timer">{elapsed}</span> : null}
+        {variant === "chrome" && active ? <RecorderTimer startedAt={startedAt} /> : null}
       </span>
       <button
         className={`recorder-action recorder-action-${active ? "stop" : "start"}`}

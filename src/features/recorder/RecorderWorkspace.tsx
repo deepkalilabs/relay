@@ -154,7 +154,6 @@ export function RecorderWorkspace() {
               workflowName={workflowState.workflow.name}
               status={session.displayStatus}
               transportStatus={session.transportStatus}
-              elapsed={session.elapsed}
               stepCount={workflowState.workflow.steps.length}
               onNameChange={(name) => dispatch({ type: "renameWorkflow", name })}
               onExpand={panels.expandTimeline}
@@ -199,7 +198,7 @@ export function RecorderWorkspace() {
             <BrowserPanel
               status={session.displayStatus}
               transportStatus={session.transportStatus}
-              elapsed={session.elapsed}
+              startedAt={session.startedAt}
               liveViewUrl={session.liveViewUrl}
               page={session.browserPage}
               error={session.displayError}
@@ -209,6 +208,7 @@ export function RecorderWorkspace() {
               navigationPending={session.navigationPending}
               popup={session.popup}
               datePicker={session.datePicker}
+              selectPicker={session.selectPicker}
               onBack={() => session.sendBrowserCommand({ type: "browser.back" })}
               onForward={() => session.sendBrowserCommand({ type: "browser.forward" })}
               onNavigate={(url) => session.sendBrowserCommand({ type: "browser.navigate", url })}
@@ -219,6 +219,8 @@ export function RecorderWorkspace() {
               onSwitchPopup={session.switchPopup}
               onDateSelect={(requestId, value) => session.selectDate(requestId, value)}
               onDateDismiss={(requestId) => session.dismissDatePicker(requestId)}
+              onSelectPickerSelect={(requestId, value) => session.selectPickerOption(requestId, value)}
+              onSelectPickerDismiss={(requestId) => session.dismissSelectPicker(requestId)}
               replayStatus={session.replayStatus}
               replayCurrentIndex={session.replayCurrentIndex}
               replayTotalSteps={session.replayTotalSteps}
