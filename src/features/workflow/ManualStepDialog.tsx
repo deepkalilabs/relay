@@ -6,9 +6,8 @@ import { Modal } from "@/components/ui/Modal";
 import {
   WorkflowStepSchema,
   emptyTarget,
-  type WorkflowActionType,
-  type WorkflowStep,
 } from "@/lib/workflow/schema";
+import type { WorkflowActionType, WorkflowStep } from "@/lib/workflow/domain";
 
 interface ManualStepDialogProps {
   open: boolean;

@@ -13,7 +13,7 @@ import { StepEditor } from "@/features/workflow/StepEditor";
 import { WorkflowTimeline } from "@/features/workflow/WorkflowTimeline";
 import { downloadWorkflow } from "@/lib/workflow/export";
 import { parseWorkflowJson } from "@/lib/workflow/import";
-import type { Workflow, WorkflowStep } from "@/lib/workflow/schema";
+import type { Workflow, WorkflowStep } from "@/lib/workflow/domain";
 import { WorkflowSchema } from "@/lib/workflow/schema";
 import { initialWorkflowState, workflowReducer } from "@/lib/workflow/store";
 

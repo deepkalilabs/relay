@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { RECORDER_SCRIPT } from "../../src/server/recorder/injected";
 import { applyPositionBefore } from "../../src/server/replay/engine";
-import type { WorkflowStep } from "../../src/lib/workflow/schema";
+import type { WorkflowStep } from "../../src/lib/workflow/domain";
 
 test("injected recorder captures completed fills, native selects, and semantic control clicks", async ({ page }) => {
   const actions: Array<Record<string, unknown>> = [];

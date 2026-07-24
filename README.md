@@ -90,13 +90,15 @@ browser_replay/
 
 ## Workflow model
 
+The dependency-free domain contract lives in `src/lib/workflow/domain.ts`. It defines the workflow aggregate, named step variants, element targets, page context, replay waits, and metadata shared by the recorder, editor, persistence, protocol, and replay engine. Runtime validation for imported files and WebSocket messages lives separately in `src/lib/workflow/schema.ts`; those schemas are compile-time checked against the domain types.
+
 Exports use schema version `1.0`. A workflow contains its Browserbase source, timestamps, and an ordered list of steps. Automatic recording produces `fill`, `set_date`, `select`, and `click` steps. Manual steps and existing workflows continue to support:
 
 ```text
 navigate · click · fill · select · check · uncheck · keypress · submit
 ```
 
-Element actions include multiple locator candidates, ordered from semantic selectors to CSS and XPath fallbacks. Metadata records whether a step was recorded or manually added, and whether its value may be sensitive.
+`ElementTarget` keeps multiple locator candidates, ordered from semantic selectors to CSS and XPath fallbacks, rather than coupling replay to one selector. Metadata records whether a step was recorded or manually added, and whether its value may be sensitive.
 
 Steps may also define an optional replay wait. A wait can add up to 30 seconds after an action and can require an element to remain visible or hidden before replay continues. Workflows without replay waits remain valid schema `1.0` files.
 

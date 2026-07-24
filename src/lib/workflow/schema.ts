@@ -1,14 +1,14 @@
 import { z } from "zod";
-
-export const locatorKinds = [
-  "testId",
-  "role",
-  "accessibleName",
-  "label",
-  "text",
-  "css",
-  "xpath",
-] as const;
+import {
+  locatorCandidatesForTarget,
+  locatorKinds,
+  type ElementTarget,
+  type LocatorCandidate,
+  type ReplayWait,
+  type ViewportPosition,
+  type Workflow,
+  type WorkflowStep,
+} from "@/lib/workflow/domain";
 
 export const LocatorCandidateSchema = z.object({
   kind: z.enum(locatorKinds),
@@ -16,30 +16,35 @@ export const LocatorCandidateSchema = z.object({
   name: z.string().optional(),
   exact: z.boolean().default(true),
   unique: z.boolean().optional(),
-});
+}) satisfies z.ZodType<LocatorCandidate>;
 
-export type LocatorCandidate = z.infer<typeof LocatorCandidateSchema>;
-
-export const TargetDescriptorSchema = z.object({
+export const ElementTargetSchema = z.object({
+  selector: z.string().min(1).optional(),
+  role: z.string().min(1).optional(),
+  name: z.string().min(1).optional(),
+  text: z.string().min(1).optional(),
   tagName: z.string().optional(),
   inputType: z.string().optional(),
   frameUrl: z.string().optional(),
-  candidates: z.array(LocatorCandidateSchema),
-});
+  candidates: z.array(LocatorCandidateSchema).optional(),
+}) satisfies z.ZodType<ElementTarget>;
+
+/** @deprecated Use ElementTargetSchema for new code. */
+export const TargetDescriptorSchema = ElementTargetSchema;
 
 export const ReplayWaitSchema = z.object({
   delayMs: z.number().int().min(0).max(30_000).optional(),
   condition: z.object({
     state: z.enum(["visible", "hidden"]),
-    target: TargetDescriptorSchema.refine(
-      (target) => target.candidates.length > 0,
+    target: ElementTargetSchema.refine(
+      (target) => locatorCandidatesForTarget(target).length > 0,
       "Replay wait conditions need at least one locator.",
     ),
   }).optional(),
 }).refine(
   (wait) => (wait.delayMs ?? 0) > 0 || Boolean(wait.condition),
   "Configure a delay or element condition for this replay wait.",
-);
+) satisfies z.ZodType<ReplayWait>;
 
 const PageDescriptorSchema = z.object({
   id: z.string().min(1),
@@ -57,7 +62,7 @@ export const ViewportPositionSchema = z.object({
   x: z.number().finite(),
   y: z.number().finite(),
   frameUrl: z.string().optional(),
-});
+}) satisfies z.ZodType<ViewportPosition>;
 
 const StepBase = z.object({
   id: z.string().min(1),
@@ -65,15 +70,15 @@ const StepBase = z.object({
   name: z.string().trim().min(1, "Give this step a name."),
   enabled: z.boolean(),
   page: PageDescriptorSchema,
-  target: TargetDescriptorSchema.optional(),
+  target: ElementTargetSchema.optional(),
   position: ViewportPositionSchema.optional(),
   waitAfter: ReplayWaitSchema.optional(),
   metadata: StepMetadataSchema,
 });
 
 const ElementStepBase = StepBase.extend({
-  target: TargetDescriptorSchema.refine(
-    (target) => target.candidates.length > 0,
+  target: ElementTargetSchema.refine(
+    (target) => locatorCandidatesForTarget(target).length > 0,
     "Element actions need at least one locator.",
   ),
 });
@@ -118,7 +123,7 @@ export const WorkflowStepSchema = z.discriminatedUnion("type", [
     type: z.literal("submit"),
     payload: z.object({}).optional(),
   }),
-]);
+]) satisfies z.ZodType<WorkflowStep>;
 
 export const WorkflowSchema = z.object({
   schemaVersion: z.literal("1.0"),
@@ -132,14 +137,7 @@ export const WorkflowSchema = z.object({
     startUrl: z.string().optional(),
   }),
   steps: z.array(WorkflowStepSchema),
-});
-
-export type Workflow = z.infer<typeof WorkflowSchema>;
-export type WorkflowStep = z.infer<typeof WorkflowStepSchema>;
-export type WorkflowActionType = WorkflowStep["type"];
-export type TargetDescriptor = z.infer<typeof TargetDescriptorSchema>;
-export type ReplayWait = z.infer<typeof ReplayWaitSchema>;
-export type ViewportPosition = z.infer<typeof ViewportPositionSchema>;
+}) satisfies z.ZodType<Workflow>;
 
 const locatorPriority = new Map(locatorKinds.map((kind, index) => [kind, index]));
 
@@ -149,7 +147,7 @@ export function orderLocatorCandidates(candidates: LocatorCandidate[]): LocatorC
   );
 }
 
-export const emptyTarget = (): TargetDescriptor => ({
+export const emptyTarget = (): ElementTarget => ({
   candidates: [{ kind: "css", value: "body", exact: true, unique: true }],
 });
 

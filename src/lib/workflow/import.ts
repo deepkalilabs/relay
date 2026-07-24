@@ -1,4 +1,5 @@
-import { WorkflowSchema, type Workflow } from "@/lib/workflow/schema";
+import type { Workflow } from "@/lib/workflow/domain";
+import { WorkflowSchema } from "@/lib/workflow/schema";
 
 export const MAX_WORKFLOW_FILE_BYTES = 1_048_576;
 
@@ -36,4 +37,3 @@ export function parseWorkflowJson(text: string, sizeBytes = new Blob([text]).siz
     steps: parsed.data.steps.map((step, order) => ({ ...step, order })),
   };
 }
-

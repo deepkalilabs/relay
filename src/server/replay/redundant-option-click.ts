@@ -1,4 +1,4 @@
-import type { WorkflowStep } from "@/lib/workflow/schema";
+import { locatorCandidatesForTarget, type WorkflowStep } from "@/lib/workflow/domain";
 
 const OPTION_ROLES = new Set(["option", "menuitemradio"]);
 
@@ -8,14 +8,14 @@ function normalizeLabel(value: string | undefined): string {
 
 function isOptionLikeTarget(step: WorkflowStep & { type: "click" }): boolean {
   if (step.target.tagName?.toLocaleLowerCase() === "option") return true;
-  return step.target.candidates.some(
+  return locatorCandidatesForTarget(step.target).some(
     (candidate) => candidate.kind === "role" && OPTION_ROLES.has(candidate.value.toLocaleLowerCase()),
   );
 }
 
 function optionClickLabels(step: WorkflowStep & { type: "click" }): string[] {
   const labels = [step.name];
-  for (const candidate of step.target.candidates) {
+  for (const candidate of locatorCandidatesForTarget(step.target)) {
     if (candidate.kind === "role" && OPTION_ROLES.has(candidate.value.toLocaleLowerCase())) {
       if (candidate.name) labels.push(candidate.name);
       continue;

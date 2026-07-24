@@ -1,12 +1,15 @@
 import type { Frame, Locator, Page, Request } from "playwright-core";
 import type { ReplayDiagnostic, ReplayStatus, ServerMessage } from "@/lib/protocol";
 import {
-  WorkflowSchema,
-  orderLocatorCandidates,
+  locatorCandidatesForTarget,
+  type ElementTarget,
   type LocatorCandidate,
-  type TargetDescriptor,
   type Workflow,
   type WorkflowStep,
+} from "@/lib/workflow/domain";
+import {
+  WorkflowSchema,
+  orderLocatorCandidates,
 } from "@/lib/workflow/schema";
 import { isRedundantOptionClickBeforeSelect } from "@/server/replay/redundant-option-click";
 
@@ -99,10 +102,10 @@ function normalizedFrameUrl(value: string): string | null {
   }
 }
 
-export async function resolveTarget(page: Page, target: TargetDescriptor, recordedPageUrl?: string): Promise<ResolvedTarget> {
+export async function resolveTarget(page: Page, target: ElementTarget, recordedPageUrl?: string): Promise<ResolvedTarget> {
   const frame = resolveFrame(page, target.frameUrl, recordedPageUrl);
   const attempts: ReplayDiagnostic["attemptedLocators"] = [];
-  const candidates = orderLocatorCandidates(target.candidates);
+  const candidates = orderLocatorCandidates(locatorCandidatesForTarget(target));
   const deadline = Date.now() + REPLAY_STEP_TIMEOUT_MS;
   do {
     attempts.splice(0);
@@ -411,7 +414,7 @@ export class ReplayEngine {
   }
 
   private async waitConditionState(
-    target: TargetDescriptor,
+    target: ElementTarget,
     state: "visible" | "hidden",
     recordedPageUrl: string,
   ): Promise<void> {
@@ -426,7 +429,7 @@ export class ReplayEngine {
       let candidateEvaluated = false;
       try {
         const frame = resolveFrame(this.page, target.frameUrl, recordedPageUrl);
-        for (const candidate of orderLocatorCandidates(target.candidates)) {
+        for (const candidate of orderLocatorCandidates(locatorCandidatesForTarget(target))) {
           try {
             const locator = locatorFor(frame, candidate);
             const count = await locator.count();

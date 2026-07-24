@@ -1,8 +1,5 @@
-import {
-  createWorkflow,
-  type Workflow,
-  type WorkflowStep,
-} from "@/lib/workflow/schema";
+import type { Workflow, WorkflowStep } from "@/lib/workflow/domain";
+import { createWorkflow } from "@/lib/workflow/schema";
 
 export interface WorkflowState {
   workflow: Workflow;

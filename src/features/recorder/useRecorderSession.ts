@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRecorderSocket } from "@/hooks/use-recorder-socket";
 import type { CaptchaStatus, ClientMessage, ReplayStatus, ServerMessage } from "@/lib/protocol";
 import { stepFromRecordedAction } from "@/lib/workflow/recorded-action";
-import type { WorkflowStep } from "@/lib/workflow/schema";
+import type { Workflow, WorkflowStep } from "@/lib/workflow/domain";
 import type {
   BrowserPageState,
   DatePickerState,
@@ -296,7 +296,7 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
     send({ type: "session.stop" });
   };
 
-  const startReplay = (workflow: import("@/lib/workflow/schema").Workflow, startStepId?: string) => {
+  const startReplay = (workflow: Workflow, startStepId?: string) => {
     setReplayStatus("preparing");
     setReplayRunId(null);
     setReplayCurrentStepId(null);

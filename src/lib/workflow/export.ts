@@ -1,4 +1,5 @@
-import { WorkflowSchema, type Workflow } from "@/lib/workflow/schema";
+import type { Workflow } from "@/lib/workflow/domain";
+import { WorkflowSchema } from "@/lib/workflow/schema";
 
 export function serializeWorkflow(workflow: Workflow): string {
   return `${JSON.stringify(WorkflowSchema.parse(workflow), null, 2)}\n`;

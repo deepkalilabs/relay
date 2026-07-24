@@ -1,10 +1,33 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import { serializeWorkflow, workflowFilename } from "@/lib/workflow/export";
 import { isSensitiveInput, stepFromRecordedAction } from "@/lib/workflow/recorded-action";
+import {
+  locatorCandidatesForTarget,
+  type ClickStep,
+  type ElementTarget,
+  type FillStep,
+  type NavigateStep,
+  type SelectStep,
+  type Workflow,
+  type WorkflowStep,
+} from "@/lib/workflow/domain";
 import { createWorkflow, orderLocatorCandidates, WorkflowSchema } from "@/lib/workflow/schema";
 import { initialWorkflowState, workflowReducer } from "@/lib/workflow/store";
 
 describe("workflow contract", () => {
+  it("keeps the named domain model aligned with runtime validation", () => {
+    const workflow = WorkflowSchema.parse(createWorkflow("session-1"));
+
+    expectTypeOf(workflow).toMatchTypeOf<Workflow>();
+    expectTypeOf<Extract<WorkflowStep, { type: "navigate" }>>().toEqualTypeOf<NavigateStep>();
+    expectTypeOf<Extract<WorkflowStep, { type: "click" }>>().toEqualTypeOf<ClickStep>();
+    expectTypeOf<Extract<WorkflowStep, { type: "fill" }>>().toEqualTypeOf<FillStep>();
+    expectTypeOf<Extract<WorkflowStep, { type: "select" }>>().toEqualTypeOf<SelectStep>();
+    expectTypeOf<ClickStep["target"]>().toEqualTypeOf<ElementTarget>();
+
+    expect(workflow.steps).toEqual([]);
+  });
+
   it("orders semantic locators before structural fallbacks", () => {
     expect(orderLocatorCandidates([
       { kind: "xpath", value: "/html[1]/body[1]", exact: true },
@@ -12,6 +35,31 @@ describe("workflow contract", () => {
       { kind: "testId", value: "continue", exact: true },
       { kind: "css", value: "button", exact: true },
     ]).map((locator) => locator.kind)).toEqual(["testId", "role", "css", "xpath"]);
+  });
+
+  it("expands concise element targets into replayable locator candidates", () => {
+    const target = {
+      selector: "#continue",
+      role: "button",
+      name: "Continue",
+      text: "Continue",
+    } satisfies ElementTarget;
+
+    expect(locatorCandidatesForTarget(target)).toEqual([
+      { kind: "css", value: "#continue", exact: true },
+      { kind: "role", value: "button", name: "Continue", exact: true },
+      { kind: "text", value: "Continue", exact: true },
+    ]);
+
+    const step = stepFromRecordedAction({
+      type: "click",
+      name: "Click Continue",
+      target,
+      sensitive: false,
+      page: { id: "page-1", url: "https://example.com" },
+      recordedAt: new Date().toISOString(),
+    }, 0);
+    expect(WorkflowSchema.shape.steps.element.safeParse(step).success).toBe(true);
   });
 
   it("keeps password values while marking the step sensitive", () => {

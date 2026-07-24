@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Frame, Locator, Page, Request } from "playwright-core";
 import type { ServerMessage } from "@/lib/protocol";
-import { createWorkflow, type Workflow, type WorkflowStep } from "@/lib/workflow/schema";
+import type { Workflow, WorkflowStep } from "@/lib/workflow/domain";
+import { createWorkflow } from "@/lib/workflow/schema";
 import { applyPositionBefore, preflightReplay, ReplayEngine, resolveTarget } from "@/server/replay/engine";
 import { isRedundantOptionClickBeforeSelect } from "@/server/replay/redundant-option-click";
 

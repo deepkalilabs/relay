@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { TargetDescriptorSchema, ViewportPositionSchema, type WorkflowStep } from "@/lib/workflow/schema";
+import type { WorkflowStep } from "@/lib/workflow/domain";
+import { ElementTargetSchema, ViewportPositionSchema } from "@/lib/workflow/schema";
 
 export const RecordedActionSchema = z.object({
   type: z.enum([
@@ -14,7 +15,7 @@ export const RecordedActionSchema = z.object({
     "submit",
   ]),
   name: z.string().min(1),
-  target: TargetDescriptorSchema.optional(),
+  target: ElementTargetSchema.optional(),
   position: ViewportPositionSchema.optional(),
   payload: z.record(z.string(), z.unknown()).optional(),
   sensitive: z.boolean().default(false),

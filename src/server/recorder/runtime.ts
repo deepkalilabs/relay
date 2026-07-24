@@ -7,13 +7,16 @@ import type { BrowserProvider } from "@/server/provider/types";
 import { RECORDER_BINDING, RECORDER_SCRIPT } from "@/server/recorder/injected";
 import { ActionDeduplicator } from "@/server/recorder/deduplicate";
 import {
-  orderLocatorCandidates,
-  TargetDescriptorSchema,
-  ViewportPositionSchema,
-  type TargetDescriptor,
+  locatorCandidatesForTarget,
+  type ElementTarget,
   type ViewportPosition,
+  type Workflow,
+} from "@/lib/workflow/domain";
+import {
+  ElementTargetSchema,
+  orderLocatorCandidates,
+  ViewportPositionSchema,
 } from "@/lib/workflow/schema";
-import type { Workflow } from "@/lib/workflow/schema";
 import { preflightReplay, ReplayEngine } from "@/server/replay/engine";
 
 interface PageState {
@@ -50,7 +53,7 @@ const DatePickerBrowserEventSchema = z.discriminatedUnion("type", [
     type: z.literal("date-picker.request"),
     selector: z.string().min(1),
     name: z.string().min(1),
-    target: TargetDescriptorSchema,
+  target: ElementTargetSchema,
     value: z.string(),
     min: z.string(),
     max: z.string(),
@@ -65,7 +68,7 @@ const SelectPickerBrowserEventSchema = z.discriminatedUnion("type", [
     type: z.literal("select-picker.request"),
     selector: z.string().min(1),
     name: z.string().min(1),
-    target: TargetDescriptorSchema,
+  target: ElementTargetSchema,
     value: z.string(),
     options: z.array(z.object({
       value: z.string(),
@@ -85,7 +88,7 @@ interface PendingDatePicker {
   frame: Frame;
   selector: string;
   name: string;
-  target: TargetDescriptor;
+  target: ElementTarget;
   position: ViewportPosition;
   min: string;
   max: string;
@@ -97,7 +100,7 @@ interface PendingSelectPicker {
   frame: Frame;
   selector: string;
   name: string;
-  target: TargetDescriptor;
+  target: ElementTarget;
   position: ViewportPosition;
   sensitive: boolean;
 }
@@ -715,7 +718,13 @@ export class RecordingRuntime {
       if (!this.forwardStartUrlDescriptor(action.page)) return;
     }
     const normalized = action.target
-      ? { ...action, target: { ...action.target, candidates: orderLocatorCandidates(action.target.candidates) } }
+      ? {
+          ...action,
+          target: {
+            ...action.target,
+            candidates: orderLocatorCandidates(locatorCandidatesForTarget(action.target)),
+          },
+        }
       : action;
     if (!this.deduplicator.shouldForward(normalized)) return;
     this.emit({ type: "recorded.action", action: normalized });

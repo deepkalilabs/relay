@@ -4,12 +4,12 @@ import { useMemo } from "react";
 import { AlertCircle, ChevronRight, Crosshair, KeyRound, MousePointer2, Play, Plus, Trash2 } from "lucide-react";
 import type { ReplayStepResultState } from "@/lib/recorder-session";
 import {
-  WorkflowStepSchema,
   locatorKinds,
   type LocatorCandidate,
   type ViewportPosition,
   type WorkflowStep,
-} from "@/lib/workflow/schema";
+} from "@/lib/workflow/domain";
+import { WorkflowStepSchema } from "@/lib/workflow/schema";
 
 interface StepEditorProps {
   step: WorkflowStep | null;

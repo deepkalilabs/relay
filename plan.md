@@ -16,7 +16,7 @@ Serve Next.js and `/ws` from one custom Node server. Keep workflows in React mem
 
 Inject a semantic recorder into every page and frame. Capture clicks, fills, changes, shortcuts, submissions, full navigation, and SPA navigation. Coalesce input, suppress redundant events, and generate ordered test-id, role/name, name, label, text, CSS, and XPath locator candidates. Support one active tab and an explicit popup-switch action.
 
-Define a Zod-validated workflow schema at version `1.0` with typed action payloads, page and frame metadata, ordered locator candidates, origin metadata, and sensitive-field marking. Capture values exactly—including passwords—and warn before exporting sensitive JSON.
+Define a dependency-free workflow domain model as the shared compile-time contract between recording, editing, persistence, transport, and replay. Validate untrusted boundaries with a Zod schema at version `1.0` that is compile-time checked against that model and includes typed action payloads, page and frame metadata, ordered locator candidates, origin metadata, and sensitive-field marking. Capture values exactly—including passwords—and warn before exporting sensitive JSON.
 
 ## Product and UX Behavior
 

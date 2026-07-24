@@ -29,7 +29,7 @@ export function actionFingerprint(action: RecordedAction): string {
   return JSON.stringify([
     action.page.id,
     action.type,
-    action.target?.candidates[0]?.value ?? "",
+    action.target?.candidates?.[0]?.value ?? "",
     actionPayloadFingerprint(action),
   ]);
 }

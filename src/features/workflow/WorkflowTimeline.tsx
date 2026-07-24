@@ -36,7 +36,7 @@ import {
   Trash2,
 } from "lucide-react";
 import type { ReplayStepResultState } from "@/lib/recorder-session";
-import type { WorkflowStep } from "@/lib/workflow/schema";
+import type { WorkflowStep } from "@/lib/workflow/domain";
 
 const icons = {
   navigate: Link2,
