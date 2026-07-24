@@ -10,11 +10,13 @@ export const RECORDER_SCRIPT = String.raw`(() => {
   let pendingOptionClick = null;
   window.__browserMemorySuppressSelectChange = false;
   window.__browserMemoryNativeSelects = window.__browserMemoryNativeSelects === true;
+  window.__browserMemoryCaptchaLocked = window.__browserMemoryCaptchaLocked === true;
   const normalize = (value) => String(value ?? "").replace(/\s+/g, " ").trim();
   const clip = (value, size = 180) => normalize(value).slice(0, size);
   const escapeCss = (value) => window.CSS?.escape ? CSS.escape(value) : value.replace(/[^a-zA-Z0-9_-]/g, "\\$&");
 
   const emit = (payload) => {
+    if (window.__browserMemoryCaptchaLocked) return;
     try {
       const result = window.${RECORDER_BINDING}?.(payload);
       if (result?.catch) result.catch(() => undefined);
@@ -23,6 +25,15 @@ export const RECORDER_SCRIPT = String.raw`(() => {
   window.__browserMemorySetNativeSelects = (enabled) => {
     window.__browserMemoryNativeSelects = enabled === true;
     if (window.__browserMemoryNativeSelects) selectPickerOpen = false;
+  };
+  window.__browserMemorySetCaptchaLocked = (locked) => {
+    window.__browserMemoryCaptchaLocked = locked === true;
+    if (!window.__browserMemoryCaptchaLocked) return;
+    dirtyFields.clear();
+    datePickerOpen = false;
+    selectPickerOpen = false;
+    if (pendingOptionClick) clearTimeout(pendingOptionClick.timer);
+    pendingOptionClick = null;
   };
 
   const viewportPosition = () => ({
@@ -427,6 +438,7 @@ export const RECORDER_SCRIPT = String.raw`(() => {
   };
 
   window.addEventListener("input", (event) => {
+    if (window.__browserMemoryCaptchaLocked) return;
     const element = eventElement(event);
     if (element instanceof HTMLInputElement && element.type === "date") {
       datePickerOpen = false;
@@ -437,16 +449,19 @@ export const RECORDER_SCRIPT = String.raw`(() => {
   }, true);
 
   window.addEventListener("focusout", (event) => {
+    if (window.__browserMemoryCaptchaLocked) return;
     const element = eventElement(event);
     if (element instanceof HTMLElement) flushInput(element);
   }, true);
 
   window.addEventListener("change", (event) => {
+    if (window.__browserMemoryCaptchaLocked) return;
     const element = eventElement(event);
     if (element instanceof HTMLElement) recordControlChange(element);
   }, true);
 
   window.addEventListener("click", (event) => {
+    if (window.__browserMemoryCaptchaLocked) return;
     const origin = eventElement(event);
     const select = origin ? nativeSelectForInteraction(origin) : null;
     if (select instanceof HTMLSelectElement && !select.disabled && !select.multiple && select.size <= 1) {
@@ -523,6 +538,7 @@ export const RECORDER_SCRIPT = String.raw`(() => {
   }, true);
 
   window.addEventListener("keydown", (event) => {
+    if (window.__browserMemoryCaptchaLocked) return;
     if (event.key === "Escape" && datePickerOpen) {
       datePickerOpen = false;
       emit({ type: "date-picker.dismiss" });
@@ -534,6 +550,7 @@ export const RECORDER_SCRIPT = String.raw`(() => {
   }, true);
 
   window.addEventListener("scroll", () => {
+    if (window.__browserMemoryCaptchaLocked) return;
     if (!selectPickerOpen) return;
     selectPickerOpen = false;
     emit({ type: "select-picker.dismiss" });

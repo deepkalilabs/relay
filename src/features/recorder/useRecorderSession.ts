@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRecorderSocket } from "@/hooks/use-recorder-socket";
-import type { ClientMessage, ReplayStatus, ServerMessage } from "@/lib/protocol";
+import type { CaptchaStatus, ClientMessage, ReplayStatus, ServerMessage } from "@/lib/protocol";
 import { stepFromRecordedAction } from "@/lib/workflow/recorded-action";
 import type { WorkflowStep } from "@/lib/workflow/schema";
 import type {
@@ -42,6 +42,21 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
   const [replayCurrentIndex, setReplayCurrentIndex] = useState(0);
   const [replayTotalSteps, setReplayTotalSteps] = useState(0);
   const [replayResults, setReplayResults] = useState<Record<string, ReplayStepResultState>>({});
+  const [activePageId, setActivePageId] = useState<string | null>(null);
+  const [captchaStatuses, setCaptchaStatuses] = useState<Record<string, CaptchaStatus>>({});
+  const captchaNoticeTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+
+  const resetCaptchaState = useCallback(() => {
+    for (const timer of captchaNoticeTimers.current.values()) clearTimeout(timer);
+    captchaNoticeTimers.current.clear();
+    setCaptchaStatuses({});
+    setActivePageId(null);
+  }, []);
+
+  useEffect(() => () => {
+    for (const timer of captchaNoticeTimers.current.values()) clearTimeout(timer);
+    captchaNoticeTimers.current.clear();
+  }, []);
 
   const handleServerMessage = useCallback((message: ServerMessage) => {
     switch (message.type) {
@@ -50,6 +65,8 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
         break;
       case "session.started":
         onSessionStarted(message.sessionId);
+        resetCaptchaState();
+        setActivePageId(message.pageId);
         setLiveViewUrl(message.liveViewUrl);
         setBrowserPage(null);
         setNavigationError(null);
@@ -63,6 +80,7 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
       case "session.status":
         setStatus(message.status);
         if (message.status === "stopped") {
+          resetCaptchaState();
           setStartedAt(null);
           setNavigationPending(false);
           setNavigationError(null);
@@ -82,6 +100,7 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
         setPopup({ pageId: message.pageId, title: message.title, url: message.url });
         break;
       case "popup.switched":
+        setActivePageId(message.pageId);
         setLiveViewUrl(message.liveViewUrl);
         setBrowserPage(null);
         setPopup(null);
@@ -89,6 +108,7 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
         setSelectPicker(null);
         break;
       case "browser.page":
+        setActivePageId(message.pageId);
         setBrowserPage({ pageId: message.pageId, title: message.title, url: message.url });
         setNavigationError(null);
         setNavigationPending(false);
@@ -125,7 +145,41 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
       case "select.picker.closed":
         setSelectPicker((current) => current?.requestId === message.requestId ? null : current);
         break;
+      case "captcha.status": {
+        const existingTimer = captchaNoticeTimers.current.get(message.pageId);
+        if (existingTimer) {
+          clearTimeout(existingTimer);
+          captchaNoticeTimers.current.delete(message.pageId);
+        }
+        if (message.status === "cancelled") {
+          setCaptchaStatuses((current) => {
+            const next = { ...current };
+            delete next[message.pageId];
+            return next;
+          });
+          break;
+        }
+        setCaptchaStatuses((current) => ({ ...current, [message.pageId]: message.status }));
+        if (message.status === "solving") {
+          setDatePicker(null);
+          setSelectPicker(null);
+          break;
+        }
+        const timer = setTimeout(() => {
+          captchaNoticeTimers.current.delete(message.pageId);
+          setCaptchaStatuses((current) => {
+            if (current[message.pageId] !== message.status) return current;
+            const next = { ...current };
+            delete next[message.pageId];
+            return next;
+          });
+        }, 4_000);
+        captchaNoticeTimers.current.set(message.pageId, timer);
+        break;
+      }
       case "replay.started":
+        resetCaptchaState();
+        setActivePageId(message.pageId);
         onReplaySessionStarted(message.sessionId);
         setReplayRunId(message.runId);
         setReplayTotalSteps(message.totalSteps);
@@ -169,6 +223,7 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
         setError("Some events could not be recovered after the connection interruption. Stop and review this workflow before exporting.");
         break;
       case "server.error":
+        resetCaptchaState();
         setNavigationPending(false);
         if (message.code === "INVALID_MESSAGE" && liveViewUrl) {
           setNavigationError(message.message);
@@ -182,7 +237,7 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
         else setStatus("error");
         break;
     }
-  }, [liveViewUrl, onReplaySessionStarted, onReplayStepChange, onSessionStarted, onStartUrl, onStepRecorded, replayStatus]);
+  }, [liveViewUrl, onReplaySessionStarted, onReplayStepChange, onSessionStarted, onStartUrl, onStepRecorded, replayStatus, resetCaptchaState]);
 
   const { transportStatus, send } = useRecorderSocket(handleServerMessage);
 
@@ -196,12 +251,14 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
       setDatePicker(null);
       setSelectPicker(null);
       setNavigationPending(false);
+      resetCaptchaState();
     };
     addEventListener("message", onMessage);
     return () => removeEventListener("message", onMessage);
-  }, []);
+  }, [resetCaptchaState]);
 
   const resetSessionState = () => {
+    resetCaptchaState();
     setStatus("starting");
     setError(null);
     setErrorContext("recording");
@@ -270,6 +327,7 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
 
   const displayStatus = getDisplayStatus(status, transportStatus);
   const displayError = getDisplayError(status, transportStatus, error);
+  const captchaStatus = transportStatus === "offline" || !activePageId ? null : captchaStatuses[activePageId] ?? null;
   const selectDate = useCallback((requestId: string, value: string) => {
     setDatePicker((current) => current?.requestId === requestId ? null : current);
     send({ type: "date.picker.select", requestId, value });
@@ -294,6 +352,8 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
 
   return {
     browserPage,
+    captchaPageId: activePageId,
+    captchaStatus,
     datePicker,
     displayError,
     errorContext,
@@ -313,6 +373,7 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
     selectPicker,
     reportError: setError,
     clearError: () => setError(null),
+    continueAfterCaptcha: () => activePageId ? send({ type: "captcha.continue", pageId: activePageId }) : false,
     sendBrowserCommand,
     selectDate,
     dismissDatePicker,

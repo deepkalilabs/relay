@@ -140,6 +140,7 @@ For local development, `npm run dev` also loads an existing, gitignored `secret.
 - Sensitive steps are marked but are not automatically redacted.
 - Recorded payloads are not written to server logs or durable storage.
 - Exported JSON is plain text and should be handled like a secret.
+- Automatic CAPTCHA solving is enabled for recording and replay sessions. During recording, detected challenges temporarily lock local browser input while Browserbase solves them; replay remains unchanged and CAPTCHA lifecycle events stay available in server diagnostics.
 - Sessions are released on Stop, disconnect timeout, replacement, or server shutdown.
 - The default Browserbase session timeout is 30 minutes and may incur usage charges.
 

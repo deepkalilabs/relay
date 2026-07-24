@@ -110,6 +110,15 @@ describe("WorkspaceNavbar", () => {
     expect(onStart).toHaveBeenCalledOnce();
     expect(onExport).toHaveBeenCalledOnce();
   });
+
+  it("locks expanded workflow controls during CAPTCHA solving", () => {
+    const { container } = render(<WorkspaceNavbar collapsed={false} workflowName="Checkout" status="recording" transportStatus="connected" stepCount={1} locked onNameChange={vi.fn()} onExpand={vi.fn()} onStart={vi.fn()} onStop={vi.fn()} onExport={vi.fn()} />);
+    const navbar = within(container);
+
+    expect(navbar.getByRole("textbox", { name: /workflow name/i })).toBeDisabled();
+    expect(navbar.getByRole("button", { name: /export workflow/i })).toBeDisabled();
+    expect(navbar.getByRole("button", { name: /run workflow/i })).toBeDisabled();
+  });
 });
 
 describe("RecorderControls", () => {
@@ -337,6 +346,77 @@ describe("BrowserPanel", () => {
     expect(onForward).toHaveBeenCalledOnce();
     expect(onReload).toHaveBeenCalledOnce();
     expect(onNavigate).toHaveBeenCalledWith("example.org");
+  });
+
+  it("locks Live View input during CAPTCHA solving and keeps an accessible escape route", async () => {
+    const user = userEvent.setup();
+    const onStop = vi.fn();
+    const onCaptchaContinue = vi.fn();
+    const { container, rerender } = render(
+      <BrowserPanel
+        status="recording"
+        transportStatus="connected"
+        startedAt={Date.now() - 12_000}
+        liveViewUrl="https://example.com/live-view"
+        page={{ pageId: "page", title: "Example", url: "https://example.com/" }}
+        error={null}
+        navigationError={null}
+        navigationPending={false}
+        popup={null}
+        captchaStatus="solving"
+        onBack={vi.fn()}
+        onForward={vi.fn()}
+        onNavigate={vi.fn()}
+        onReload={vi.fn()}
+        onStart={vi.fn()}
+        onStop={onStop}
+        onRetry={vi.fn()}
+        onSwitchPopup={vi.fn()}
+        onCaptchaContinue={onCaptchaContinue}
+      />,
+    );
+    const panel = within(container);
+    const content = container.querySelector(".browser-content");
+    const liveView = panel.getByTitle(/interactive browserbase browser/i);
+
+    expect(content).toHaveAttribute("aria-busy", "true");
+    expect(liveView).toHaveAttribute("tabindex", "-1");
+    expect(liveView).toHaveClass("captcha-locked");
+    expect(panel.getByRole("dialog", { name: /solving verification/i })).toHaveTextContent(/recording will resume automatically/i);
+    expect(panel.getByRole("button", { name: /go back/i })).toBeDisabled();
+    expect(panel.getByRole("textbox", { name: /web address/i })).toBeDisabled();
+    expect(panel.getByRole("switch", { name: /use native dropdowns/i })).toBeDisabled();
+    expect(panel.getByRole("button", { name: /stop recording/i })).toBeEnabled();
+    expect(panel.getByRole("button", { name: /continue anyway/i })).toHaveFocus();
+
+    await user.click(panel.getByRole("button", { name: /continue anyway/i }));
+    expect(onCaptchaContinue).toHaveBeenCalledOnce();
+
+    rerender(
+      <BrowserPanel
+        status="recording"
+        transportStatus="connected"
+        startedAt={Date.now() - 12_000}
+        liveViewUrl="https://example.com/live-view"
+        page={{ pageId: "page", title: "Example", url: "https://example.com/" }}
+        error={null}
+        navigationError={null}
+        navigationPending={false}
+        popup={null}
+        captchaStatus="timed_out"
+        onBack={vi.fn()}
+        onForward={vi.fn()}
+        onNavigate={vi.fn()}
+        onReload={vi.fn()}
+        onStart={vi.fn()}
+        onStop={onStop}
+        onRetry={vi.fn()}
+        onSwitchPopup={vi.fn()}
+        onCaptchaContinue={onCaptchaContinue}
+      />,
+    );
+    expect(panel.getByRole("status")).toHaveTextContent(/verification wait timed out/i);
+    expect(liveView).toHaveAttribute("tabindex", "0");
   });
 
   it("exposes native dropdown mode as a labeled accessible switch", async () => {

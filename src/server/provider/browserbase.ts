@@ -55,6 +55,7 @@ export class BrowserbaseProvider implements BrowserProvider {
         viewport: { width: 1440, height: 900 },
         recordSession: false,
         logSession: false,
+        solveCaptchas: true,
       },
       userMetadata: { product: "browser-memory-recorder", purpose: "interactive-recording" },
     });

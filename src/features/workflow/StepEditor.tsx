@@ -16,11 +16,12 @@ interface StepEditorProps {
   onUpdate: (step: WorkflowStep) => void;
   onCollapse?: () => void;
   locked?: boolean;
+  reviewLocked?: boolean;
   replayResult?: ReplayStepResultState;
   onRunFromHere?: () => void;
 }
 
-export function StepEditor({ step, onUpdate, onCollapse, locked = false, replayResult, onRunFromHere }: StepEditorProps) {
+export function StepEditor({ step, onUpdate, onCollapse, locked = false, reviewLocked = false, replayResult, onRunFromHere }: StepEditorProps) {
   const validation = useMemo(() => (step ? WorkflowStepSchema.safeParse(step) : null), [step]);
   const updatePayload = (key: string, value: unknown) => step && onUpdate({ ...step, payload: { ...step.payload, [key]: value } } as WorkflowStep);
   const candidates = step?.target?.candidates ?? [];
@@ -83,7 +84,7 @@ export function StepEditor({ step, onUpdate, onCollapse, locked = false, replayR
           <span className="eyebrow">Step details</span>
           <h2>{step ? `Step ${step.order + 1}` : "No step selected"}{step ? <span>{step.type}</span> : null}</h2>
         </div>
-        <button id="inspector-collapse" className="icon-button" type="button" onClick={onCollapse} aria-label="Collapse step details" title="Collapse details">
+        <button id="inspector-collapse" className="icon-button" type="button" disabled={reviewLocked} onClick={onCollapse} aria-label="Collapse step details" title="Collapse details">
           <ChevronRight size={18} aria-hidden="true" />
         </button>
       </header>

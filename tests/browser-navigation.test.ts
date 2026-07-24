@@ -1,12 +1,33 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Browser, BrowserContext, Page } from "playwright-core";
 import { ClientMessageSchema } from "@/lib/protocol";
 import { hideLiveViewNavbar, selectLiveViewPage } from "@/server/provider/browserbase";
 import type { BrowserProvider } from "@/server/provider/types";
-import { isRecordableNavigationUrl, normalizeBrowserUrl, RecordingRuntime } from "@/server/recorder/runtime";
+import {
+  isRecordableNavigationUrl,
+  normalizeBrowserUrl,
+  RecordingRuntime,
+} from "@/server/recorder/runtime";
 import { createWorkflow } from "@/lib/workflow/schema";
 
+let captchaConsoleInfo: ReturnType<typeof vi.spyOn>;
+
+function captchaLogs(): Array<Record<string, unknown>> {
+  return captchaConsoleInfo.mock.calls.map(([line]: unknown[]) => {
+    expect(line).toEqual(expect.stringMatching(/^\[captcha\] \{/));
+    return JSON.parse((line as string).slice("[captcha] ".length)) as Record<string, unknown>;
+  });
+}
+
 describe("browser navigation", () => {
+  beforeEach(() => {
+    captchaConsoleInfo = vi.spyOn(console, "info").mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    captchaConsoleInfo.mockRestore();
+  });
+
   it("normalizes scheme-less addresses and rejects unsafe protocols", () => {
     expect(normalizeBrowserUrl("example.com/path")).toBe("https://example.com/path");
     expect(normalizeBrowserUrl("http://example.com")).toBe("http://example.com/");
@@ -54,6 +75,332 @@ describe("browser navigation", () => {
     const startUrls = runtime.buffer.flatMap((item) => item.message.type === "recording.startUrl" ? [item.message.url] : []);
     expect(startUrls).toEqual(["https://example.com/start", "https://pasted.example.com/path"]);
     expect(currentUrl).toBe("https://resolved.example.net/");
+  });
+
+  it("locks recording input while preserving passive Browserbase CAPTCHA diagnostics", async () => {
+    vi.useFakeTimers();
+    try {
+      const currentUrl = "https://example.com/form";
+      let binding: ((source: { page: Page; frame: unknown }, raw: unknown) => Promise<void>) | undefined;
+      const handlers = new Map<string, (...args: unknown[]) => void>();
+      const mainFrame = {
+        evaluate: vi.fn(async () => undefined),
+        locator: vi.fn(() => ({ boundingBox: vi.fn(async () => null) })),
+        url: vi.fn(() => currentUrl),
+      };
+      const page = {
+        evaluate: vi.fn(async () => ({ width: 1280, height: 720 })),
+        frames: vi.fn(() => [mainFrame]),
+        mainFrame: vi.fn(() => mainFrame),
+        on: vi.fn((name: string, handler: (...args: unknown[]) => void) => { handlers.set(name, handler); }),
+        title: vi.fn(async () => "Example"),
+        url: vi.fn(() => currentUrl),
+      } as unknown as Page;
+      const context = {
+        addInitScript: vi.fn(async () => undefined),
+        exposeBinding: vi.fn(async (_name: string, callback: typeof binding) => { binding = callback; }),
+        on: vi.fn(),
+        pages: vi.fn(() => [page]),
+      } as unknown as BrowserContext;
+      const provider: BrowserProvider = {
+        connect: vi.fn(async () => ({ browser: { close: vi.fn(async () => undefined) } as unknown as Browser, context })),
+        createSession: vi.fn(async () => ({ id: "session", connectUrl: "ws://example.com" })),
+        getLiveView: vi.fn(async () => ({ id: "page", title: "Example", url: currentUrl, liveViewUrl: "https://example.com/live" })),
+        releaseSession: vi.fn(async () => undefined),
+      };
+      const runtime = new RecordingRuntime(crypto.randomUUID(), provider, vi.fn());
+      await runtime.start({ timeoutSeconds: 120, region: "us-west-2" });
+      runtime.buffer.splice(0);
+
+      const click = {
+        type: "click",
+        name: "Click Continue",
+        target: { candidates: [{ kind: "role", value: "button", name: "Continue", exact: true }] },
+        sensitive: false,
+      };
+      await binding?.({ page, frame: mainFrame }, {
+        type: "date-picker.request",
+        selector: "#appointment-date",
+        name: "Set appointment date",
+        target: { candidates: [{ kind: "label", value: "Appointment date", exact: true }], inputType: "date" },
+        value: "2026-07-23",
+        min: "",
+        max: "",
+        position: { x: 0, y: 0 },
+        rect: { x: 20, y: 30, width: 160, height: 32 },
+      });
+      expect(runtime.buffer.at(-1)?.message).toMatchObject({ type: "date.picker.open" });
+
+      handlers.get("console")?.({ text: () => "ordinary page console output" });
+      expect(captchaLogs()).toEqual([]);
+      handlers.get("console")?.({ text: () => "browser-solving-pending" });
+      expect(captchaLogs()).toContainEqual(expect.objectContaining({
+        sessionId: "session",
+        mode: "recording",
+        action: "unrecognized_event",
+        rawMessage: "browser-solving-pending",
+      }));
+      expect(runtime.buffer.some((item) => item.message.type === "captcha.status")).toBe(false);
+
+      handlers.get("console")?.({ text: () => "browserbase-solving-started" });
+      expect(runtime.buffer.some((item) => item.message.type === "date.picker.closed")).toBe(true);
+      expect(runtime.buffer.some((item) => item.message.type === "captcha.status" && item.message.status === "solving")).toBe(true);
+      expect(mainFrame.evaluate).toHaveBeenCalledWith(expect.any(Function), true);
+      expect(captchaLogs()).toContainEqual(expect.objectContaining({
+        sessionId: "session",
+        mode: "recording",
+        action: "observed_start",
+        rawMessage: "browserbase-solving-started",
+      }));
+      expect(captchaLogs().at(-1)).not.toHaveProperty("url");
+
+      await binding?.({ page, frame: mainFrame }, click);
+      expect(runtime.buffer.some((item) => item.message.type === "recorded.action")).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(30_000);
+      handlers.get("console")?.({ text: () => "browser-solving-started" });
+      expect(captchaLogs().at(-1)).toMatchObject({
+        action: "observed_start",
+        rawMessage: "browser-solving-started",
+        elapsedMs: 30_000,
+        restarted: true,
+      });
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(runtime.buffer.some((item) => item.message.type === "captcha.status" && item.message.status === "timed_out")).toBe(false);
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      handlers.get("console")?.({ text: () => "browser-solving-completed" });
+      expect(captchaLogs().at(-1)).toMatchObject({
+        action: "observed_finish",
+        rawMessage: "browser-solving-completed",
+        elapsedMs: 20_000,
+        startObserved: true,
+      });
+      expect(runtime.buffer.some((item) => item.message.type === "captcha.status" && item.message.status === "solved")).toBe(true);
+      expect(mainFrame.evaluate).toHaveBeenCalledWith(expect.any(Function), false);
+
+      handlers.get("console")?.({ text: () => "browser-solving-started" });
+      handlers.get("console")?.({ text: () => "browserbase-solving-finished" });
+      expect(captchaLogs().slice(-2).map((log) => [log.action, log.rawMessage])).toEqual([
+        ["observed_start", "browser-solving-started"],
+        ["observed_finish", "browserbase-solving-finished"],
+      ]);
+
+      handlers.get("console")?.({ text: () => "browserbase-solving-started" });
+      await runtime.release();
+      expect(runtime.buffer.some((item) => item.message.type === "captcha.status" && item.message.status === "cancelled")).toBe(true);
+      expect(captchaLogs().at(-1)).toMatchObject({
+        sessionId: "session",
+        action: "incomplete_observation",
+        reason: "session_released",
+        elapsedMs: 0,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("times out and manually continues the UI lock without losing passive completion timing", async () => {
+    vi.useFakeTimers();
+    try {
+      const currentUrl = "https://example.com/form";
+      let binding: ((source: { page: Page; frame: unknown }, raw: unknown) => Promise<void>) | undefined;
+      const handlers = new Map<string, (...args: unknown[]) => void>();
+      const mainFrame = { url: vi.fn(() => currentUrl) };
+      const page = {
+        evaluate: vi.fn(async () => undefined),
+        frames: vi.fn(() => [mainFrame]),
+        mainFrame: vi.fn(() => mainFrame),
+        on: vi.fn((name: string, handler: (...args: unknown[]) => void) => { handlers.set(name, handler); }),
+        title: vi.fn(async () => "Example"),
+        url: vi.fn(() => currentUrl),
+      } as unknown as Page;
+      const context = {
+        addInitScript: vi.fn(async () => undefined),
+        exposeBinding: vi.fn(async (_name: string, callback: typeof binding) => { binding = callback; }),
+        on: vi.fn(),
+        pages: vi.fn(() => [page]),
+      } as unknown as BrowserContext;
+      const provider: BrowserProvider = {
+        connect: vi.fn(async () => ({ browser: { close: vi.fn(async () => undefined) } as unknown as Browser, context })),
+        createSession: vi.fn(async () => ({ id: "session", connectUrl: "ws://example.com" })),
+        getLiveView: vi.fn(async () => ({ id: "page", title: "Example", url: currentUrl, liveViewUrl: "https://example.com/live" })),
+        releaseSession: vi.fn(async () => undefined),
+      };
+      const runtime = new RecordingRuntime(crypto.randomUUID(), provider, vi.fn());
+      await runtime.start({ timeoutSeconds: 120, region: "us-west-2" });
+      runtime.buffer.splice(0);
+
+      handlers.get("console")?.({ text: () => "browserbase-solving-finished" });
+      expect(captchaLogs().at(-1)).toMatchObject({
+        action: "observed_finish",
+        rawMessage: "browserbase-solving-finished",
+        startObserved: false,
+      });
+
+      handlers.get("console")?.({ text: () => "browserbase-solving-started" });
+      await vi.advanceTimersByTimeAsync(45_000);
+      expect(runtime.buffer.some((item) => item.message.type === "captcha.status" && item.message.status === "timed_out")).toBe(true);
+      const click = {
+        type: "click",
+        name: "Click Continue",
+        target: { candidates: [{ kind: "role", value: "button", name: "Continue", exact: true }] },
+        sensitive: false,
+      };
+      await binding?.({ page, frame: mainFrame }, click);
+      expect(runtime.buffer.some((item) => item.message.type === "recorded.action")).toBe(true);
+
+      handlers.get("console")?.({ text: () => "browserbase-solving-finished" });
+      expect(captchaLogs().at(-1)).toMatchObject({
+        action: "observed_finish",
+        rawMessage: "browserbase-solving-finished",
+        elapsedMs: 45_000,
+        startObserved: true,
+      });
+
+      const solvedAfterTimeout = runtime.buffer.filter((item) => item.message.type === "captcha.status" && item.message.status === "solved");
+      expect(solvedAfterTimeout).toHaveLength(0);
+
+      handlers.get("console")?.({ text: () => "browser-solving-started" });
+      const solvingMessage = runtime.buffer.findLast((item) => item.message.type === "captcha.status" && item.message.status === "solving")?.message;
+      if (solvingMessage?.type !== "captcha.status") throw new Error("CAPTCHA lock was not started");
+      runtime.continueAfterCaptcha(solvingMessage.pageId);
+      expect(runtime.buffer.at(-1)?.message).toMatchObject({
+        type: "captcha.status",
+        pageId: solvingMessage.pageId,
+        status: "continued",
+      });
+      handlers.get("console")?.({ text: () => "browserbase-solving-finished" });
+      expect(runtime.buffer.filter((item) => item.message.type === "captcha.status" && item.message.status === "solved")).toHaveLength(0);
+      await runtime.release();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("tracks incomplete CAPTCHA observations across popup switching and page closure", async () => {
+    vi.useFakeTimers();
+    try {
+      const pageHandlers = new Map<string, (...args: unknown[]) => void>();
+      const popupHandlers = new Map<string, (...args: unknown[]) => void>();
+      let onPopup: ((page: Page) => void) | undefined;
+      const mainFrame = { url: vi.fn(() => "https://example.com") };
+      const popupFrame = { url: vi.fn(() => "https://example.com/challenge") };
+      const page = {
+        evaluate: vi.fn(async () => undefined),
+        frames: vi.fn(() => [mainFrame]),
+        mainFrame: vi.fn(() => mainFrame),
+        on: vi.fn((name: string, handler: (...args: unknown[]) => void) => { pageHandlers.set(name, handler); }),
+        title: vi.fn(async () => "Example"),
+        url: vi.fn(() => "https://example.com"),
+      } as unknown as Page;
+      const popupPage = {
+        evaluate: vi.fn(async () => undefined),
+        frames: vi.fn(() => [popupFrame]),
+        mainFrame: vi.fn(() => popupFrame),
+        on: vi.fn((name: string, handler: (...args: unknown[]) => void) => { popupHandlers.set(name, handler); }),
+        title: vi.fn(async () => "Verification"),
+        url: vi.fn(() => "https://example.com/challenge"),
+        waitForLoadState: vi.fn(async () => undefined),
+      } as unknown as Page;
+      const context = {
+        addInitScript: vi.fn(async () => undefined),
+        exposeBinding: vi.fn(async () => undefined),
+        on: vi.fn((name: string, handler: (page: Page) => void) => {
+          if (name === "page") onPopup = handler;
+        }),
+        pages: vi.fn(() => [page]),
+      } as unknown as BrowserContext;
+      const provider: BrowserProvider = {
+        connect: vi.fn(async () => ({ browser: { close: vi.fn(async () => undefined) } as unknown as Browser, context })),
+        createSession: vi.fn(async () => ({ id: "session", connectUrl: "ws://example.com" })),
+        getLiveView: vi.fn(async (_sessionId, pageIndex = 0) => ({
+          id: `page-${pageIndex}`,
+          title: pageIndex ? "Verification" : "Example",
+          url: pageIndex ? "https://example.com/challenge" : "https://example.com",
+          liveViewUrl: `https://example.com/live-${pageIndex}`,
+        })),
+        releaseSession: vi.fn(async () => undefined),
+      };
+      const runtime = new RecordingRuntime(crypto.randomUUID(), provider, vi.fn());
+      await runtime.start({ timeoutSeconds: 120, region: "us-west-2" });
+      runtime.buffer.splice(0);
+
+      onPopup?.(popupPage);
+      await vi.advanceTimersByTimeAsync(0);
+      const detected = runtime.buffer.find((item) => item.message.type === "popup.detected")?.message;
+      if (detected?.type !== "popup.detected") throw new Error("Popup was not registered");
+
+      popupHandlers.get("console")?.({ text: () => "browserbase-solving-started" });
+
+      await runtime.switchPage(detected.pageId);
+
+      popupHandlers.get("close")?.();
+      expect(runtime.buffer.some((item) => item.message.type === "captcha.status" && item.message.status === "cancelled")).toBe(true);
+      expect(captchaLogs().at(-1)).toMatchObject({
+        action: "incomplete_observation",
+        reason: "page_closed",
+        elapsedMs: 0,
+      });
+      await runtime.release();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("passively logs Browserbase CAPTCHA console events during replay", async () => {
+    let finishNavigation: (() => void) | undefined;
+    const navigation = new Promise<void>((resolve) => { finishNavigation = resolve; });
+    const handlers = new Map<string, (...args: unknown[]) => void>();
+    const mainFrame = { url: vi.fn(() => "https://example.com") };
+    const page = {
+      evaluate: vi.fn(async () => undefined),
+      frames: vi.fn(() => [mainFrame]),
+      goto: vi.fn(async () => { await navigation; return null; }),
+      mainFrame: vi.fn(() => mainFrame),
+      on: vi.fn((name: string, handler: (...args: unknown[]) => void) => { handlers.set(name, handler); }),
+      off: vi.fn(),
+      title: vi.fn(async () => "Example"),
+      url: vi.fn(() => "https://example.com"),
+    } as unknown as Page;
+    const context = {
+      addInitScript: vi.fn(async () => undefined),
+      exposeBinding: vi.fn(async () => undefined),
+      on: vi.fn(),
+      pages: vi.fn(() => [page]),
+    } as unknown as BrowserContext;
+    const provider: BrowserProvider = {
+      connect: vi.fn(async () => ({ browser: { close: vi.fn(async () => undefined) } as unknown as Browser, context })),
+      createSession: vi.fn(async () => ({ id: "session", connectUrl: "ws://example.com" })),
+      getLiveView: vi.fn(async () => ({ id: "page", title: "Example", url: "https://example.com", liveViewUrl: "https://example.com/live" })),
+      releaseSession: vi.fn(async () => undefined),
+    };
+    const workflow = createWorkflow("session");
+    workflow.steps.push({
+      id: "navigate",
+      order: 0,
+      name: "Open example",
+      enabled: true,
+      page: { id: "page", url: "https://example.com" },
+      metadata: { recordedAt: new Date().toISOString(), origin: "recorded", sensitive: false },
+      type: "navigate",
+      payload: { url: "https://example.com" },
+    });
+    const runtime = new RecordingRuntime(crypto.randomUUID(), provider, vi.fn());
+
+    await runtime.startReplay(workflow, undefined, { timeoutSeconds: 120, region: "us-west-2" });
+    handlers.get("console")?.({ text: () => "browserbase-solving-started" });
+    expect(captchaLogs().at(-1)).toMatchObject({
+      sessionId: "session",
+      mode: "replay",
+      action: "observed_start",
+      rawMessage: "browserbase-solving-started",
+    });
+    expect(runtime.buffer.some((item) => item.message.type === "captcha.status")).toBe(false);
+
+    finishNavigation?.();
+    await vi.waitFor(() => expect(runtime.buffer.some((item) => item.message.type === "replay.status" && item.message.status === "completed")).toBe(true));
+    await runtime.release();
   });
 
   it("stores the start URL before the first injected action when the navigation event was missed", async () => {
@@ -327,7 +674,7 @@ describe("browser navigation", () => {
     if (navigationOpen?.type !== "select.picker.open") throw new Error("Select picker did not reopen for navigation");
     handlers.get("framenavigated")?.(mainFrame);
     expect(runtime.buffer.some((item) => item.message.type === "select.picker.closed" && item.message.requestId === navigationOpen.requestId)).toBe(true);
-    expect(mainFrame.evaluate).toHaveBeenCalledTimes(3);
+    expect(mainFrame.evaluate).toHaveBeenCalledTimes(4);
     await runtime.selectPickerOption(navigationOpen.requestId, "masonry");
     expect(locator.selectOption).toHaveBeenCalledOnce();
 
@@ -626,6 +973,8 @@ describe("browser navigation", () => {
     expect(ClientMessageSchema.safeParse({ type: "select.picker.select", requestId: "not-a-uuid", value: "masonry" }).success).toBe(false);
     expect(ClientMessageSchema.safeParse({ type: "select.native.set", enabled: true }).success).toBe(true);
     expect(ClientMessageSchema.safeParse({ type: "select.native.set", enabled: "yes" }).success).toBe(false);
+    expect(ClientMessageSchema.safeParse({ type: "captcha.continue", pageId: "page-1" }).success).toBe(true);
+    expect(ClientMessageSchema.safeParse({ type: "captcha.continue", pageId: "" }).success).toBe(false);
     expect(ClientMessageSchema.safeParse({ type: "session.start", nativeSelects: false }).success).toBe(true);
     expect(ClientMessageSchema.safeParse({ type: "session.start" }).success).toBe(false);
     const workflow = createWorkflow("session");
@@ -635,6 +984,7 @@ describe("browser navigation", () => {
 
   it("runs commands against the active page and emits recoverable page state", async () => {
     let currentUrl = "about:blank";
+    const handlers = new Map<string, (...args: unknown[]) => void>();
     const goto = vi.fn(async () => { currentUrl = "https://resolved.example.net/"; return null; });
     const goBack = vi.fn(async () => null);
     const goForward = vi.fn(async () => null);
@@ -645,7 +995,7 @@ describe("browser navigation", () => {
       goForward,
       goto,
       mainFrame: vi.fn(() => ({})),
-      on: vi.fn(),
+      on: vi.fn((name: string, handler: (...args: unknown[]) => void) => { handlers.set(name, handler); }),
       reload,
       title: vi.fn(async () => currentUrl === "about:blank" ? "New Tab" : "Example"),
       url: vi.fn(() => currentUrl),
@@ -678,8 +1028,29 @@ describe("browser navigation", () => {
     expect(runtime.buffer.some((item) => item.message.type === "recording.startUrl" && item.message.url === "https://example.com/")).toBe(true);
     expect(runtime.buffer.some((item) => item.message.type === "browser.page" && item.message.url === "https://resolved.example.net/")).toBe(true);
 
+    goto.mockClear();
+    goBack.mockClear();
+    goForward.mockClear();
+    reload.mockClear();
+    handlers.get("console")?.({ text: () => "browserbase-solving-started" });
+    await runtime.navigate("blocked.example.com");
+    await runtime.goBack();
+    await runtime.goForward();
+    await runtime.reload();
+    expect(goto).not.toHaveBeenCalled();
+    expect(goBack).not.toHaveBeenCalled();
+    expect(goForward).not.toHaveBeenCalled();
+    expect(reload).not.toHaveBeenCalled();
+
+    const solvingMessage = runtime.buffer.findLast((item) => item.message.type === "captcha.status" && item.message.status === "solving")?.message;
+    if (solvingMessage?.type !== "captcha.status") throw new Error("CAPTCHA lock was not started");
+    runtime.continueAfterCaptcha(solvingMessage.pageId);
+    await runtime.reload();
+    expect(reload).toHaveBeenCalledOnce();
+
     runtime.buffer.splice(0);
     await runtime.navigate("file:///tmp/private");
     expect(runtime.buffer.at(-1)?.message).toEqual({ type: "browser.navigation.error", message: "Use an HTTP or HTTPS web address." });
+    await runtime.release();
   });
 });

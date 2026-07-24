@@ -48,6 +48,8 @@ export function RecorderWorkspace() {
   }, []);
   const session = useRecorderSession({ onSessionStarted, onReplaySessionStarted, onStartUrl, onStepRecorded, onReplayStepChange });
   const replayLocked = ["preparing", "running", "pausing", "paused", "manual", "stopping"].includes(session.replayStatus);
+  const captchaLocked = session.captchaStatus === "solving";
+  const workflowLocked = replayLocked || captchaLocked;
   const panels = useWorkspacePanels({
     selectedStepId: workflowState.selectedStepId,
     overlayOpen: Boolean(confirmation || manualOpen || runDialogOpen),
@@ -58,6 +60,19 @@ export function RecorderWorkspace() {
     const timeout = window.setTimeout(() => dispatch({ type: "dismissDelete" }), 5000);
     return () => window.clearTimeout(timeout);
   }, [workflowState.deletedStep]);
+
+  useEffect(() => {
+    if (!captchaLocked) return;
+    const timeout = window.setTimeout(() => {
+      setManualOpen(false);
+      setRunDialogOpen(false);
+      setConfirmation(null);
+      setPendingImport(null);
+      setPendingReplayStartId(undefined);
+      setImportError(null);
+    }, 0);
+    return () => window.clearTimeout(timeout);
+  }, [captchaLocked]);
 
   const beginRecording = () => {
     if (workflowState.workflow.steps.length) {
@@ -162,8 +177,9 @@ export function RecorderWorkspace() {
               onExport={requestExport}
               onImport={(file) => void importWorkflow(file)}
               onReplay={() => requestReplay()}
-              importDisabled={replayLocked}
-              replayDisabled={!workflowState.workflow.steps.some((step) => step.enabled) || replayLocked || session.transportStatus === "offline"}
+              importDisabled={workflowLocked}
+              replayDisabled={!workflowState.workflow.steps.some((step) => step.enabled) || workflowLocked || session.transportStatus === "offline"}
+              locked={captchaLocked}
             />
             {!panels.timelineCollapsed ? (
               <>
@@ -177,19 +193,21 @@ export function RecorderWorkspace() {
                   onInsert={() => setManualOpen(true)}
                   onCollapse={panels.collapseTimeline}
                   replayResults={session.replayResults}
-                  locked={replayLocked}
+                  locked={workflowLocked}
+                  reviewLocked={captchaLocked}
                 />
                 <div
                   className="panel-resizer timeline-resizer"
                   role="separator"
-                  tabIndex={0}
+                  tabIndex={captchaLocked ? -1 : 0}
+                  aria-disabled={captchaLocked || undefined}
                   aria-label="Resize workflow timeline"
                   aria-orientation="vertical"
                   aria-valuemin={panels.panelLimits.timeline.min}
                   aria-valuemax={panels.panelLimits.timeline.max}
                   aria-valuenow={panels.timelineWidth}
-                  onPointerDown={(event) => panels.beginPanelResize("timeline", event)}
-                  onKeyDown={(event) => panels.resizePanelWithKeyboard("timeline", event)}
+                  onPointerDown={captchaLocked ? undefined : (event) => panels.beginPanelResize("timeline", event)}
+                  onKeyDown={captchaLocked ? undefined : (event) => panels.resizePanelWithKeyboard("timeline", event)}
                 />
               </>
             ) : null}
@@ -210,6 +228,7 @@ export function RecorderWorkspace() {
               datePicker={session.datePicker}
               selectPicker={session.selectPicker}
               nativeSelects={session.nativeSelects}
+              captchaStatus={session.captchaStatus}
               onBack={() => session.sendBrowserCommand({ type: "browser.back" })}
               onForward={() => session.sendBrowserCommand({ type: "browser.forward" })}
               onNavigate={(url) => session.sendBrowserCommand({ type: "browser.navigate", url })}
@@ -223,6 +242,7 @@ export function RecorderWorkspace() {
               onSelectPickerSelect={(requestId, value) => session.selectPickerOption(requestId, value)}
               onSelectPickerDismiss={(requestId) => session.dismissSelectPicker(requestId)}
               onNativeSelectsChange={session.setNativeSelects}
+              onCaptchaContinue={session.continueAfterCaptcha}
               replayStatus={session.replayStatus}
               replayCurrentIndex={session.replayCurrentIndex}
               replayTotalSteps={session.replayTotalSteps}
@@ -240,7 +260,7 @@ export function RecorderWorkspace() {
           <aside className={`inspector-shell ${panels.inspectorCollapsed ? "collapsed" : ""}`} aria-label="Selected step editor">
             {panels.inspectorCollapsed ? (
               <div className="panel-rail panel-rail-right">
-                <button id="inspector-expand" className="rail-button" type="button" onClick={panels.expandInspector} aria-label="Expand step details" title="Expand details">
+                <button id="inspector-expand" className="rail-button" type="button" disabled={captchaLocked} onClick={panels.expandInspector} aria-label="Expand step details" title="Expand details">
                   <ChevronLeft size={19} aria-hidden="true" /><span>Details</span>
                 </button>
               </div>
@@ -249,20 +269,22 @@ export function RecorderWorkspace() {
                 <div
                   className="panel-resizer inspector-resizer"
                   role="separator"
-                  tabIndex={0}
+                  tabIndex={captchaLocked ? -1 : 0}
+                  aria-disabled={captchaLocked || undefined}
                   aria-label="Resize step details"
                   aria-orientation="vertical"
                   aria-valuemin={panels.panelLimits.inspector.min}
                   aria-valuemax={panels.panelLimits.inspector.max}
                   aria-valuenow={panels.inspectorWidth}
-                  onPointerDown={(event) => panels.beginPanelResize("inspector", event)}
-                  onKeyDown={(event) => panels.resizePanelWithKeyboard("inspector", event)}
+                  onPointerDown={captchaLocked ? undefined : (event) => panels.beginPanelResize("inspector", event)}
+                  onKeyDown={captchaLocked ? undefined : (event) => panels.resizePanelWithKeyboard("inspector", event)}
                 />
                 <StepEditor
                   step={selectedStep}
                   onUpdate={(step) => dispatch({ type: "update", step })}
                   onCollapse={panels.collapseInspector}
-                  locked={replayLocked}
+                  locked={workflowLocked}
+                  reviewLocked={captchaLocked}
                   replayResult={selectedStep ? session.replayResults[selectedStep.id] : undefined}
                   onRunFromHere={() => selectedStep && requestReplay(selectedStep.id)}
                 />

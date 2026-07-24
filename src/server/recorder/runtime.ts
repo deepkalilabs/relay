@@ -20,7 +20,30 @@ interface PageState {
   id: string;
   page: Page;
   index: number;
+  captchaStartedAt: number | null;
+  captchaLockActive: boolean;
+  captchaLockGeneration: number;
+  captchaLockTimer: NodeJS.Timeout | null;
 }
+
+const CAPTCHA_LOCK_TIMEOUT_MS = 45_000;
+const CAPTCHA_SOLVING_STARTED_MESSAGES = new Set([
+  "browserbase-solving-started",
+  "browser-solving-started",
+]);
+const CAPTCHA_SOLVING_FINISHED_MESSAGES = new Set([
+  "browserbase-solving-finished",
+  "browser-solving-completed",
+]);
+const CAPTCHA_SOLVING_MESSAGE_PATTERN = /^browser(?:base)?-solving-/;
+type CaptchaLogAction =
+  | "observed_start"
+  | "observed_finish"
+  | "incomplete_observation"
+  | "unrecognized_event"
+  | "lock_timed_out"
+  | "lock_continued"
+  | "lock_cancelled";
 
 const DatePickerBrowserEventSchema = z.discriminatedUnion("type", [
   z.object({
@@ -184,6 +207,7 @@ export class RecordingRuntime {
     await context.exposeBinding(RECORDER_BINDING, async ({ page, frame }, raw: unknown) => {
       const state = this.pages.get(page);
       if (!state || state.id !== this.activePageId) return;
+      if (this.isCaptchaLocked(state)) return;
       const dateEvent = DatePickerBrowserEventSchema.safeParse(raw);
       if (dateEvent.success) {
         await this.handleDatePickerBrowserEvent(state, frame, dateEvent.data);
@@ -222,12 +246,32 @@ export class RecordingRuntime {
     if (enabled !== this.nativeSelects) await this.applyNativeSelectsToFrame(frame);
   }
 
+  private async applyCaptchaLockToFrame(frame: Frame, locked: boolean): Promise<void> {
+    if (typeof frame.evaluate !== "function") return;
+    await frame.evaluate((locked) => {
+      const recorderWindow = window as Window & {
+        __browserMemoryCaptchaLocked?: boolean;
+        __browserMemorySetCaptchaLocked?: (value: boolean) => void;
+      };
+      if (typeof recorderWindow.__browserMemorySetCaptchaLocked === "function") {
+        recorderWindow.__browserMemorySetCaptchaLocked(locked);
+      } else {
+        recorderWindow.__browserMemoryCaptchaLocked = locked;
+      }
+    }, locked).catch(() => undefined);
+  }
+
+  private applyCaptchaLockToPage(state: PageState, locked: boolean): void {
+    void Promise.all(this.pageFrames(state.page).map((frame) => this.applyCaptchaLockToFrame(frame, locked)));
+  }
+
   private pageFrames(page: Page): Frame[] {
     const frames = typeof page.frames === "function" ? page.frames() : [];
     return frames.length ? frames : [page.mainFrame()];
   }
 
   async setNativeSelects(enabled: boolean): Promise<void> {
+    if (this.activePageCaptchaLocked()) return;
     this.nativeSelects = enabled;
     if (enabled && this.pendingSelectPicker) {
       this.dismissSelectPickersForPage(this.pendingSelectPicker.pageState);
@@ -261,11 +305,16 @@ export class RecordingRuntime {
       this.activePageId = first.id;
       this.emit({ type: "session.started", sessionId: created.id, liveViewUrl: liveView.liveViewUrl, pageId: first.id });
       this.recordingReady = true;
+      for (const state of this.pages.values()) {
+        if (state.captchaStartedAt !== null) this.startCaptchaLock(state);
+      }
       this.forwardStartUrl(first);
       await this.emitPageState(first);
       this.emit({ type: "session.status", status: "recording" });
     } catch (error) {
       const failedSessionId = this.sessionId;
+      this.clearCaptchaLocks("session_released");
+      this.logIncompleteCaptchaObservations("session_released");
       this.sessionId = null;
       await this.browser?.close().catch(() => undefined);
       this.browser = null;
@@ -282,12 +331,22 @@ export class RecordingRuntime {
   }
 
   private async registerPage(page: Page, index: number, active: boolean, installRecorder: boolean): Promise<void> {
-    const state: PageState = { id: crypto.randomUUID(), page, index };
+    const state: PageState = {
+      id: crypto.randomUUID(),
+      page,
+      index,
+      captchaStartedAt: null,
+      captchaLockActive: false,
+      captchaLockGeneration: 0,
+      captchaLockTimer: null,
+    };
     this.pages.set(page, state);
     if (active || !this.activePageId) this.activePageId = state.id;
 
+    page.on("console", (message) => this.handleCaptchaConsoleMessage(state, message.text()));
     page.on("framenavigated", (frame) => {
       void this.applyNativeSelectsToFrame(frame);
+      void this.applyCaptchaLockToFrame(frame, this.isCaptchaLocked(state));
       if (frame !== page.mainFrame() || state.id !== this.activePageId) return;
       void this.emitPageState(state);
       this.dismissDatePickersForPage(state);
@@ -301,6 +360,8 @@ export class RecordingRuntime {
     page.on("close", () => {
       this.dismissDatePickersForPage(state);
       this.dismissSelectPickersForPage(state);
+      this.clearCaptchaLock(state, "cancelled", "page_closed");
+      this.logIncompleteCaptchaObservation(state, "page_closed");
       this.pages.delete(page);
       if (this.activePageId === state.id) this.activePageId = [...this.pages.values()][0]?.id ?? null;
     });
@@ -316,6 +377,140 @@ export class RecordingRuntime {
         url: page.url(),
       });
     }
+  }
+
+  private logCaptcha(
+    state: PageState,
+    action: CaptchaLogAction,
+    details: {
+      rawMessage?: string;
+      elapsedMs?: number;
+      reason?: "page_closed" | "session_released";
+      restarted?: boolean;
+      startObserved?: boolean;
+    } = {},
+  ): void {
+    console.info(`[captcha] ${JSON.stringify({
+      sessionId: this.sessionId,
+      pageId: state.id,
+      mode: this.mode,
+      action,
+      ...details,
+    })}`);
+  }
+
+  private logIncompleteCaptchaObservation(state: PageState, reason: "page_closed" | "session_released"): void {
+    if (state.captchaStartedAt === null) return;
+    this.logCaptcha(state, "incomplete_observation", {
+      elapsedMs: Math.max(0, Date.now() - state.captchaStartedAt),
+      reason,
+    });
+    state.captchaStartedAt = null;
+  }
+
+  private logIncompleteCaptchaObservations(reason: "session_released"): void {
+    for (const state of this.pages.values()) this.logIncompleteCaptchaObservation(state, reason);
+  }
+
+  private isCaptchaLocked(state: PageState): boolean {
+    return this.mode === "recording" && this.recordingReady && state.captchaLockActive;
+  }
+
+  private activePageCaptchaLocked(): boolean {
+    const state = [...this.pages.values()].find((candidate) => candidate.id === this.activePageId);
+    return Boolean(state && this.isCaptchaLocked(state));
+  }
+
+  private startCaptchaLock(state: PageState): void {
+    if (this.mode !== "recording" || !this.recordingReady) return;
+    if (state.captchaLockTimer) clearTimeout(state.captchaLockTimer);
+    state.captchaLockActive = true;
+    const generation = ++state.captchaLockGeneration;
+    this.dismissDatePickersForPage(state);
+    this.dismissSelectPickersForPage(state);
+    this.applyCaptchaLockToPage(state, true);
+    state.captchaLockTimer = setTimeout(() => {
+      if (!state.captchaLockActive || state.captchaLockGeneration !== generation) return;
+      this.clearCaptchaLock(state, "timed_out");
+      this.logCaptcha(state, "lock_timed_out", {
+        elapsedMs: state.captchaStartedAt === null ? undefined : Math.max(0, Date.now() - state.captchaStartedAt),
+      });
+    }, CAPTCHA_LOCK_TIMEOUT_MS);
+    this.emit({ type: "captcha.status", pageId: state.id, status: "solving" });
+  }
+
+  private clearCaptchaLock(
+    state: PageState,
+    status: "solved" | "timed_out" | "continued" | "cancelled",
+    reason?: "page_closed" | "session_released",
+  ): boolean {
+    if (!state.captchaLockActive) return false;
+    if (state.captchaLockTimer) clearTimeout(state.captchaLockTimer);
+    state.captchaLockTimer = null;
+    state.captchaLockActive = false;
+    state.captchaLockGeneration += 1;
+    this.applyCaptchaLockToPage(state, false);
+    this.emit({ type: "captcha.status", pageId: state.id, status });
+    if (status === "continued") {
+      this.logCaptcha(state, "lock_continued", {
+        elapsedMs: state.captchaStartedAt === null ? undefined : Math.max(0, Date.now() - state.captchaStartedAt),
+      });
+    } else if (status === "cancelled") {
+      this.logCaptcha(state, "lock_cancelled", {
+        elapsedMs: state.captchaStartedAt === null ? undefined : Math.max(0, Date.now() - state.captchaStartedAt),
+        reason,
+      });
+    }
+    return true;
+  }
+
+  private clearCaptchaLocks(reason: "session_released"): void {
+    for (const state of this.pages.values()) this.clearCaptchaLock(state, "cancelled", reason);
+  }
+
+  private handleCaptchaConsoleMessage(state: PageState, text: string): void {
+    const message = text.trim();
+    const started = CAPTCHA_SOLVING_STARTED_MESSAGES.has(message);
+    const finished = CAPTCHA_SOLVING_FINISHED_MESSAGES.has(message);
+    if (!started && !finished) {
+      if (CAPTCHA_SOLVING_MESSAGE_PATTERN.test(message)) {
+        this.logCaptcha(state, "unrecognized_event", { rawMessage: message });
+      }
+      return;
+    }
+    if (started) {
+      const previousStartedAt = state.captchaStartedAt;
+      const restarted = previousStartedAt !== null;
+      const elapsedMs = previousStartedAt !== null
+        ? Math.max(0, Date.now() - previousStartedAt)
+        : undefined;
+      state.captchaStartedAt = Date.now();
+      this.logCaptcha(state, "observed_start", {
+        rawMessage: message,
+        elapsedMs,
+        restarted: restarted || undefined,
+      });
+      this.startCaptchaLock(state);
+      return;
+    }
+    const startedAt = state.captchaStartedAt;
+    const startObserved = startedAt !== null;
+    const elapsedMs = startedAt !== null
+      ? Math.max(0, Date.now() - startedAt)
+      : undefined;
+    this.logCaptcha(state, "observed_finish", {
+      rawMessage: message,
+      elapsedMs,
+      startObserved,
+    });
+    state.captchaStartedAt = null;
+    this.clearCaptchaLock(state, "solved");
+  }
+
+  continueAfterCaptcha(pageId: string): void {
+    const state = [...this.pages.values()].find((candidate) => candidate.id === pageId);
+    if (!state || state.id !== this.activePageId || !this.isCaptchaLocked(state)) return;
+    this.clearCaptchaLock(state, "continued");
   }
 
   private dismissDatePickersForPage(state: PageState): void {
@@ -337,6 +532,7 @@ export class RecordingRuntime {
     frame: Frame,
     event: z.infer<typeof DatePickerBrowserEventSchema>,
   ): Promise<void> {
+    if (this.isCaptchaLocked(state)) return;
     if (event.type === "date-picker.dismiss") {
       this.dismissDatePickersForPage(state);
       return;
@@ -415,6 +611,7 @@ export class RecordingRuntime {
     frame: Frame,
     event: z.infer<typeof SelectPickerBrowserEventSchema>,
   ): Promise<void> {
+    if (this.isCaptchaLocked(state)) return;
     if (event.type === "select-picker.dismiss") {
       this.dismissSelectPickersForPage(state);
       return;
@@ -511,6 +708,8 @@ export class RecordingRuntime {
 
   private async forwardAction(action: RecordedAction): Promise<void> {
     if (this.mode !== "recording" || !this.recordingReady) return;
+    const state = [...this.pages.values()].find((candidate) => candidate.id === action.page.id);
+    if (state && this.isCaptchaLocked(state)) return;
     if (!isAutomaticallyRecordableAction(action)) return;
     if (!this.startUrlSource) {
       if (!this.forwardStartUrlDescriptor(action.page)) return;
@@ -555,6 +754,7 @@ export class RecordingRuntime {
   private async runNavigation(operation: (page: Page) => Promise<unknown>): Promise<void> {
     try {
       const state = this.activePage();
+      if (this.isCaptchaLocked(state)) return;
       await operation(state.page);
       await this.emitPageState(state);
     } catch (error) {
@@ -576,6 +776,7 @@ export class RecordingRuntime {
       });
       return;
     }
+    if (this.activePageCaptchaLocked()) return;
     if (this.mode === "recording" && this.recordingReady) {
       const state = this.activePage();
       this.forwardStartUrlDescriptor({ id: state.id, url: normalized }, "requested");
@@ -597,6 +798,7 @@ export class RecordingRuntime {
 
   async switchPage(pageId: string): Promise<void> {
     if (!this.sessionId) return;
+    if (this.activePageCaptchaLocked()) return;
     const state = [...this.pages.values()].find((candidate) => candidate.id === pageId);
     if (!state) throw new Error("That browser tab is no longer open.");
     const previous = [...this.pages.values()].find((candidate) => candidate.id === this.activePageId);
@@ -615,6 +817,7 @@ export class RecordingRuntime {
     startStepId: string | undefined,
     options: { timeoutSeconds: number; region: "us-west-2" | "us-east-1" | "eu-central-1" | "ap-southeast-1" },
   ): Promise<void> {
+    if (this.activePageCaptchaLocked()) return;
     if (this.replayEngine || this.mode === "replay") throw new Error("A replay is already running.");
     const preflight = preflightReplay(workflow, startStepId);
     const runId = crypto.randomUUID();
@@ -625,6 +828,8 @@ export class RecordingRuntime {
     this.replayMeta = { runId, totalSteps: preflight.totalSteps };
     this.emit({ type: "replay.status", runId, status: "preparing", totalSteps: preflight.totalSteps });
     try {
+      this.clearCaptchaLocks("session_released");
+      this.logIncompleteCaptchaObservations("session_released");
       this.sessionId = null;
       await this.browser?.close().catch(() => undefined);
       this.browser = null;
@@ -680,6 +885,8 @@ export class RecordingRuntime {
       });
     } catch (error) {
       const failedSessionId = this.sessionId;
+      this.clearCaptchaLocks("session_released");
+      this.logIncompleteCaptchaObservations("session_released");
       this.sessionId = null;
       await this.browser?.close().catch(() => undefined);
       this.browser = null;
@@ -743,6 +950,8 @@ export class RecordingRuntime {
     const sessionId = this.sessionId;
     this.pendingDatePicker = null;
     this.pendingSelectPicker = null;
+    this.clearCaptchaLocks("session_released");
+    this.logIncompleteCaptchaObservations("session_released");
     this.sessionId = null;
     await this.browser?.close().catch(() => undefined);
     if (sessionId) await this.provider.releaseSession(sessionId);

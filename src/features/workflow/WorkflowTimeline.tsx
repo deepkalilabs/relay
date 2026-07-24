@@ -61,6 +61,7 @@ interface TimelineProps {
   onCollapse: () => void;
   replayResults?: Record<string, ReplayStepResultState>;
   locked?: boolean;
+  reviewLocked?: boolean;
 }
 
 const replayIcons = {
@@ -71,11 +72,12 @@ const replayIcons = {
   skipped: SkipForward,
 };
 
-function SortableStep({ step, selected, result, locked, onSelect, onToggle, onDelete }: {
+function SortableStep({ step, selected, result, locked, reviewLocked, onSelect, onToggle, onDelete }: {
   step: WorkflowStep;
   selected: boolean;
   result?: ReplayStepResultState;
   locked: boolean;
+  reviewLocked: boolean;
   onSelect: () => void;
   onToggle: () => void;
   onDelete: () => void;
@@ -88,7 +90,7 @@ function SortableStep({ step, selected, result, locked, onSelect, onToggle, onDe
       <button className="drag-handle" type="button" disabled={locked} aria-label={`Reorder step ${step.order + 1}`} {...attributes} {...listeners}>
         <GripVertical size={16} aria-hidden="true" />
       </button>
-      <button id={`workflow-step-${step.id}`} className="step-main" type="button" onClick={onSelect} aria-pressed={selected}>
+      <button id={`workflow-step-${step.id}`} className="step-main" type="button" disabled={reviewLocked} onClick={onSelect} aria-pressed={selected}>
         <span className="step-icon"><Icon size={15} aria-hidden="true" /></span>
         <span className="step-copy">
           <span className="step-title">{step.name}</span>
@@ -106,7 +108,7 @@ function SortableStep({ step, selected, result, locked, onSelect, onToggle, onDe
   );
 }
 
-export function WorkflowTimeline({ steps, selectedId, onSelect, onToggle, onDelete, onReorder, onInsert, onCollapse, replayResults = {}, locked = false }: TimelineProps) {
+export function WorkflowTimeline({ steps, selectedId, onSelect, onToggle, onDelete, onReorder, onInsert, onCollapse, replayResults = {}, locked = false, reviewLocked = false }: TimelineProps) {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -125,7 +127,7 @@ export function WorkflowTimeline({ steps, selectedId, onSelect, onToggle, onDele
           <button className="icon-button" type="button" disabled={locked} onClick={onInsert} aria-label="Insert a workflow step" title="Insert step">
             <Plus size={18} aria-hidden="true" />
           </button>
-          <button id="timeline-collapse" className="icon-button" type="button" onClick={onCollapse} aria-label="Collapse workflow timeline" title="Collapse timeline">
+          <button id="timeline-collapse" className="icon-button" type="button" disabled={reviewLocked} onClick={onCollapse} aria-label="Collapse workflow timeline" title="Collapse timeline">
             <ChevronLeft size={18} aria-hidden="true" />
           </button>
         </div>
@@ -141,6 +143,7 @@ export function WorkflowTimeline({ steps, selectedId, onSelect, onToggle, onDele
                   selected={selectedId === step.id}
                   result={replayResults[step.id]}
                   locked={locked}
+                  reviewLocked={reviewLocked}
                   onSelect={() => onSelect(step.id)}
                   onToggle={() => onToggle({ ...step, enabled: !step.enabled })}
                   onDelete={() => onDelete(step.id)}

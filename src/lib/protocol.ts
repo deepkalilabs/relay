@@ -19,6 +19,7 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("select.picker.select"), requestId: PickerRequestIdSchema, value: z.string() }),
   z.object({ type: z.literal("select.picker.dismiss"), requestId: PickerRequestIdSchema }),
   z.object({ type: z.literal("select.native.set"), enabled: z.boolean() }),
+  z.object({ type: z.literal("captcha.continue"), pageId: z.string().min(1) }),
   z.object({ type: z.literal("replay.start"), workflow: WorkflowSchema, startStepId: z.string().optional(), nativeSelects: z.boolean() }),
   z.object({ type: z.literal("replay.pause") }),
   z.object({ type: z.literal("replay.resume") }),
@@ -43,6 +44,7 @@ export const ReplayStatusSchema = z.enum([
 ]);
 
 export const ReplayStepStatusSchema = z.enum(["pending", "running", "passed", "failed", "skipped"]);
+export const CaptchaStatusSchema = z.enum(["solving", "solved", "timed_out", "continued", "cancelled"]);
 
 const ReplayDiagnosticSchema = z.object({
   message: z.string(),
@@ -91,6 +93,11 @@ export const SequencedServerMessageSchema = z.object({
     }),
     z.object({ type: z.literal("select.picker.closed"), requestId: PickerRequestIdSchema }),
     z.object({
+      type: z.literal("captcha.status"),
+      pageId: z.string(),
+      status: CaptchaStatusSchema,
+    }),
+    z.object({
       type: z.literal("replay.started"),
       runId: z.string().uuid(),
       sessionId: z.string(),
@@ -131,3 +138,4 @@ export type ServerMessage = SequencedServerMessage["message"];
 export type ReplayStatus = z.infer<typeof ReplayStatusSchema>;
 export type ReplayStepStatus = z.infer<typeof ReplayStepStatusSchema>;
 export type ReplayDiagnostic = z.infer<typeof ReplayDiagnosticSchema>;
+export type CaptchaStatus = z.infer<typeof CaptchaStatusSchema>;

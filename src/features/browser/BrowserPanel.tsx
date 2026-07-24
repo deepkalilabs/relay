@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -27,7 +27,7 @@ import type {
   ReplayStepResultState,
   SelectPickerState,
 } from "@/lib/recorder-session";
-import type { ReplayStatus } from "@/lib/protocol";
+import type { CaptchaStatus, ReplayStatus } from "@/lib/protocol";
 
 interface BrowserPanelProps {
   status: RecordingStatus;
@@ -42,6 +42,7 @@ interface BrowserPanelProps {
   datePicker?: DatePickerState | null;
   selectPicker?: SelectPickerState | null;
   nativeSelects?: boolean;
+  captchaStatus?: CaptchaStatus | null;
   onBack: () => void;
   onForward: () => void;
   onNavigate: (url: string) => void;
@@ -55,6 +56,7 @@ interface BrowserPanelProps {
   onSelectPickerSelect?: (requestId: string, value: string) => void;
   onSelectPickerDismiss?: (requestId: string) => void;
   onNativeSelectsChange?: (enabled: boolean) => void;
+  onCaptchaContinue?: () => void;
   replayStatus?: ReplayStatus;
   replayCurrentIndex?: number;
   replayTotalSteps?: number;
@@ -100,17 +102,42 @@ function BrowserAddress({ disabled, error, initialAddress, pending, onNavigate }
   );
 }
 
-export function BrowserPanel({ status, transportStatus, startedAt, liveViewUrl, error, errorContext = "recording", onDismissError, navigationError, navigationPending, page, popup, datePicker, selectPicker, nativeSelects = false, replayStatus = "idle", replayCurrentIndex = 0, replayTotalSteps = 0, replayCurrentResult, replayReadyCount = 0, onReplay, onReplayPause, onReplayResume, onReplayRetry, onReplaySkip, onReplayTakeControl, onReplayStop, onBack, onForward, onNavigate, onReload, onStart, onStop, onRetry, onSwitchPopup, onDateSelect, onDateDismiss, onSelectPickerSelect, onSelectPickerDismiss, onNativeSelectsChange }: BrowserPanelProps) {
+export function BrowserPanel({ status, transportStatus, startedAt, liveViewUrl, error, errorContext = "recording", onDismissError, navigationError, navigationPending, page, popup, datePicker, selectPicker, nativeSelects = false, captchaStatus = null, replayStatus = "idle", replayCurrentIndex = 0, replayTotalSteps = 0, replayCurrentResult, replayReadyCount = 0, onReplay, onReplayPause, onReplayResume, onReplayRetry, onReplaySkip, onReplayTakeControl, onReplayStop, onBack, onForward, onNavigate, onReload, onStart, onStop, onRetry, onSwitchPopup, onDateSelect, onDateDismiss, onSelectPickerSelect, onSelectPickerDismiss, onNativeSelectsChange, onCaptchaContinue }: BrowserPanelProps) {
   const [loadedUrl, setLoadedUrl] = useState<string | null>(null);
+  const captchaTitleId = useId();
+  const captchaDescriptionId = useId();
   const contentRef = useRef<HTMLDivElement>(null);
   const liveViewRef = useRef<HTMLIFrameElement>(null);
+  const captchaContinueRef = useRef<HTMLButtonElement>(null);
+  const wasCaptchaLockedRef = useRef(false);
   const restoreLiveViewFocus = () => requestAnimationFrame(() => liveViewRef.current?.focus());
-  const loading = status === "starting" || replayStatus === "preparing" || (liveViewUrl && loadedUrl !== liveViewUrl);
+  const loading = Boolean(status === "starting" || replayStatus === "preparing" || (liveViewUrl && loadedUrl !== liveViewUrl));
+  const captchaLocked = captchaStatus === "solving";
   const replayMode = ["preparing", "running", "pausing", "paused", "manual", "stopping"].includes(replayStatus);
-  const nativeSelectsDisabled = !liveViewUrl || transportStatus !== "connected" || ["preparing", "running", "pausing", "paused", "stopping"].includes(replayStatus);
-  const navigationDisabled = !liveViewUrl || navigationPending || (!["recording", "reconnecting"].includes(status) && replayStatus !== "manual");
+  const nativeSelectsDisabled = captchaLocked || !liveViewUrl || transportStatus !== "connected" || ["preparing", "running", "pausing", "paused", "stopping"].includes(replayStatus);
+  const navigationDisabled = captchaLocked || !liveViewUrl || navigationPending || (!["recording", "reconnecting"].includes(status) && replayStatus !== "manual");
   const tabTitle = page?.title && page.title !== "about:blank" ? page.title : liveViewUrl ? "Browserbase" : "New cloud browser";
   const pageAddress = page?.url === "about:blank" ? "" : page?.url ?? "";
+  const captchaNotice = captchaStatus === "solved"
+    ? "Verification solved. Recording resumed."
+    : captchaStatus === "timed_out"
+      ? "Verification wait timed out. Recording resumed."
+      : captchaStatus === "continued"
+        ? "Verification wait dismissed. Recording resumed."
+        : null;
+
+  useEffect(() => {
+    if (captchaLocked) {
+      wasCaptchaLockedRef.current = true;
+      liveViewRef.current?.blur();
+      captchaContinueRef.current?.focus();
+      return;
+    }
+    if (!wasCaptchaLockedRef.current) return;
+    wasCaptchaLockedRef.current = false;
+    if (status !== "recording" && status !== "reconnecting") return;
+    requestAnimationFrame(() => liveViewRef.current?.focus());
+  }, [captchaLocked, status]);
 
   return (
     <section className="browser-panel" aria-labelledby="browser-title">
@@ -173,15 +200,16 @@ export function BrowserPanel({ status, transportStatus, startedAt, liveViewUrl, 
         {navigationError ? <div className="browser-address-error" role="alert">{navigationError}</div> : null}
       </div>
       <h2 id="browser-title" className="sr-only">Interactive cloud browser</h2>
-      <div className="browser-content" ref={contentRef}>
+      <div className="browser-content" ref={contentRef} aria-busy={captchaLocked || loading}>
         {liveViewUrl ? (
           <iframe
             ref={liveViewRef}
-            className="live-view"
+            className={`live-view ${captchaLocked ? "captcha-locked" : ""}`}
             src={liveViewUrl}
             title="Interactive Browserbase browser"
             sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-downloads"
             allow="clipboard-read; clipboard-write"
+            tabIndex={captchaLocked ? -1 : 0}
             onLoad={() => setLoadedUrl(liveViewUrl)}
           />
         ) : (
@@ -197,6 +225,20 @@ export function BrowserPanel({ status, transportStatus, startedAt, liveViewUrl, 
           </div>
         )}
         {loading ? <div className="browser-overlay" aria-live="polite"><LoaderCircle className="spin" size={24} /><strong>Preparing secure browser</strong><span>Connecting the recorder and Live View…</span></div> : null}
+        {captchaLocked ? (
+          <div className="captcha-overlay">
+            <div className="captcha-card" role="dialog" aria-labelledby={captchaTitleId} aria-describedby={captchaDescriptionId}>
+              <span className="captcha-spinner" aria-hidden="true"><LoaderCircle className="spin" size={25} /></span>
+              <strong id={captchaTitleId}>Solving verification…</strong>
+              <p id={captchaDescriptionId}>Browserbase is handling the CAPTCHA. Recording will resume automatically.</p>
+              <button ref={captchaContinueRef} className="button button-secondary captcha-continue" type="button" onClick={onCaptchaContinue}>
+                Continue anyway
+              </button>
+            </div>
+          </div>
+        ) : null}
+        {captchaNotice ? <div className="captcha-notice" role="status" aria-live="polite">{captchaNotice}</div> : null}
+        <div className="sr-only" aria-live="polite">{captchaLocked ? "Browserbase verification solving started." : captchaNotice ?? ""}</div>
         {status === "reconnecting" ? <div className="connection-banner"><RefreshCw className="spin" size={15} /> Reconnecting recorder transport…</div> : null}
         {error ? <div className="error-card" role="alert"><AlertTriangle size={20} /><div><strong>{errorContext === "replay" ? "Replay needs attention" : "Browser session needs attention"}</strong><p>{error}</p><button className="text-button" type="button" onClick={errorContext === "replay" ? onDismissError : onRetry}>{errorContext === "replay" ? "Review workflow" : "Try a new recording"}</button></div></div> : null}
         {popup ? <div className="popup-card" role="status"><div><strong>New tab opened</strong><span>{popup.title || popup.url}</span></div><button className="button button-secondary" type="button" onClick={() => onSwitchPopup(popup.pageId)}>Switch tab <ArrowRight size={16} /></button></div> : null}

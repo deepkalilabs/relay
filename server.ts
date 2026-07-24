@@ -124,6 +124,8 @@ webSockets.on("connection", (socket: WebSocket) => {
         runtime.dismissSelectPicker(message.requestId);
       } else if (message.type === "select.native.set") {
         await runtime.setNativeSelects(message.enabled);
+      } else if (message.type === "captcha.continue") {
+        runtime.continueAfterCaptcha(message.pageId);
       } else if (message.type === "replay.start") {
         await runtime.setNativeSelects(message.nativeSelects);
         await runtime.startReplay(message.workflow, message.startStepId, { timeoutSeconds, region });

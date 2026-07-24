@@ -139,6 +139,49 @@ describe("useRecorderSession", () => {
     expect(socket.send).toHaveBeenLastCalledWith({ type: "session.start", nativeSelects: true });
   });
 
+  it("tracks CAPTCHA state per active page and sends the continue command", () => {
+    vi.useFakeTimers();
+    try {
+      const { result } = renderHook(() => useRecorderSession({ onSessionStarted: vi.fn(), onReplaySessionStarted: vi.fn(), onStartUrl: vi.fn(), onStepRecorded: vi.fn() }));
+      act(() => socket.onMessage?.({
+        type: "session.started",
+        sessionId: "session-1",
+        liveViewUrl: "https://example.com/live",
+        pageId: "page-1",
+      }));
+      act(() => socket.onMessage?.({ type: "captcha.status", pageId: "page-1", status: "solving" }));
+
+      expect(result.current.captchaStatus).toBe("solving");
+      act(() => result.current.continueAfterCaptcha());
+      expect(socket.send).toHaveBeenCalledWith({ type: "captcha.continue", pageId: "page-1" });
+
+      act(() => socket.onMessage?.({ type: "captcha.status", pageId: "page-1", status: "continued" }));
+      expect(result.current.captchaStatus).toBe("continued");
+      act(() => vi.advanceTimersByTime(4_000));
+      expect(result.current.captchaStatus).toBeNull();
+
+      act(() => socket.onMessage?.({ type: "captcha.status", pageId: "popup-1", status: "solving" }));
+      expect(result.current.captchaStatus).toBeNull();
+      act(() => socket.onMessage?.({ type: "popup.switched", pageId: "popup-1", liveViewUrl: "https://example.com/popup-live" }));
+      expect(result.current.captchaStatus).toBe("solving");
+      act(() => socket.onMessage?.({ type: "captcha.status", pageId: "popup-1", status: "cancelled" }));
+      expect(result.current.captchaStatus).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("clears CAPTCHA state when replay replaces the recording session", () => {
+    const { result } = renderHook(() => useRecorderSession({ onSessionStarted: vi.fn(), onReplaySessionStarted: vi.fn(), onStartUrl: vi.fn(), onStepRecorded: vi.fn() }));
+    const runId = "c7daf0b9-d92a-44db-9967-db33d1516976";
+    act(() => socket.onMessage?.({ type: "session.started", sessionId: "session-1", liveViewUrl: "https://example.com/live", pageId: "page-1" }));
+    act(() => socket.onMessage?.({ type: "captcha.status", pageId: "page-1", status: "solving" }));
+    expect(result.current.captchaStatus).toBe("solving");
+
+    act(() => socket.onMessage?.({ type: "replay.started", runId, sessionId: "session-2", liveViewUrl: "https://example.com/replay", pageId: "page-2", totalSteps: 1 }));
+    expect(result.current.captchaStatus).toBeNull();
+  });
+
   it("tracks replay progress and exposes recovery commands", () => {
     const onReplayStepChange = vi.fn();
     const onReplaySessionStarted = vi.fn();
