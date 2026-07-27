@@ -35,9 +35,6 @@ These results are a baseline, not permission to weaken tests during extraction.
 
 | Priority | Area                              | Evidence                                                                                                                                                                          | Consequence                                                                                                         |
 | -------- | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| P0       | Reproducible foundation           | `.nvmrc` selects Node 24, while `engines.node` currently permits Node 24 through 26, npm is not constrained, and the inspected shell used Node 23.                                | Local and CI results can differ before application code runs.                                                       |
-| P0       | Automated quality gate            | Commands exist, but no repository CI workflow, aggregate `verify` command, or formatter configuration was found.                                                                  | The documented quality loop depends on each contributor remembering every command.                                  |
-| P0       | Environment validation            | `server.ts` reads and coerces environment variables inline. Invalid numeric values can become `NaN`, and defaults/ranges are distributed through startup code.                    | Configuration errors surface late and are harder to test or explain.                                                |
 | P1       | Application composition           | `src/app/page.tsx` delegates to `features/recorder/RecorderWorkspace.tsx`, which imports browser, replay, workflow, recorder, shared UI, and persistence modules.                 | The recorder feature acts as the application layer, so feature ownership and dependency direction are unclear.      |
 | P1       | Cross-feature imports             | `BrowserPanel.tsx` imports recorder and replay controls directly. Workflow UI imports recorder session result types.                                                              | Browser, recorder, replay, and workflow features cannot evolve or be removed independently.                         |
 | P1       | Session state ownership           | `useRecorderSession.ts` contains roughly twenty independent state values, a large server-message switch, command dispatch, timers, derived display state, and reset logic.        | Valid state combinations are implicit, transition logic is difficult to audit, and duplicated reset code can drift. |
@@ -135,73 +132,6 @@ This is a destination, not a request for one large file-moving change. Move code
 8. Keep the application usable and the baseline test suites passing after every phase.
 
 ## Phased implementation
-
-## Phase 0 — Make the quality loop reproducible
-
-### 0.1 Pin and enforce the runtime
-
-- Keep `.nvmrc` on the maintained Node 24 LTS line.
-- Set `engines.node` to `>=24 <25` and add `engines.npm` as `>=11 <12`.
-- Add npm `devEngines` checks for the same Node and npm major ranges with `onFail: "error"`.
-- Add `.npmrc` with `engine-strict=true`.
-- Do not add an exact `packageManager` value: this repository intentionally accepts maintained patch releases within Node 24 and npm 11.
-- Ensure CI uses `.nvmrc` instead of duplicating a Node version.
-- Document that simultaneous `next dev` and `next build` executions must not share the same `.next` directory. Stop the development server before a local production build; CI build verification runs in a clean job.
-
-Acceptance criteria:
-
-- Node 24 and npm 11 satisfy the declared `engines` and `devEngines`; unsupported major versions fail before normal npm project commands run.
-- `npm ci` succeeds from a clean checkout.
-- A clean production build completes independently of a local dev server.
-
-### 0.2 Create one verification entry point
-
-- Add a `verify` script that runs formatting checks, type-checking, linting, unit/component tests, and the production build.
-- Keep local E2E as a separate `verify:e2e` job because it starts a server and browser.
-- Keep paid Browserbase verification opt-in and isolated from normal CI.
-- Add a CI workflow with:
-  - dependency installation via `npm ci`;
-  - `npm run verify`;
-  - local Playwright E2E;
-  - npm caching and an explicit Playwright Chrome installation.
-- Run the workflow for pull requests and pushes to `main`.
-- Never set `BROWSERBASE_E2E` or provide Browserbase credentials in normal CI.
-- Treat branch protection as a repository setting outside the workflow: if pull requests are introduced later, configure both CI jobs as required checks.
-
-Acceptance criteria:
-
-- Pushes to `main` and pull requests report failures from formatting, type-checking, linting, tests, build, and local E2E.
-- When pull requests are used, repository branch protection requires both CI jobs before merge.
-- The Browserbase smoke test never runs accidentally.
-
-### 0.3 Add deterministic formatting
-
-- Use Prettier with a 120-character print width.
-- Add `format` and `format:check` scripts.
-- Land one isolated repository-wide Prettier baseline before enabling `format:check` in CI.
-- After that baseline, format only files touched by each refactor change so structural diffs stay focused.
-- Add `.editorconfig` for baseline editor behavior.
-
-Acceptance criteria:
-
-- Formatting is automated and checked in CI.
-- Refactor diffs are not mixed with an unrelated repository-wide formatting change.
-
-### 0.4 Centralize server environment validation
-
-- Create `src/server/config/env.ts`.
-- Parse `BROWSERBASE_API_KEY`, `BROWSERBASE_PROJECT_ID`, `BROWSERBASE_REGION`, `BROWSERBASE_SESSION_TIMEOUT_SECONDS`, `PORT`, and `NODE_ENV` once with Zod.
-- Apply defaults and numeric ranges in the schema.
-- Return an explicit configuration object to server composition.
-- Preserve the current behavior where a missing API key allows the UI to show “Setup required.”
-- Keep secret-bearing values server-only.
-
-Acceptance criteria:
-
-- No production server module reads these runtime configuration variables directly outside the config module.
-- Playwright configuration and tests may continue reading CI and opt-in test-control variables directly.
-- Invalid ports, timeouts, and regions fail with actionable messages.
-- Unit tests cover defaults, missing optional values, and invalid values.
 
 ## Phase 1 — Establish application and feature boundaries
 
@@ -546,13 +476,7 @@ Acceptance criteria:
 
 ## Suggested implementation sequence
 
-Phase 0 is implemented directly on `main` as reviewable local commits without opening or pushing a pull request:
-
-1. Finalize and track this refactor plan.
-2. Add Node/npm enforcement, the isolated Prettier baseline, verification scripts, CI, and related command documentation.
-3. Add the validated server environment module, its unit tests, and server integration.
-
-Continue later phases as focused pull requests:
+Implement the phases as focused pull requests:
 
 1. App-owned workspace composition and feature public APIs.
 2. Import-boundary lint rules and relocation of misplaced hooks/types.
@@ -571,14 +495,6 @@ Continue later phases as focused pull requests:
 Each later pull request should include only the tests and file moves needed for that seam. Avoid combining repository-wide renames, formatting, state redesign, and behavior changes.
 
 ## Completion checklist
-
-### Foundation
-
-- [ ] Node 24 and npm 11 major lines are selected and enforced.
-- [ ] Clean install and one-command verification are documented.
-- [ ] Formatting, linting, tests, build, and local E2E run in CI.
-- [ ] Environment variables are validated once.
-- [ ] Production build succeeds in a clean environment.
 
 ### Architecture
 

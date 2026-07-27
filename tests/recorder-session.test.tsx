@@ -1,7 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ServerMessage } from "@/lib/protocol";
-import { useRecorderSession } from "@/features/recorder/useRecorderSession";
+import { useRecorderSession } from "@/features/recorder";
 import { createWorkflow } from "@/lib/workflow/schema";
 
 const socket = vi.hoisted(() => ({

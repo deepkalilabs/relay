@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type RefObject } from "react";
-import { useDismissibleOverlay } from "@/features/browser/useDismissibleOverlay";
-import type { SelectPickerState } from "@/lib/recorder-session";
+import { useDismissibleOverlay } from "./useDismissibleOverlay";
+import type { SelectPickerState } from "./model/browser.types";
 
 interface SelectPickerOverlayProps {
   picker: SelectPickerState;

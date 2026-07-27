@@ -1,6 +1,11 @@
 "use client";
 
-import { useEffect, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
+import {
+  useEffect,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 
 export type ResizablePanel = "timeline" | "inspector";
 
@@ -14,7 +19,11 @@ export function clampPanelWidth(panel: ResizablePanel, width: number): number {
   return Math.min(limits.max, Math.max(limits.min, width));
 }
 
-export function keyboardPanelWidth(panel: ResizablePanel, width: number, key: "ArrowLeft" | "ArrowRight"): number {
+export function keyboardPanelWidth(
+  panel: ResizablePanel,
+  width: number,
+  key: "ArrowLeft" | "ArrowRight",
+): number {
   const direction = key === "ArrowRight" ? 1 : -1;
   return clampPanelWidth(panel, width + direction * 16 * (panel === "timeline" ? 1 : -1));
 }
@@ -43,9 +52,18 @@ export function useWorkspacePanels({ selectedStepId, overlayOpen }: WorkspacePan
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || inspectorCollapsed || overlayOpen || !matchMedia("(min-width: 1024px) and (max-width: 1439px)").matches) return;
+      if (
+        event.key !== "Escape"
+        || inspectorCollapsed
+        || overlayOpen
+        || !matchMedia("(min-width: 1024px) and (max-width: 1439px)").matches
+      ) {
+        return;
+      }
       setInspectorCollapsed(true);
-      if (selectedStepId) requestAnimationFrame(() => document.getElementById(`workflow-step-${selectedStepId}`)?.focus());
+      if (selectedStepId) {
+        requestAnimationFrame(() => document.getElementById(`workflow-step-${selectedStepId}`)?.focus());
+      }
     };
     addEventListener("keydown", onKeyDown);
     return () => removeEventListener("keydown", onKeyDown);
