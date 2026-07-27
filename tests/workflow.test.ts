@@ -191,6 +191,23 @@ describe("workflow reducer", () => {
     expect(state.workflow.steps).toHaveLength(1);
   });
 
+  it("adopts server-owned save metadata without losing the selected step", () => {
+    let state = initialWorkflowState();
+    const step = makeStep("Navigate", 0);
+    state = workflowReducer(state, { type: "append", step });
+    const saved = {
+      ...state.workflow,
+      revision: 2,
+      updatedAt: new Date(Date.now() + 1_000).toISOString(),
+    };
+
+    state = workflowReducer(state, { type: "saved", workflow: saved });
+
+    expect(state.workflow).toEqual(saved);
+    expect(state.selectedStepId).toBe(step.id);
+    expect(state.dirty).toBe(false);
+  });
+
   it("dismisses a pending delete without restoring the step", () => {
     let state = initialWorkflowState();
     const step = makeStep("Navigate", 0);

@@ -9,10 +9,46 @@ import { Modal } from "@/components/ui/Modal";
 import { WorkspaceNavbar } from "./WorkspaceNavbar";
 import { useWorkspaceController } from "./useWorkspaceController";
 
-export function RecorderWorkspace() {
-  const controller = useWorkspaceController();
+interface RecorderWorkspaceProps {
+  workflowId: string;
+}
+
+export function RecorderWorkspace({ workflowId }: RecorderWorkspaceProps) {
+  const controller = useWorkspaceController(workflowId);
   const { browser, dialogs, layout, recorder, replay, workflow } = controller;
   const workflowState = workflow.model.state;
+  const saveState = workflow.model.persistenceStatus === "saving"
+    ? "saving"
+    : workflow.model.persistenceStatus === "conflict"
+      ? "conflict"
+      : workflow.model.persistenceStatus === "error"
+        ? "error"
+        : workflowState.dirty
+          ? "unsaved"
+          : "saved";
+
+  if (!workflow.model.loaded) {
+    return (
+      <main className="workspace-load-state">
+        {workflow.model.persistenceStatus === "loading" ? (
+          <>
+            <span className="workspace-load-spinner" aria-hidden="true" />
+            <h1>Loading workflow…</h1>
+            <p>The editor will be available when the saved workflow is ready.</p>
+          </>
+        ) : (
+          <>
+            <AlertTriangle size={28} aria-hidden="true" />
+            <h1>Workflow could not be loaded</h1>
+            <p role="alert">{workflow.model.persistenceError}</p>
+            <button className="button button-primary" type="button" onClick={workflow.actions.reload}>
+              Try again
+            </button>
+          </>
+        )}
+      </main>
+    );
+  }
 
   return (
     <>
@@ -34,6 +70,8 @@ export function RecorderWorkspace() {
             <WorkspaceNavbar
               collapsed={layout.model.timelineCollapsed}
               workflowName={workflowState.workflow.name}
+              workflowStatus={workflowState.workflow.status}
+              saveState={saveState}
               status={recorder.model.status}
               transportStatus={recorder.model.transportStatus}
               stepCount={workflowState.workflow.steps.length}
@@ -42,15 +80,15 @@ export function RecorderWorkspace() {
               onStart={recorder.actions.start}
               onStop={recorder.actions.stop}
               onExport={workflow.actions.requestExport}
-              onImport={(file) => void workflow.actions.import(file)}
+              onSave={() => void workflow.actions.save()}
+              onFinish={() => void workflow.actions.finish()}
               onReplay={() => replay.actions.request()}
-              importDisabled={workflow.model.locked}
               replayDisabled={
                 !workflowState.workflow.steps.some((step) => step.enabled)
                 || workflow.model.locked
                 || recorder.model.transportStatus === "offline"
               }
-              locked={workflow.model.reviewLocked}
+              locked={workflow.model.locked}
             />
             {!layout.model.timelineCollapsed ? (
               <>
@@ -238,6 +276,17 @@ export function RecorderWorkspace() {
             </div>
           </div>
         ) : null}
+        {workflow.model.persistenceError ? (
+          <div className="workspace-persistence-alert" role="alert">
+            <AlertTriangle size={17} aria-hidden="true" />
+            <span>{workflow.model.persistenceError}</span>
+            {workflow.model.persistenceStatus === "conflict" ? (
+              <button className="button button-secondary" type="button" onClick={workflow.actions.reload}>
+                Reload saved version
+              </button>
+            ) : null}
+          </div>
+        ) : null}
         <div className="sr-only" aria-live="polite">{layout.model.announcement}</div>
       </div>
       <ManualStepDialog
@@ -255,24 +304,6 @@ export function RecorderWorkspace() {
         onRun={replay.actions.start}
       />
       <Modal
-        open={dialogs.model.confirmation === "new"}
-        title="Start a new recording?"
-        description="The current workflow only lives in this tab."
-        onClose={dialogs.actions.closeConfirmation}
-      >
-        <p className="modal-copy">
-          Export the current workflow first if you want to keep it. Starting over clears all recorded and edited steps.
-        </p>
-        <div className="modal-actions">
-          <button className="button button-ghost" type="button" onClick={dialogs.actions.closeConfirmation}>
-            Keep editing
-          </button>
-          <button className="button button-danger" type="button" onClick={dialogs.actions.confirmNew}>
-            Discard and start
-          </button>
-        </div>
-      </Modal>
-      <Modal
         open={dialogs.model.confirmation === "sensitiveExport"}
         title="This export contains sensitive values"
         description="Passwords, tokens, or payment-related fields were detected."
@@ -286,34 +317,6 @@ export function RecorderWorkspace() {
           <button className="button button-ghost" type="button" onClick={dialogs.actions.closeConfirmation}>Cancel</button>
           <button className="button button-danger" type="button" onClick={dialogs.actions.confirmSensitiveExport}>
             Export sensitive JSON
-          </button>
-        </div>
-      </Modal>
-      <Modal
-        open={dialogs.model.confirmation === "replaceImport"}
-        title="Replace the current workflow?"
-        description="The imported workflow will replace every step currently in the timeline."
-        onClose={dialogs.actions.cancelImport}
-      >
-        <p className="modal-copy">
-          Export the current workflow first if you want to keep it. Importing does not merge workflows.
-        </p>
-        <div className="modal-actions">
-          <button className="button button-ghost" type="button" onClick={dialogs.actions.cancelImport}>Cancel</button>
-          <button className="button button-danger" type="button" onClick={dialogs.actions.confirmPendingImport}>
-            Replace workflow
-          </button>
-        </div>
-      </Modal>
-      <Modal
-        open={Boolean(dialogs.model.importError)}
-        title="Workflow could not be imported"
-        description={dialogs.model.importError ?? "The selected file is invalid."}
-        onClose={dialogs.actions.closeImportError}
-      >
-        <div className="modal-actions">
-          <button className="button button-primary" type="button" onClick={dialogs.actions.closeImportError}>
-            Choose another file
           </button>
         </div>
       </Modal>

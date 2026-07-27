@@ -1,30 +1,34 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { BrowserActions, BrowserPanelAlert, BrowserViewModel } from "@/features/browser";
 import { useRecorderSession } from "@/features/recorder";
 import { downloadWorkflow } from "@/lib/workflow/export";
-import { parseWorkflowJson } from "@/lib/workflow/import";
-import type { Workflow, WorkflowStep } from "@/lib/workflow/domain";
+import { WorkflowRequestError, workflowEditorClient } from "@/lib/workflow/client";
+import type { WorkflowStep } from "@/lib/workflow/domain";
 import { WorkflowSchema } from "@/lib/workflow/schema";
 import { initialWorkflowState, workflowReducer } from "@/lib/workflow/store";
 import type { ReplayStepResultState } from "@/lib/recorder-session";
 import { useWorkspacePanels } from "./useWorkspacePanels";
 
-type Confirmation = "new" | "sensitiveExport" | "replaceImport" | null;
+type Confirmation = "sensitiveExport" | null;
+type PersistenceStatus = "loading" | "ready" | "saving" | "error" | "conflict";
 
-export function useWorkspaceController() {
+export function useWorkspaceController(workflowId: string) {
+  const router = useRouter();
   const [workflowState, dispatch] = useReducer(workflowReducer, undefined, initialWorkflowState);
   const [manualOpen, setManualOpen] = useState(false);
   const [runDialogOpen, setRunDialogOpen] = useState(false);
   const [confirmation, setConfirmation] = useState<Confirmation>(null);
   const [announcement, setAnnouncement] = useState("");
-  const [pendingImport, setPendingImport] = useState<Workflow | null>(null);
   const [pendingReplayStartId, setPendingReplayStartId] = useState<string | undefined>();
-  const [importError, setImportError] = useState<string | null>(null);
+  const [persistenceStatus, setPersistenceStatus] = useState<PersistenceStatus>("loading");
+  const [persistenceError, setPersistenceError] = useState<string | null>(null);
+  const [workflowLoaded, setWorkflowLoaded] = useState(false);
 
   const onSessionStarted = useCallback((sessionId: string) => {
-    dispatch({ type: "reset", sessionId });
+    dispatch({ type: "setSessionId", sessionId });
   }, []);
   const onReplaySessionStarted = useCallback((sessionId: string) => {
     dispatch({ type: "setSessionId", sessionId });
@@ -52,11 +56,50 @@ export function useWorkspaceController() {
     session.replayStatus,
   );
   const captchaLocked = session.captchaStatus === "solving";
-  const workflowLocked = replayLocked || captchaLocked;
+  const persistenceLocked = persistenceStatus === "loading" || persistenceStatus === "saving";
+  const workflowLocked = replayLocked || captchaLocked || persistenceLocked;
   const panels = useWorkspacePanels({
     selectedStepId: workflowState.selectedStepId,
     overlayOpen: Boolean(confirmation || manualOpen || runDialogOpen),
   });
+
+  const loadSavedWorkflow = useCallback(async () => {
+    setWorkflowLoaded(false);
+    setPersistenceStatus("loading");
+    setPersistenceError(null);
+    try {
+      const workflow = await workflowEditorClient.get(workflowId);
+      dispatch({ type: "load", workflow });
+      setWorkflowLoaded(true);
+      setPersistenceStatus("ready");
+      setAnnouncement(`${workflow.name} loaded.`);
+    } catch (error) {
+      setPersistenceStatus("error");
+      setPersistenceError(error instanceof Error ? error.message : "The workflow could not be loaded.");
+    }
+  }, [workflowId]);
+
+  useEffect(() => {
+    let active = true;
+    workflowEditorClient.get(workflowId).then(
+      (workflow) => {
+        if (!active) return;
+        dispatch({ type: "load", workflow });
+        setWorkflowLoaded(true);
+        setPersistenceStatus("ready");
+        setPersistenceError(null);
+        setAnnouncement(`${workflow.name} loaded.`);
+      },
+      (error: unknown) => {
+        if (!active) return;
+        setPersistenceStatus("error");
+        setPersistenceError(error instanceof Error ? error.message : "The workflow could not be loaded.");
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, [workflowId]);
 
   useEffect(() => {
     if (!workflowState.deletedStep) return;
@@ -70,42 +113,12 @@ export function useWorkspaceController() {
       setManualOpen(false);
       setRunDialogOpen(false);
       setConfirmation(null);
-      setPendingImport(null);
       setPendingReplayStartId(undefined);
-      setImportError(null);
     }, 0);
     return () => window.clearTimeout(timeout);
   }, [captchaLocked]);
 
-  const beginRecording = () => {
-    if (workflowState.workflow.steps.length) {
-      setConfirmation("new");
-      return;
-    }
-    session.startRecording();
-  };
-
-  const loadWorkflow = (workflow: Workflow) => {
-    dispatch({ type: "load", workflow });
-    setPendingImport(null);
-    setConfirmation(null);
-    setAnnouncement(`${workflow.name} imported with ${workflow.steps.length} steps.`);
-  };
-
-  const importWorkflow = async (file: File) => {
-    setImportError(null);
-    try {
-      const workflow = parseWorkflowJson(await file.text(), file.size);
-      if (workflowState.workflow.steps.length || workflowState.dirty) {
-        setPendingImport(workflow);
-        setConfirmation("replaceImport");
-      } else {
-        loadWorkflow(workflow);
-      }
-    } catch (error) {
-      setImportError(error instanceof Error ? error.message : "The workflow file could not be imported.");
-    }
-  };
+  const beginRecording = () => session.startRecording();
 
   const closeRunDialog = () => {
     setRunDialogOpen(false);
@@ -124,12 +137,6 @@ export function useWorkspaceController() {
     session.startReplay(workflowState.workflow, startStepId);
   };
 
-  const confirmNew = () => {
-    setConfirmation(null);
-    dispatch({ type: "reset" });
-    session.startAfterDiscard();
-  };
-
   const exportNow = () => {
     const parsed = WorkflowSchema.safeParse(workflowState.workflow);
     if (!parsed.success) {
@@ -137,7 +144,6 @@ export function useWorkspaceController() {
       return;
     }
     downloadWorkflow(parsed.data);
-    dispatch({ type: "markClean" });
     setConfirmation(null);
     setAnnouncement("Workflow JSON downloaded.");
   };
@@ -147,6 +153,54 @@ export function useWorkspaceController() {
       setConfirmation("sensitiveExport");
     } else {
       exportNow();
+    }
+  };
+
+  const saveWorkflow = async () => {
+    const parsed = WorkflowSchema.safeParse(workflowState.workflow);
+    if (!parsed.success) {
+      setPersistenceStatus("error");
+      setPersistenceError(`Workflow save is blocked: ${parsed.error.issues[0]?.message}`);
+      return;
+    }
+    setPersistenceStatus("saving");
+    setPersistenceError(null);
+    try {
+      const saved = await workflowEditorClient.save(workflowId, parsed.data, parsed.data.revision);
+      dispatch({ type: "saved", workflow: saved });
+      setPersistenceStatus("ready");
+      setAnnouncement("Workflow saved.");
+    } catch (error) {
+      const conflict = error instanceof WorkflowRequestError && error.status === 409;
+      setPersistenceStatus(conflict ? "conflict" : "error");
+      setPersistenceError(error instanceof Error ? error.message : "The workflow could not be saved.");
+    }
+  };
+
+  const finishWorkflow = async () => {
+    if (!workflowState.workflow.steps.length) {
+      setPersistenceStatus("error");
+      setPersistenceError("Add at least one step before finishing this workflow.");
+      return;
+    }
+    const parsed = WorkflowSchema.safeParse(workflowState.workflow);
+    if (!parsed.success) {
+      setPersistenceStatus("error");
+      setPersistenceError(`Workflow finish is blocked: ${parsed.error.issues[0]?.message}`);
+      return;
+    }
+    setPersistenceStatus("saving");
+    setPersistenceError(null);
+    try {
+      await session.stopRecordingAndWait();
+      const saved = await workflowEditorClient.finish(workflowId, parsed.data, parsed.data.revision);
+      dispatch({ type: "saved", workflow: saved });
+      setAnnouncement("Recording finished.");
+      router.push(`/library?selected=${encodeURIComponent(saved.id)}`);
+    } catch (error) {
+      const conflict = error instanceof WorkflowRequestError && error.status === 409;
+      setPersistenceStatus(conflict ? "conflict" : "error");
+      setPersistenceError(error instanceof Error ? error.message : "The workflow could not be finished.");
     }
   };
 
@@ -281,7 +335,6 @@ export function useWorkspaceController() {
       actions: {
         deleteStep: (id: string) => dispatch({ type: "delete", id }),
         dismissDelete: () => dispatch({ type: "dismissDelete" }),
-        import: importWorkflow,
         insertStep: (step: WorkflowStep) => dispatch({
           type: "insert",
           step,
@@ -290,6 +343,9 @@ export function useWorkspaceController() {
         rename: (name: string) => dispatch({ type: "renameWorkflow", name }),
         reorderSteps: (activeId: string, overId: string) => dispatch({ type: "reorder", activeId, overId }),
         requestExport,
+        reload: loadSavedWorkflow,
+        save: saveWorkflow,
+        finish: finishWorkflow,
         selectStep: (id: string) => {
           dispatch({ type: "select", id });
           panels.setInspectorCollapsed(false);
@@ -301,6 +357,9 @@ export function useWorkspaceController() {
       model: {
         activePage,
         locked: workflowLocked,
+        loaded: workflowLoaded,
+        persistenceError,
+        persistenceStatus,
         reviewLocked: captchaLocked,
         selectedStep,
         state: workflowState,
@@ -326,24 +385,14 @@ export function useWorkspaceController() {
     },
     dialogs: {
       actions: {
-        cancelImport: () => {
-          setConfirmation(null);
-          setPendingImport(null);
-        },
         closeConfirmation: () => setConfirmation(null),
-        closeImportError: () => setImportError(null),
         closeManual: () => setManualOpen(false),
         closeRun: closeRunDialog,
-        confirmNew,
-        confirmPendingImport: () => {
-          if (pendingImport) loadWorkflow(pendingImport);
-        },
         confirmSensitiveExport: exportNow,
         openManual: () => setManualOpen(true),
       },
       model: {
         confirmation,
-        importError,
         manualOpen,
         pendingReplayStep,
         runDialogOpen,

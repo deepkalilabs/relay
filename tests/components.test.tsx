@@ -93,6 +93,59 @@ describe("WorkspaceNavbar", () => {
     expect(onExport).toHaveBeenCalledOnce();
   });
 
+  it("shows explicit save state and only offers finish for drafts", async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn();
+    const onFinish = vi.fn();
+    const { container, rerender } = render(
+      <WorkspaceNavbar
+        collapsed={false}
+        workflowName="Checkout"
+        workflowStatus="draft"
+        saveState="unsaved"
+        status="idle"
+        transportStatus="connected"
+        stepCount={1}
+        onNameChange={vi.fn()}
+        onExpand={vi.fn()}
+        onStart={vi.fn()}
+        onStop={vi.fn()}
+        onExport={vi.fn()}
+        onSave={onSave}
+        onFinish={onFinish}
+      />,
+    );
+    const navbar = within(container);
+
+    expect(navbar.getByText("Unsaved changes")).toBeInTheDocument();
+    await user.click(navbar.getByRole("button", { name: "Save workflow" }));
+    await user.click(navbar.getByRole("button", { name: "Finish recording" }));
+    expect(onSave).toHaveBeenCalledOnce();
+    expect(onFinish).toHaveBeenCalledOnce();
+    expect(navbar.queryByLabelText("Import workflow")).not.toBeInTheDocument();
+
+    rerender(
+      <WorkspaceNavbar
+        collapsed={false}
+        workflowName="Checkout"
+        workflowStatus="complete"
+        saveState="saved"
+        status="idle"
+        transportStatus="connected"
+        stepCount={1}
+        onNameChange={vi.fn()}
+        onExpand={vi.fn()}
+        onStart={vi.fn()}
+        onStop={vi.fn()}
+        onExport={vi.fn()}
+        onSave={onSave}
+        onFinish={onFinish}
+      />,
+    );
+    expect(navbar.getByText("Saved")).toBeInTheDocument();
+    expect(navbar.queryByRole("button", { name: "Finish recording" })).not.toBeInTheDocument();
+  });
+
   it("keeps core controls available in the collapsed rail", async () => {
     const user = userEvent.setup();
     const onExpand = vi.fn();

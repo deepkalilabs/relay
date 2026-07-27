@@ -1,4 +1,8 @@
 import { defineConfig, devices } from "@playwright/test";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+const workflowDataDir = join(tmpdir(), `browser-replay-playwright-${process.pid}`);
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -15,8 +19,12 @@ export default defineConfig({
     : {
         command: "npm run dev",
         url: "http://127.0.0.1:3000",
-        reuseExistingServer: !process.env.CI,
+        reuseExistingServer: false,
         timeout: 120_000,
+        env: {
+          ...process.env,
+          WORKFLOW_DATA_DIR: workflowDataDir,
+        },
       },
   projects: [
     {
