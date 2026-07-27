@@ -44,7 +44,7 @@ describe("workflow file import", () => {
     };
 
     const parsed = parseWorkflowJson(serializeWorkflow(workflow));
-    expect(parsed.schemaVersion).toBe("1.0");
+    expect(parsed.schemaVersion).toBe("1.1");
     expect(parsed.steps[0].waitAfter).toEqual(workflow.steps[0].waitAfter);
   });
 
@@ -53,8 +53,28 @@ describe("workflow file import", () => {
     workflow.steps[0].position = { x: 12, y: 90, frameUrl: "https://widgets.example.com/frame" };
 
     const parsed = parseWorkflowJson(serializeWorkflow(workflow));
-    expect(parsed.schemaVersion).toBe("1.0");
+    expect(parsed.schemaVersion).toBe("1.1");
     expect(parsed.steps[0].position).toEqual(workflow.steps[0].position);
+  });
+
+  it("normalizes a version 1.0 workflow as a completed version 1.1 workflow", () => {
+    const workflow = exportedWorkflow();
+    const legacy = {
+      ...workflow,
+      schemaVersion: "1.0",
+      status: undefined,
+      revision: undefined,
+      finishedAt: undefined,
+    };
+
+    const parsed = parseWorkflowJson(JSON.stringify(legacy));
+
+    expect(parsed).toMatchObject({
+      schemaVersion: "1.1",
+      status: "complete",
+      revision: 1,
+      finishedAt: workflow.updatedAt,
+    });
   });
 
   it("rejects workflows containing the removed duplicate origin", () => {

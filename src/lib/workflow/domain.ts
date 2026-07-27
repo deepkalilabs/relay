@@ -185,12 +185,17 @@ export type WorkflowStep =
 
 export type WorkflowActionType = WorkflowStep["type"];
 
+export type WorkflowStatus = "draft" | "complete";
+
 export type Workflow = {
-  schemaVersion: "1.0";
+  schemaVersion: "1.1";
   id: string;
   name: string;
+  status: WorkflowStatus;
+  revision: number;
   createdAt: string;
   updatedAt: string;
+  finishedAt?: string;
   source: {
     provider: "browserbase";
     sessionId: string;

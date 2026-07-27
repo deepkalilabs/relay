@@ -126,6 +126,23 @@ export const WorkflowStepSchema = z.discriminatedUnion("type", [
 ]) satisfies z.ZodType<WorkflowStep>;
 
 export const WorkflowSchema = z.object({
+  schemaVersion: z.literal("1.1"),
+  id: z.string().min(1),
+  name: z.string().trim().min(1, "Give this workflow a name."),
+  status: z.enum(["draft", "complete"]),
+  revision: z.number().int().positive(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  finishedAt: z.string().datetime().optional(),
+  source: z.object({
+    provider: z.literal("browserbase"),
+    sessionId: z.string(),
+    startUrl: z.string().optional(),
+  }),
+  steps: z.array(WorkflowStepSchema),
+}) satisfies z.ZodType<Workflow>;
+
+const LegacyWorkflowSchema = z.object({
   schemaVersion: z.literal("1.0"),
   id: z.string().min(1),
   name: z.string().trim().min(1, "Give this workflow a name."),
@@ -137,7 +154,22 @@ export const WorkflowSchema = z.object({
     startUrl: z.string().optional(),
   }),
   steps: z.array(WorkflowStepSchema),
-}) satisfies z.ZodType<Workflow>;
+});
+
+export const CompatibleWorkflowSchema = z.discriminatedUnion(
+  "schemaVersion",
+  [WorkflowSchema, LegacyWorkflowSchema],
+).transform(
+  (workflow): Workflow => workflow.schemaVersion === "1.1"
+    ? workflow
+    : {
+        ...workflow,
+        schemaVersion: "1.1",
+        status: "complete",
+        revision: 1,
+        finishedAt: workflow.updatedAt,
+      },
+);
 
 const locatorPriority = new Map(locatorKinds.map((kind, index) => [kind, index]));
 
@@ -154,9 +186,11 @@ export const emptyTarget = (): ElementTarget => ({
 export function createWorkflow(sessionId = ""): Workflow {
   const now = new Date().toISOString();
   return {
-    schemaVersion: "1.0",
+    schemaVersion: "1.1",
     id: crypto.randomUUID(),
     name: "Untitled recording",
+    status: "draft",
+    revision: 1,
     createdAt: now,
     updatedAt: now,
     source: { provider: "browserbase", sessionId },

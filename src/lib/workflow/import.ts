@@ -1,5 +1,5 @@
 import type { Workflow } from "@/lib/workflow/domain";
-import { WorkflowSchema } from "@/lib/workflow/schema";
+import { CompatibleWorkflowSchema } from "@/lib/workflow/schema";
 
 export const MAX_WORKFLOW_FILE_BYTES = 1_048_576;
 
@@ -20,7 +20,7 @@ export function parseWorkflowJson(text: string, sizeBytes = new Blob([text]).siz
     throw new Error("The selected file is not valid JSON.");
   }
 
-  const parsed = WorkflowSchema.safeParse(json);
+  const parsed = CompatibleWorkflowSchema.safeParse(json);
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
     throw new Error(issue ? issueMessage(issue.path, issue.message) : "The workflow is invalid.");
