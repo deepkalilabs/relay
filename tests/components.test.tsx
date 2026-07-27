@@ -1,14 +1,13 @@
 import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { BrowserPanel } from "@/features/browser/BrowserPanel";
-import { RecorderControls } from "@/features/recorder/RecorderControls";
-import { ReplayControls } from "@/features/replay/ReplayControls";
-import { WorkspaceNavbar } from "@/features/recorder/WorkspaceNavbar";
-import { ManualStepDialog } from "@/features/workflow/ManualStepDialog";
-import { StepEditor } from "@/features/workflow/StepEditor";
-import { WorkflowTimeline } from "@/features/workflow/WorkflowTimeline";
+import { BrowserPanel, type BrowserActions } from "@/features/browser";
+import { RecorderControls } from "@/features/recorder";
+import { ReplayControls, ReplayFailurePanel } from "@/features/replay";
+import { WorkspaceNavbar } from "@/app/workspace/WorkspaceNavbar";
+import { ManualStepDialog, StepEditor, WorkflowTimeline } from "@/features/workflow";
 import { stepFromRecordedAction } from "@/lib/workflow/recorded-action";
+import { TestBrowserPanel } from "./helpers/TestBrowserPanel";
 
 describe("WorkflowTimeline", () => {
   it("shows a target-focused title while retaining action and replay metadata", () => {
@@ -192,6 +191,36 @@ describe("ReplayControls", () => {
     expect(screen.getByRole("button", { name: "Skip" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Take control" })).toBeInTheDocument();
   });
+
+  it("keeps replay failure recovery in a replay-owned panel", async () => {
+    const user = userEvent.setup();
+    const onRetry = vi.fn();
+    const onSkip = vi.fn();
+    const onTakeControl = vi.fn();
+    const onStop = vi.fn();
+
+    const { container, unmount } = render(
+      <ReplayFailurePanel
+        message="No visible match"
+        onRetry={onRetry}
+        onSkip={onSkip}
+        onTakeControl={onTakeControl}
+        onStop={onStop}
+      />,
+    );
+    const panel = within(container);
+
+    expect(panel.getByRole("alert")).toHaveTextContent("No visible match");
+    await user.click(panel.getByRole("button", { name: "Retry" }));
+    await user.click(panel.getByRole("button", { name: "Skip" }));
+    await user.click(panel.getByRole("button", { name: "Take control" }));
+    await user.click(panel.getByRole("button", { name: "Stop" }));
+    expect(onRetry).toHaveBeenCalledOnce();
+    expect(onSkip).toHaveBeenCalledOnce();
+    expect(onTakeControl).toHaveBeenCalledOnce();
+    expect(onStop).toHaveBeenCalledOnce();
+    unmount();
+  });
 });
 
 describe("StepEditor", () => {
@@ -269,9 +298,57 @@ describe("StepEditor", () => {
 });
 
 describe("BrowserPanel", () => {
+  it("renders app-owned toolbar, empty actions, and content overlays through explicit slots", async () => {
+    const user = userEvent.setup();
+    const onStart = vi.fn();
+    const actions: BrowserActions = {
+      goBack: vi.fn(),
+      goForward: vi.fn(),
+      navigate: vi.fn(),
+      reload: vi.fn(),
+      switchPopup: vi.fn(),
+      selectDate: vi.fn(),
+      dismissDatePicker: vi.fn(),
+      selectPickerOption: vi.fn(),
+      dismissSelectPicker: vi.fn(),
+      setNativeSelects: vi.fn(),
+      continueAfterCaptcha: vi.fn(),
+    };
+    const { container, unmount } = render(
+      <BrowserPanel
+        model={{
+          page: null,
+          liveViewUrl: null,
+          popup: null,
+          datePicker: null,
+          selectPicker: null,
+          captchaStatus: null,
+          nativeSelects: false,
+          nativeSelectsEnabled: false,
+          preparing: false,
+          reconnecting: false,
+          restoreFocusAfterCaptcha: false,
+          navigation: { enabled: false, pending: false, error: null },
+        }}
+        actions={actions}
+        emptyState={{ title: "No browser", description: "Start a session to continue." }}
+        toolbar={<div data-testid="toolbar-slot">Toolbar controls</div>}
+        emptyActions={<button type="button" onClick={onStart}>Start session</button>}
+        contentOverlay={<div data-testid="content-overlay">Replay recovery</div>}
+      />,
+    );
+    const panel = within(container);
+
+    expect(panel.getByTestId("toolbar-slot")).toHaveTextContent("Toolbar controls");
+    expect(panel.getByTestId("content-overlay")).toHaveTextContent("Replay recovery");
+    await user.click(panel.getByRole("button", { name: "Start session" }));
+    expect(onStart).toHaveBeenCalledOnce();
+    unmount();
+  });
+
   it("frames the embedded browser with cloud-session chrome and preserves session overlays", () => {
     const { container } = render(
-      <BrowserPanel
+      <TestBrowserPanel
         status="reconnecting"
         transportStatus="reconnecting"
         startedAt={Date.now() - 42_000}
@@ -313,7 +390,7 @@ describe("BrowserPanel", () => {
     const onNavigate = vi.fn();
     const onReload = vi.fn();
     const { container } = render(
-      <BrowserPanel
+      <TestBrowserPanel
         status="recording"
         transportStatus="connected"
         startedAt={Date.now() - 12_000}
@@ -353,7 +430,7 @@ describe("BrowserPanel", () => {
     const onStop = vi.fn();
     const onCaptchaContinue = vi.fn();
     const { container, rerender } = render(
-      <BrowserPanel
+      <TestBrowserPanel
         status="recording"
         transportStatus="connected"
         startedAt={Date.now() - 12_000}
@@ -393,7 +470,7 @@ describe("BrowserPanel", () => {
     expect(onCaptchaContinue).toHaveBeenCalledOnce();
 
     rerender(
-      <BrowserPanel
+      <TestBrowserPanel
         status="recording"
         transportStatus="connected"
         startedAt={Date.now() - 12_000}
@@ -442,7 +519,7 @@ describe("BrowserPanel", () => {
       onSwitchPopup: vi.fn(),
       onNativeSelectsChange,
     };
-    const view = render(<BrowserPanel {...props} nativeSelects={false} />);
+    const view = render(<TestBrowserPanel {...props} nativeSelects={false} />);
     const panel = within(view.container);
     const toggle = panel.getByRole("switch", { name: "Use native dropdowns" });
 
@@ -451,14 +528,14 @@ describe("BrowserPanel", () => {
     await user.click(toggle);
     expect(onNativeSelectsChange).toHaveBeenCalledWith(true);
 
-    view.rerender(<BrowserPanel {...props} nativeSelects />);
+    view.rerender(<TestBrowserPanel {...props} nativeSelects />);
     expect(panel.getByRole("switch", { name: "Use native dropdowns" })).toHaveAttribute("aria-checked", "true");
     expect(panel.getByRole("switch", { name: "Use native dropdowns" })).toHaveTextContent("On");
   });
 
   it("returns to recorder controls when an incremental replay completes", () => {
     const { container } = render(
-      <BrowserPanel
+      <TestBrowserPanel
         status="recording"
         transportStatus="connected"
         startedAt={Date.now() - 12_000}
@@ -497,7 +574,7 @@ describe("BrowserPanel", () => {
     const onDateSelect = vi.fn();
     const onDateDismiss = vi.fn();
     const { container } = render(
-      <BrowserPanel
+      <TestBrowserPanel
         status="recording"
         transportStatus="connected"
         startedAt={Date.now() - 12_000}
@@ -565,7 +642,7 @@ describe("BrowserPanel", () => {
       viewport: { width: 1280, height: 720 },
     };
     const panel = (renderTick: number, onDateDismiss: (requestId: string) => void, picker = datePicker) => (
-      <BrowserPanel
+      <TestBrowserPanel
         status="recording"
         transportStatus="connected"
         startedAt={Date.now() - 12_000}
@@ -641,7 +718,7 @@ describe("BrowserPanel", () => {
     const onSelectPickerDismiss = vi.fn();
     const requestId = "c7daf0b9-d92a-44db-9967-db33d1516976";
     const { container } = render(
-      <BrowserPanel
+      <TestBrowserPanel
         status="recording"
         transportStatus="connected"
         startedAt={Date.now() - 12_000}
@@ -722,7 +799,7 @@ describe("BrowserPanel", () => {
       viewport: { width: 1280, height: 720 },
     };
     const panel = (renderTick: number, onDismiss: (requestId: string) => void, picker = selectPicker) => (
-      <BrowserPanel
+      <TestBrowserPanel
         status="recording"
         transportStatus="connected"
         startedAt={Date.now() - 12_000}

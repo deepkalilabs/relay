@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import "./workspace/workspace.css";
 import "@/features/recorder/recorder.css";
+import "@/features/replay/replay.css";
 import "@/features/browser/browser.css";
 import "@/features/workflow/workflow.css";
 import "@/components/ui/modal.css";

@@ -1,7 +1,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { RunWorkflowDialog } from "@/features/replay/RunWorkflowDialog";
+import { RunWorkflowDialog } from "@/features/replay";
 
 afterEach(cleanup);
 

@@ -2,8 +2,8 @@
 
 import { useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { useDismissibleOverlay } from "@/features/browser/useDismissibleOverlay";
-import type { DatePickerState } from "@/lib/recorder-session";
+import { useDismissibleOverlay } from "./useDismissibleOverlay";
+import type { DatePickerState } from "./model/browser.types";
 
 interface DatePickerOverlayProps {
   picker: DatePickerState;

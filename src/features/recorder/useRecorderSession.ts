@@ -1,17 +1,19 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type {
+  BrowserPageState,
+  DatePickerState,
+  PopupState,
+  SelectPickerState,
+} from "@/features/browser";
 import { useRecorderSocket } from "@/hooks/use-recorder-socket";
 import type { CaptchaStatus, ClientMessage, ReplayStatus, ServerMessage } from "@/lib/protocol";
 import { stepFromRecordedAction } from "@/lib/workflow/recorded-action";
 import type { Workflow, WorkflowStep } from "@/lib/workflow/domain";
 import type {
-  BrowserPageState,
-  DatePickerState,
-  PopupState,
   RecordingStatus,
   ReplayStepResultState,
-  SelectPickerState,
 } from "@/lib/recorder-session";
 import { getDisplayError, getDisplayStatus } from "@/lib/recorder-session";
 

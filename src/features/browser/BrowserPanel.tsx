@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -10,70 +10,40 @@ import {
   Globe2,
   LoaderCircle,
   LockKeyhole,
-  Play,
   RefreshCw,
   RotateCw,
 } from "lucide-react";
-import { RecorderControls } from "@/features/recorder/RecorderControls";
-import { ReplayControls } from "@/features/replay/ReplayControls";
-import { DatePickerOverlay } from "@/features/browser/DatePickerOverlay";
-import { SelectPickerOverlay } from "@/features/browser/SelectPickerOverlay";
-import type {
-  BrowserPageState,
-  DatePickerState,
-  PopupState,
-  RecordingStatus,
-  TransportStatus,
-  ReplayStepResultState,
-  SelectPickerState,
-} from "@/lib/recorder-session";
-import type { CaptchaStatus, ReplayStatus } from "@/lib/protocol";
+import { DatePickerOverlay } from "./DatePickerOverlay";
+import { SelectPickerOverlay } from "./SelectPickerOverlay";
+import type { BrowserActions, BrowserViewModel } from "./model/browser.types";
 
-interface BrowserPanelProps {
-  status: RecordingStatus;
-  transportStatus: TransportStatus;
-  startedAt: number | null;
-  liveViewUrl: string | null;
-  error: string | null;
-  navigationError: string | null;
-  navigationPending: boolean;
-  page: BrowserPageState | null;
-  popup: PopupState | null;
-  datePicker?: DatePickerState | null;
-  selectPicker?: SelectPickerState | null;
-  nativeSelects?: boolean;
-  captchaStatus?: CaptchaStatus | null;
-  onBack: () => void;
-  onForward: () => void;
-  onNavigate: (url: string) => void;
-  onReload: () => void;
-  onStart: () => void;
-  onStop: () => void;
-  onRetry: () => void;
-  onSwitchPopup: (pageId: string) => void;
-  onDateSelect?: (requestId: string, value: string) => void;
-  onDateDismiss?: (requestId: string) => void;
-  onSelectPickerSelect?: (requestId: string, value: string) => void;
-  onSelectPickerDismiss?: (requestId: string) => void;
-  onNativeSelectsChange?: (enabled: boolean) => void;
-  onCaptchaContinue?: () => void;
-  replayStatus?: ReplayStatus;
-  replayCurrentIndex?: number;
-  replayTotalSteps?: number;
-  replayCurrentResult?: ReplayStepResultState;
-  replayReadyCount?: number;
-  onReplay?: () => void;
-  onReplayPause?: () => void;
-  onReplayResume?: () => void;
-  onReplayRetry?: () => void;
-  onReplaySkip?: () => void;
-  onReplayTakeControl?: () => void;
-  onReplayStop?: () => void;
-  errorContext?: "recording" | "replay";
-  onDismissError?: () => void;
+export interface BrowserPanelAlert {
+  title: string;
+  message: string;
+  actionLabel: string;
+  onAction: () => void;
 }
 
-function BrowserAddress({ disabled, error, initialAddress, pending, onNavigate }: {
+export interface BrowserPanelProps {
+  model: BrowserViewModel;
+  actions: BrowserActions;
+  emptyState: {
+    title: string;
+    description: string;
+  };
+  toolbar?: ReactNode;
+  emptyActions?: ReactNode;
+  contentOverlay?: ReactNode;
+  alert?: BrowserPanelAlert | null;
+}
+
+function BrowserAddress({
+  disabled,
+  error,
+  initialAddress,
+  pending,
+  onNavigate,
+}: {
   disabled: boolean;
   error: string | null;
   initialAddress: string;
@@ -83,7 +53,15 @@ function BrowserAddress({ disabled, error, initialAddress, pending, onNavigate }
   const [address, setAddress] = useState(initialAddress);
   const inputId = useId();
   return (
-    <form className={`browser-address ${error ? "has-error" : ""}`} aria-label="Browser address" aria-busy={pending} onSubmit={(event) => { event.preventDefault(); if (!disabled && address.trim()) onNavigate(address); }}>
+    <form
+      className={`browser-address ${error ? "has-error" : ""}`}
+      aria-label="Browser address"
+      aria-busy={pending}
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (!disabled && address.trim()) onNavigate(address);
+      }}
+    >
       <LockKeyhole size={14} aria-hidden="true" />
       <label className="sr-only" htmlFor={inputId}>Web address</label>
       <input
@@ -102,7 +80,15 @@ function BrowserAddress({ disabled, error, initialAddress, pending, onNavigate }
   );
 }
 
-export function BrowserPanel({ status, transportStatus, startedAt, liveViewUrl, error, errorContext = "recording", onDismissError, navigationError, navigationPending, page, popup, datePicker, selectPicker, nativeSelects = false, captchaStatus = null, replayStatus = "idle", replayCurrentIndex = 0, replayTotalSteps = 0, replayCurrentResult, replayReadyCount = 0, onReplay, onReplayPause, onReplayResume, onReplayRetry, onReplaySkip, onReplayTakeControl, onReplayStop, onBack, onForward, onNavigate, onReload, onStart, onStop, onRetry, onSwitchPopup, onDateSelect, onDateDismiss, onSelectPickerSelect, onSelectPickerDismiss, onNativeSelectsChange, onCaptchaContinue }: BrowserPanelProps) {
+export function BrowserPanel({
+  model,
+  actions,
+  emptyState,
+  toolbar,
+  emptyActions,
+  contentOverlay,
+  alert,
+}: BrowserPanelProps) {
   const [loadedUrl, setLoadedUrl] = useState<string | null>(null);
   const captchaTitleId = useId();
   const captchaDescriptionId = useId();
@@ -110,21 +96,27 @@ export function BrowserPanel({ status, transportStatus, startedAt, liveViewUrl, 
   const liveViewRef = useRef<HTMLIFrameElement>(null);
   const captchaContinueRef = useRef<HTMLButtonElement>(null);
   const wasCaptchaLockedRef = useRef(false);
-  const restoreLiveViewFocus = () => requestAnimationFrame(() => liveViewRef.current?.focus());
-  const loading = Boolean(status === "starting" || replayStatus === "preparing" || (liveViewUrl && loadedUrl !== liveViewUrl));
-  const captchaLocked = captchaStatus === "solving";
-  const replayMode = ["preparing", "running", "pausing", "paused", "manual", "stopping"].includes(replayStatus);
-  const nativeSelectsDisabled = captchaLocked || !liveViewUrl || transportStatus !== "connected" || ["preparing", "running", "pausing", "paused", "stopping"].includes(replayStatus);
-  const navigationDisabled = captchaLocked || !liveViewUrl || navigationPending || (!["recording", "reconnecting"].includes(status) && replayStatus !== "manual");
-  const tabTitle = page?.title && page.title !== "about:blank" ? page.title : liveViewUrl ? "Browserbase" : "New cloud browser";
-  const pageAddress = page?.url === "about:blank" ? "" : page?.url ?? "";
-  const captchaNotice = captchaStatus === "solved"
+  const { datePicker, popup, selectPicker } = model;
+  const captchaLocked = model.captchaStatus === "solving";
+  const loading = Boolean(
+    model.preparing || (model.liveViewUrl && loadedUrl !== model.liveViewUrl),
+  );
+  const navigationDisabled = !model.navigation.enabled;
+  const tabTitle = model.page?.title && model.page.title !== "about:blank"
+    ? model.page.title
+    : model.liveViewUrl
+      ? "Browserbase"
+      : "New cloud browser";
+  const pageAddress = model.page?.url === "about:blank" ? "" : model.page?.url ?? "";
+  const captchaNotice = model.captchaStatus === "solved"
     ? "Verification solved. Recording resumed."
-    : captchaStatus === "timed_out"
+    : model.captchaStatus === "timed_out"
       ? "Verification wait timed out. Recording resumed."
-      : captchaStatus === "continued"
+      : model.captchaStatus === "continued"
         ? "Verification wait dismissed. Recording resumed."
         : null;
+
+  const restoreLiveViewFocus = () => requestAnimationFrame(() => liveViewRef.current?.focus());
 
   useEffect(() => {
     if (captchaLocked) {
@@ -135,9 +127,9 @@ export function BrowserPanel({ status, transportStatus, startedAt, liveViewUrl, 
     }
     if (!wasCaptchaLockedRef.current) return;
     wasCaptchaLockedRef.current = false;
-    if (status !== "recording" && status !== "reconnecting") return;
+    if (!model.restoreFocusAfterCaptcha) return;
     requestAnimationFrame(() => liveViewRef.current?.focus());
-  }, [captchaLocked, status]);
+  }, [captchaLocked, model.restoreFocusAfterCaptcha]);
 
   return (
     <section className="browser-panel" aria-labelledby="browser-title">
@@ -152,115 +144,173 @@ export function BrowserPanel({ status, transportStatus, startedAt, liveViewUrl, 
             className="native-dropdown-toggle"
             type="button"
             role="switch"
-            aria-checked={nativeSelects}
-            disabled={nativeSelectsDisabled}
-            onClick={() => onNativeSelectsChange?.(!nativeSelects)}
-            title={nativeSelects
+            aria-checked={model.nativeSelects}
+            disabled={!model.nativeSelectsEnabled}
+            onClick={() => actions.setNativeSelects(!model.nativeSelects)}
+            title={model.nativeSelects
               ? "Website dropdowns are active"
               : "Use the website's own dropdowns instead of the recorder picker"}
           >
             <ChevronsUpDown size={14} aria-hidden="true" />
-            <span className="native-dropdown-label">Use native <span className="native-dropdown-detail">dropdowns</span></span>
+            <span className="native-dropdown-label">
+              Use native <span className="native-dropdown-detail">dropdowns</span>
+            </span>
             <span className="native-dropdown-track" aria-hidden="true"><span /></span>
-            <span className="native-dropdown-state" aria-hidden="true">{nativeSelects ? "On" : "Off"}</span>
+            <span className="native-dropdown-state" aria-hidden="true">
+              {model.nativeSelects ? "On" : "Off"}
+            </span>
           </button>
         </div>
         <div className="browser-navigation">
           <div className="browser-nav-controls">
-            <button type="button" onClick={onBack} disabled={navigationDisabled} aria-label="Go back" title="Back"><ArrowLeft size={18} /></button>
-            <button type="button" onClick={onForward} disabled={navigationDisabled} aria-label="Go forward" title="Forward"><ArrowRight size={18} /></button>
-            <button type="button" onClick={onReload} disabled={navigationDisabled} aria-label="Reload page" title="Reload">
-              {navigationPending ? <LoaderCircle className="spin" size={17} /> : <RotateCw size={17} />}
+            <button
+              type="button"
+              onClick={actions.goBack}
+              disabled={navigationDisabled}
+              aria-label="Go back"
+              title="Back"
+            >
+              <ArrowLeft size={18} />
+            </button>
+            <button
+              type="button"
+              onClick={actions.goForward}
+              disabled={navigationDisabled}
+              aria-label="Go forward"
+              title="Forward"
+            >
+              <ArrowRight size={18} />
+            </button>
+            <button
+              type="button"
+              onClick={actions.reload}
+              disabled={navigationDisabled}
+              aria-label="Reload page"
+              title="Reload"
+            >
+              {model.navigation.pending
+                ? <LoaderCircle className="spin" size={17} />
+                : <RotateCw size={17} />}
             </button>
           </div>
           <BrowserAddress
-            key={`${page?.pageId ?? "none"}:${pageAddress}`}
+            key={`${model.page?.pageId ?? "none"}:${pageAddress}`}
             disabled={navigationDisabled}
-            error={navigationError}
+            error={model.navigation.error}
             initialAddress={pageAddress}
-            pending={navigationPending}
-            onNavigate={onNavigate}
+            pending={model.navigation.pending}
+            onNavigate={actions.navigate}
           />
-          {replayMode ? (
-            <ReplayControls
-              status={replayStatus}
-              currentIndex={replayCurrentIndex}
-              totalSteps={replayTotalSteps}
-              failed={replayCurrentResult?.status === "failed"}
-              phase={replayCurrentResult?.phase}
-              onPause={() => onReplayPause?.()}
-              onResume={() => onReplayResume?.()}
-              onRetry={() => onReplayRetry?.()}
-              onSkip={() => onReplaySkip?.()}
-              onTakeControl={() => onReplayTakeControl?.()}
-              onStop={() => onReplayStop?.()}
-            />
-          ) : <RecorderControls status={status} transportStatus={transportStatus} startedAt={startedAt} onStart={onStart} onStop={onStop} announce />}
+          {toolbar}
         </div>
-        {navigationError ? <div className="browser-address-error" role="alert">{navigationError}</div> : null}
+        {model.navigation.error
+          ? <div className="browser-address-error" role="alert">{model.navigation.error}</div>
+          : null}
       </div>
       <h2 id="browser-title" className="sr-only">Interactive cloud browser</h2>
       <div className="browser-content" ref={contentRef} aria-busy={captchaLocked || loading}>
-        {liveViewUrl ? (
+        {model.liveViewUrl ? (
           <iframe
             ref={liveViewRef}
             className={`live-view ${captchaLocked ? "captcha-locked" : ""}`}
-            src={liveViewUrl}
+            src={model.liveViewUrl}
             title="Interactive Browserbase browser"
             sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-downloads"
             allow="clipboard-read; clipboard-write"
             tabIndex={captchaLocked ? -1 : 0}
-            onLoad={() => setLoadedUrl(liveViewUrl)}
+            onLoad={() => setLoadedUrl(model.liveViewUrl)}
           />
         ) : (
           <div className="browser-empty">
             <span className="cloud-orbit"><Cloud size={30} aria-hidden="true" /></span>
-            <h2>{replayReadyCount ? "Workflow ready to replay" : "Start with a fresh cloud browser"}</h2>
-            <p>{replayReadyCount ? `${replayReadyCount} steps are loaded. Replay them, then keep recording in the same browser.` : "Your interactions become structured, editable workflow steps in real time."}</p>
-            {replayReadyCount ? <button className="button button-primary" type="button" onClick={onReplay} disabled={status === "configurationMissing" || transportStatus === "offline" || !["idle", "stopped", "error"].includes(status)}>Replay workflow <Play size={17} aria-hidden="true" /></button> : null}
-            <button className={`button ${replayReadyCount ? "button-secondary" : "button-primary"}`} type="button" onClick={onStart} disabled={status === "configurationMissing" || transportStatus === "offline"}>
-              Start recording <ArrowRight size={17} aria-hidden="true" />
-            </button>
-            <div className="privacy-note"><LockKeyhole size={14} /><span>Values are held in memory until you export.</span></div>
+            <h2>{emptyState.title}</h2>
+            <p>{emptyState.description}</p>
+            {emptyActions}
+            <div className="privacy-note">
+              <LockKeyhole size={14} />
+              <span>Values are held in memory until you export.</span>
+            </div>
           </div>
         )}
-        {loading ? <div className="browser-overlay" aria-live="polite"><LoaderCircle className="spin" size={24} /><strong>Preparing secure browser</strong><span>Connecting the recorder and Live View…</span></div> : null}
+        {loading ? (
+          <div className="browser-overlay" aria-live="polite">
+            <LoaderCircle className="spin" size={24} />
+            <strong>Preparing secure browser</strong>
+            <span>Connecting the recorder and Live View…</span>
+          </div>
+        ) : null}
         {captchaLocked ? (
           <div className="captcha-overlay">
-            <div className="captcha-card" role="dialog" aria-labelledby={captchaTitleId} aria-describedby={captchaDescriptionId}>
-              <span className="captcha-spinner" aria-hidden="true"><LoaderCircle className="spin" size={25} /></span>
+            <div
+              className="captcha-card"
+              role="dialog"
+              aria-labelledby={captchaTitleId}
+              aria-describedby={captchaDescriptionId}
+            >
+              <span className="captcha-spinner" aria-hidden="true">
+                <LoaderCircle className="spin" size={25} />
+              </span>
               <strong id={captchaTitleId}>Solving verification…</strong>
-              <p id={captchaDescriptionId}>Browserbase is handling the CAPTCHA. Recording will resume automatically.</p>
-              <button ref={captchaContinueRef} className="button button-secondary captcha-continue" type="button" onClick={onCaptchaContinue}>
+              <p id={captchaDescriptionId}>
+                Browserbase is handling the CAPTCHA. Recording will resume automatically.
+              </p>
+              <button
+                ref={captchaContinueRef}
+                className="button button-secondary captcha-continue"
+                type="button"
+                onClick={actions.continueAfterCaptcha}
+              >
                 Continue anyway
               </button>
             </div>
           </div>
         ) : null}
-        {captchaNotice ? <div className="captcha-notice" role="status" aria-live="polite">{captchaNotice}</div> : null}
-        <div className="sr-only" aria-live="polite">{captchaLocked ? "Browserbase verification solving started." : captchaNotice ?? ""}</div>
-        {status === "reconnecting" ? <div className="connection-banner"><RefreshCw className="spin" size={15} /> Reconnecting recorder transport…</div> : null}
-        {error ? <div className="error-card" role="alert"><AlertTriangle size={20} /><div><strong>{errorContext === "replay" ? "Replay needs attention" : "Browser session needs attention"}</strong><p>{error}</p><button className="text-button" type="button" onClick={errorContext === "replay" ? onDismissError : onRetry}>{errorContext === "replay" ? "Review workflow" : "Try a new recording"}</button></div></div> : null}
-        {popup ? <div className="popup-card" role="status"><div><strong>New tab opened</strong><span>{popup.title || popup.url}</span></div><button className="button button-secondary" type="button" onClick={() => onSwitchPopup(popup.pageId)}>Switch tab <ArrowRight size={16} /></button></div> : null}
-        {replayCurrentResult?.status === "failed" && replayCurrentResult.diagnostic ? (
-          <div className="replay-failure-card" role="alert">
-            <AlertTriangle size={20} aria-hidden="true" />
-            <div><strong>Replay paused on this step</strong><p>{replayCurrentResult.diagnostic.message}</p></div>
-            <div className="replay-failure-actions">
-              <button type="button" onClick={onReplayRetry}>Retry</button>
-              <button type="button" onClick={onReplaySkip}>Skip</button>
-              <button type="button" onClick={onReplayTakeControl}>Take control</button>
-              <button type="button" onClick={onReplayStop}>Stop</button>
+        {captchaNotice
+          ? <div className="captcha-notice" role="status" aria-live="polite">{captchaNotice}</div>
+          : null}
+        <div className="sr-only" aria-live="polite">
+          {captchaLocked ? "Browserbase verification solving started." : captchaNotice ?? ""}
+        </div>
+        {model.reconnecting ? (
+          <div className="connection-banner">
+            <RefreshCw className="spin" size={15} /> Reconnecting recorder transport…
+          </div>
+        ) : null}
+        {alert ? (
+          <div className="error-card" role="alert">
+            <AlertTriangle size={20} />
+            <div>
+              <strong>{alert.title}</strong>
+              <p>{alert.message}</p>
+              <button className="text-button" type="button" onClick={alert.onAction}>
+                {alert.actionLabel}
+              </button>
             </div>
           </div>
         ) : null}
+        {popup ? (
+          <div className="popup-card" role="status">
+            <div>
+              <strong>New tab opened</strong>
+              <span>{popup.title || popup.url}</span>
+            </div>
+            <button
+              className="button button-secondary"
+              type="button"
+              onClick={() => actions.switchPopup(popup.pageId)}
+            >
+              Switch tab <ArrowRight size={16} />
+            </button>
+          </div>
+        ) : null}
+        {contentOverlay}
         {datePicker ? (
           <DatePickerOverlay
             key={datePicker.requestId}
             picker={datePicker}
             containerRef={contentRef}
-            onSelect={(value) => onDateSelect?.(datePicker.requestId, value)}
-            onDismiss={() => onDateDismiss?.(datePicker.requestId)}
+            onSelect={(value) => actions.selectDate(datePicker.requestId, value)}
+            onDismiss={() => actions.dismissDatePicker(datePicker.requestId)}
           />
         ) : null}
         {selectPicker ? (
@@ -269,11 +319,11 @@ export function BrowserPanel({ status, transportStatus, startedAt, liveViewUrl, 
             picker={selectPicker}
             containerRef={contentRef}
             onSelect={(value) => {
-              onSelectPickerSelect?.(selectPicker.requestId, value);
+              actions.selectPickerOption(selectPicker.requestId, value);
               restoreLiveViewFocus();
             }}
             onDismiss={() => {
-              onSelectPickerDismiss?.(selectPicker.requestId);
+              actions.dismissSelectPicker(selectPicker.requestId);
               restoreLiveViewFocus();
             }}
           />

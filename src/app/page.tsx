@@ -1,4 +1,4 @@
-import { RecorderWorkspace } from "@/features/recorder/RecorderWorkspace";
+import { RecorderWorkspace } from "./workspace/RecorderWorkspace";
 
 export default function Home() {
   return <RecorderWorkspace />;

@@ -38,7 +38,7 @@ WebSocket sends semantic steps to the React workspace
 User edits the timeline and exports validated JSON
 ```
 
-The React client owns the workflow while the page is open. A custom Node server keeps Browserbase credentials out of the client, maintains the Playwright CDP connection, and streams sequenced recorder events over `/ws`.
+The React client owns the workflow while the page is open. The `app/workspace` layer composes the browser, recorder, replay, and workflow features through their public entry points. A custom Node server keeps Browserbase credentials out of the client, maintains the Playwright CDP connection, and streams sequenced recorder events over `/ws`.
 
 ## Repository structure
 
@@ -50,20 +50,23 @@ browser_replay/
 ├── src/
 │   ├── app/
 │   │   ├── fixture/               # Controlled pages used by E2E tests
+│   │   ├── workspace/             # Cross-feature composition and workspace policy
 │   │   ├── globals.css            # Global tokens, reset, and shared controls
 │   │   ├── layout.tsx             # Next.js root layout
 │   │   └── page.tsx               # Application entry page
 │   ├── components/
 │   │   └── ui/                    # Shared accessible UI primitives
 │   ├── features/
-│   │   ├── browser/               # Browserbase Live View and browser styles
-│   │   ├── recorder/              # App shell, session controller, and panel layout
+│   │   ├── browser/               # Live View, browser overlays, and browser-owned types
+│   │   ├── library/               # Saved-recording library presentation
+│   │   ├── recorder/              # Recorder session and transport controls
+│   │   ├── replay/                # Replay controls, recovery, and run dialog
 │   │   └── workflow/              # Timeline, step editor, dialogs, and styles
 │   ├── hooks/
 │   │   └── use-recorder-socket.ts # WebSocket lifecycle and recovery
 │   ├── lib/
 │   │   ├── protocol.ts            # Client/server message schemas
-│   │   ├── recorder-session.ts    # Shared recorder presentation state
+│   │   ├── recorder-session.ts    # Recorder/replay presentation state
 │   │   └── workflow/
 │   │       ├── export.ts          # JSON serialization and download
 │   │       ├── recorded-action.ts # Recorder-event conversion
@@ -87,6 +90,8 @@ browser_replay/
 ├── master_design.md               # Extended design document
 └── package.json                   # Commands and dependencies
 ```
+
+Each feature exposes a small `index.ts` API. Application composition may import those APIs, while feature internals use relative imports. ESLint prevents deep cross-feature imports, lower layers from importing `app`, and client modules from importing server implementations.
 
 ## Workflow model
 
