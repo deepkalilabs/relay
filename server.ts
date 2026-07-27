@@ -6,6 +6,8 @@ import { WebSocketServer, type WebSocket } from "ws";
 import { ClientMessageSchema } from "./src/lib/protocol";
 import { BrowserbaseProvider } from "./src/server/provider/browserbase";
 import { RecordingRuntime } from "./src/server/recorder/runtime";
+import { FileWorkflowRepository } from "./src/server/workflows/filesystem-repository";
+import { handleWorkflowApi } from "./src/server/workflows/http-router";
 
 loadEnvConfig(process.cwd());
 
@@ -14,8 +16,10 @@ const dev = process.env.NODE_ENV !== "production";
 const hostname = "127.0.0.1";
 const port = Number(process.env.PORT || 3000);
 let requestHandler: ((req: Parameters<typeof createServer>[0] extends never ? never : never) => void) | null = null;
+const workflowRepository = new FileWorkflowRepository();
 
-const server = createServer((req, res) => {
+const server = createServer(async (req, res) => {
+  if (await handleWorkflowApi(req, res, workflowRepository)) return;
   if (!requestHandler) {
     res.statusCode = 503;
     res.end("Starting…");
