@@ -1,15 +1,15 @@
-import type { LibraryRecording } from "../model/mockRecordings";
+import type { LibraryWorkflowItem } from "@/lib/workflow/library";
 import styles from "../LibraryScreen.module.css";
 
 interface RecordingListProps {
-  recordings: readonly LibraryRecording[];
-  selectedRecordingId: string;
-  onSelect: (recordingId: string) => void;
+  workflows: readonly LibraryWorkflowItem[];
+  selectedWorkflowId: string;
+  onSelect: (workflowId: string) => void;
 }
 
-function RecordingThumbnail({ recording }: { recording: LibraryRecording }) {
+function RecordingThumbnail() {
   return (
-    <span className={styles.thumbnail} data-preview={recording.preview} aria-hidden="true">
+    <span className={styles.thumbnail} aria-hidden="true">
       <span className={styles.thumbnailChrome}>
         <i />
         <i />
@@ -32,29 +32,40 @@ function RecordingThumbnail({ recording }: { recording: LibraryRecording }) {
   );
 }
 
-export function RecordingList({ recordings, selectedRecordingId, onSelect }: RecordingListProps) {
+function updatedLabel(updatedAt: string): string {
+  const elapsed = Math.max(0, Date.now() - new Date(updatedAt).getTime());
+  const minutes = Math.floor(elapsed / 60_000);
+  if (minutes < 1) return "Updated just now";
+  if (minutes < 60) return `Updated ${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `Updated ${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `Updated ${days}d ago`;
+}
+
+export function RecordingList({ workflows, selectedWorkflowId, onSelect }: RecordingListProps) {
   return (
-    <section className={styles.recordingList} aria-labelledby="recordings-heading">
-      <h2 id="recordings-heading" className={styles.listHeading}>
-        Recordings
+    <section className={styles.recordingList} aria-labelledby="workflows-heading">
+      <h2 id="workflows-heading" className={styles.listHeading}>
+        Workflows
       </h2>
       <ul className={styles.recordingItems}>
-        {recordings.map((recording) => {
-          const selected = recording.id === selectedRecordingId;
+        {workflows.map((workflow) => {
+          const selected = workflow.id === selectedWorkflowId;
           return (
-            <li className={styles.recordingItem} key={recording.id}>
+            <li className={styles.recordingItem} key={workflow.id}>
               <button
                 className={`${styles.recordingButton} ${selected ? styles.recordingButtonSelected : ""}`}
                 type="button"
-                aria-label={`Select ${recording.title} recording`}
+                aria-label={`Select ${workflow.name} workflow`}
                 aria-pressed={selected}
-                onClick={() => onSelect(recording.id)}
+                onClick={() => onSelect(workflow.id)}
               >
-                <RecordingThumbnail recording={recording} />
+                <RecordingThumbnail />
                 <span className={styles.recordingCopy}>
-                  <strong>{recording.title}</strong>
+                  <strong>{workflow.name}</strong>
                   <span>
-                    {recording.stepCount} steps · {recording.updatedLabel}
+                    {workflow.steps.length} steps · {updatedLabel(workflow.updatedAt)}
                   </span>
                 </span>
               </button>
@@ -65,3 +76,4 @@ export function RecordingList({ recordings, selectedRecordingId, onSelect }: Rec
     </section>
   );
 }
+

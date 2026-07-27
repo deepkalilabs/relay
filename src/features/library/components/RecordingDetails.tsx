@@ -1,14 +1,15 @@
-import { ArrowRight, Play } from "lucide-react";
-import type { LibraryRecording } from "../model/mockRecordings";
+import { ArrowRight } from "lucide-react";
+import Link from "next/link";
+import type { LibraryWorkflowItem } from "@/lib/workflow/library";
 import styles from "../LibraryScreen.module.css";
 
 interface RecordingDetailsProps {
-  recording: LibraryRecording;
+  workflow: LibraryWorkflowItem;
 }
 
-function MockBrowserPreview({ recording }: { recording: LibraryRecording }) {
+function MockBrowserPreview() {
   return (
-    <div className={styles.preview} data-preview={recording.preview} aria-hidden="true">
+    <div className={styles.preview} data-testid="static-workflow-preview" aria-hidden="true">
       <div className={styles.previewChrome}>
         <span className={styles.windowDots}>
           <i />
@@ -42,79 +43,50 @@ function MockBrowserPreview({ recording }: { recording: LibraryRecording }) {
         </div>
         <aside className={styles.orderSummary}>
           <strong>Order summary</strong>
-          <div>
-            <i />
-            <span />
-            <b />
-          </div>
-          <div>
-            <i />
-            <span />
-            <b />
-          </div>
-          <div>
-            <i />
-            <span />
-            <b />
-          </div>
-          <footer>
-            <strong>Total</strong>
-            <strong>$129.00</strong>
-          </footer>
+          <div><i /><span /><b /></div>
+          <div><i /><span /><b /></div>
+          <div><i /><span /><b /></div>
+          <footer><strong>Total</strong><strong>$129.00</strong></footer>
         </aside>
       </div>
     </div>
   );
 }
 
-export function RecordingDetails({ recording }: RecordingDetailsProps) {
+export function RecordingDetails({ workflow }: RecordingDetailsProps) {
+  const draft = workflow.status === "draft";
   return (
-    <section className={styles.details} aria-label="Recording details">
+    <section className={styles.details} aria-label="Workflow details">
       <header className={styles.detailsHeader}>
         <div>
-          <h2>{recording.title}</h2>
-          <p>
-            {recording.stepCount} steps · {recording.updatedLabel}
-          </p>
+          <span className={draft ? styles.statusBadge : "sr-only"}>{draft ? "Draft" : "Complete workflow"}</span>
+          <h2>{workflow.name}</h2>
+          <p>{workflow.steps.length} steps</p>
         </div>
         <div className={styles.detailActions}>
-          <button
-            className={styles.secondaryAction}
-            type="button"
-            disabled
-            aria-label={`Run ${recording.title}`}
-            aria-describedby="library-actions-note"
-          >
-            <Play size={16} aria-hidden="true" />
-            Run
-          </button>
-          <button
+          <Link
             className={styles.primaryAction}
-            type="button"
-            disabled
-            aria-label={`Open ${recording.title}`}
-            aria-describedby="library-actions-note"
+            href={`/workflows/${workflow.id}/edit`}
+            aria-label={`${draft ? "Continue editing" : "Edit workflow"} ${workflow.name}`}
           >
-            Open recording
+            {draft ? "Continue editing" : "Edit workflow"}
             <ArrowRight size={17} aria-hidden="true" />
-          </button>
+          </Link>
         </div>
       </header>
-      <MockBrowserPreview recording={recording} />
+      <MockBrowserPreview />
       <div className={styles.stepsSection}>
         <h3>Steps</h3>
         <ol className={styles.steps}>
-          {recording.steps.map((step, index) => (
+          {workflow.steps.map((step, index) => (
             <li key={step.id}>
               <span>{index + 1}</span>
-              <p>{step.label}</p>
+              <p>{step.name}</p>
             </li>
           ))}
         </ol>
       </div>
-      <p id="library-actions-note" className="sr-only">
-        This action is unavailable in the mock Library.
-      </p>
     </section>
   );
 }
+
