@@ -8,6 +8,8 @@
 .brand { margin: 0; display: flex; align-items: center; gap: 9px; font-size: 14px; font-weight: 700; white-space: nowrap; }
 .brand-mark { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 10px; color: var(--primary); background: var(--primary-soft); }
 .workspace-navbar-primary .icon-button { width: 40px; height: 40px; }
+.workspace-library-link { width: fit-content; min-height: 40px; padding: 0 8px; display: flex; align-items: center; gap: 8px; border-radius: var(--radius-sm); color: var(--primary); font-size: 13px; font-weight: 700; text-decoration: none; }
+.workspace-library-link:hover { color: var(--primary-hover); background: var(--primary-soft); }
 .workspace-workflow-name { position: relative; display: block; margin-top: 2px; }
 .workspace-workflow-name input { width: 100%; height: 36px; padding: 0 34px 0 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); color: var(--ink); font-weight: 600; background: var(--surface); }
 .workspace-workflow-name input:hover { border-color: var(--line-strong); background: var(--surface-muted); }

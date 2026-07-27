@@ -1,6 +1,7 @@
 "use client";
 
-import { ChevronRight, Download, Pencil, Play, Radio, Upload } from "lucide-react";
+import { ArrowLeft, ChevronRight, Download, Pencil, Play, Radio, Upload } from "lucide-react";
+import Link from "next/link";
 import { RecorderControls } from "@/features/recorder";
 import type { RecordingStatus, TransportStatus } from "@/lib/recorder-session";
 
@@ -150,6 +151,10 @@ export function WorkspaceNavbar({
           <Play size={18} aria-hidden="true" />
         </button>
       </div>
+      <Link className="workspace-library-link" href="/library">
+        <ArrowLeft size={17} aria-hidden="true" />
+        <span>Back to library</span>
+      </Link>
       <label className="workspace-workflow-name">
         <span className="sr-only">Workflow name</span>
         <input
