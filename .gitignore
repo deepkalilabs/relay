@@ -4,6 +4,7 @@ out/
 coverage/
 playwright-report/
 test-results/
+.data/
 .vercel/
 .env
 .env.local
