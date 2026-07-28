@@ -52,9 +52,6 @@
 .undo-toast button { min-width: 44px; min-height: 44px; padding: 0 10px; border: 0; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; color: #c8d7ff; background: transparent; font-weight: 700; }
 .undo-toast button:hover { color: white; background: rgb(255 255 255 / 10%); }
 .undo-toast-close { padding: 0 !important; color: #d5dbe5 !important; }
-.file-button { position: relative; cursor: pointer; }
-.file-button input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
-.file-button.disabled { opacity: .45; cursor: not-allowed; }
 @keyframes undo-toast-in { from { opacity: 0; transform: translate(-50%, 8px); } }
 
 @media (min-width: 1024px) and (max-width: 1439px) {

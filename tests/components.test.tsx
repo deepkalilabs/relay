@@ -1,4 +1,4 @@
-import { act, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { BrowserPanel, type BrowserActions } from "@/features/browser";
@@ -662,9 +662,8 @@ describe("BrowserPanel", () => {
     expect(panel.getByRole("dialog", { name: "Choose date" })).toBeInTheDocument();
     await user.selectOptions(panel.getByRole("combobox", { name: "Month" }), "August");
     const year = panel.getByRole("textbox", { name: "Year" });
-    await user.clear(year);
-    await user.type(year, "2027");
-    await user.tab();
+    fireEvent.change(year, { target: { value: "2027" } });
+    fireEvent.blur(year);
     await user.click(panel.getByRole("button", { name: "August 22, 2027" }));
     expect(onDateSelect).toHaveBeenCalledWith("c7daf0b9-d92a-44db-9967-db33d1516976", "2027-08-22");
 

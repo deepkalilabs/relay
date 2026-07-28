@@ -208,6 +208,24 @@ describe("workflow reducer", () => {
     expect(state.dirty).toBe(false);
   });
 
+  it("keeps edits that arrive while an explicit save is in flight", () => {
+    let state = initialWorkflowState();
+    state = workflowReducer(state, { type: "append", step: makeStep("First", 0) });
+    const baseWorkflow = state.workflow;
+    const saved = {
+      ...baseWorkflow,
+      revision: 2,
+      updatedAt: new Date(Date.now() + 1_000).toISOString(),
+    };
+    state = workflowReducer(state, { type: "append", step: makeStep("Arrived during save", 1) });
+
+    state = workflowReducer(state, { type: "saved", workflow: saved, baseWorkflow });
+
+    expect(state.workflow.revision).toBe(2);
+    expect(state.workflow.steps.map((step) => step.name)).toEqual(["First", "Arrived during save"]);
+    expect(state.dirty).toBe(true);
+  });
+
   it("dismisses a pending delete without restoring the step", () => {
     let state = initialWorkflowState();
     const step = makeStep("Navigate", 0);

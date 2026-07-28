@@ -97,7 +97,7 @@ test("shows a revision conflict and can reload the saved version", async ({ page
   await page.getByRole("textbox", { name: /workflow name/i }).fill("Local title");
   await page.getByRole("button", { name: "Save workflow" }).click();
   await expect(page.getByText("Changed elsewhere")).toBeVisible();
-  await expect(page.getByRole("alert")).toContainText("changed since it was loaded");
+  await expect(page.locator(".workspace-persistence-alert")).toContainText("changed since it was loaded");
 
   await page.getByRole("button", { name: "Reload saved version" }).click();
   await expect(page.getByRole("textbox", { name: /workflow name/i })).toHaveValue("Changed on disk");
@@ -107,7 +107,7 @@ test("shows a revision conflict and can reload the saved version", async ({ page
 test("shows a load failure for an unknown workflow", async ({ page }) => {
   await page.goto("/workflows/00000000-0000-4000-8000-000000000000/edit");
   await expect(page.getByRole("heading", { name: "Workflow could not be loaded" })).toBeVisible();
-  await expect(page.getByRole("alert")).toContainText("not found");
+  await expect(page.getByText("The workflow was not found.")).toBeVisible();
 });
 
 test("keeps the desktop workspace within the 1024px viewport", async ({ page, request }) => {

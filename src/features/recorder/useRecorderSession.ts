@@ -304,12 +304,6 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
     }
   };
 
-  const startAfterDiscard = () => {
-    const command = sessionStartCommand();
-    resetSessionState();
-    send(command);
-  };
-
   const stopRecording = () => {
     setStatus("stopping");
     send({ type: "session.stop" });
@@ -418,7 +412,6 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
     selectPickerOption,
     dismissSelectPicker,
     setNativeSelects,
-    startAfterDiscard,
     startReplay,
     startRecording,
     stopRecording,

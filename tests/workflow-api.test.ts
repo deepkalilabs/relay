@@ -5,14 +5,15 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { FileWorkflowRepository } from "@/server/workflows/filesystem-repository";
 import { handleWorkflowApi } from "@/server/workflows/http-router";
+import type { WorkflowRepository } from "@/server/workflows/repository";
 
 const servers: Server[] = [];
 const directories: string[] = [];
 
-async function api() {
+async function api(repositoryOverride?: WorkflowRepository) {
   const rootDir = await mkdtemp(join(tmpdir(), "memory-recorder-api-"));
   directories.push(rootDir);
-  const repository = new FileWorkflowRepository(rootDir);
+  const repository = repositoryOverride ?? new FileWorkflowRepository(rootDir);
   const server = createServer((request, response) => {
     void handleWorkflowApi(request, response, repository).then((handled) => {
       if (!handled) {
@@ -124,5 +125,26 @@ describe("workflow HTTP API", () => {
     expect(invalid.status).toBe(400);
     expect(missing.status).toBe(404);
     expect(finish.status).toBe(400);
+  });
+
+  it("returns a non-sensitive 500 response when storage fails", async () => {
+    const failure = async () => {
+      throw new Error("/private/workflows/secret-name.json could not be read");
+    };
+    const repository: WorkflowRepository = {
+      list: failure,
+      create: failure,
+      get: failure,
+      save: failure,
+      finish: failure,
+    };
+    const { url } = await api(repository);
+
+    const response = await fetch(`${url}/api/workflows`);
+    const body = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(body).toEqual({ error: "The workflow storage operation failed." });
+    expect(JSON.stringify(body)).not.toContain("secret-name");
   });
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { BrowserActions, BrowserPanelAlert, BrowserViewModel } from "@/features/browser";
 import { useRecorderSession } from "@/features/recorder";
@@ -18,6 +18,7 @@ type PersistenceStatus = "loading" | "ready" | "saving" | "error" | "conflict";
 export function useWorkspaceController(workflowId: string) {
   const router = useRouter();
   const [workflowState, dispatch] = useReducer(workflowReducer, undefined, initialWorkflowState);
+  const workflowStateRef = useRef(workflowState);
   const [manualOpen, setManualOpen] = useState(false);
   const [runDialogOpen, setRunDialogOpen] = useState(false);
   const [confirmation, setConfirmation] = useState<Confirmation>(null);
@@ -26,6 +27,10 @@ export function useWorkspaceController(workflowId: string) {
   const [persistenceStatus, setPersistenceStatus] = useState<PersistenceStatus>("loading");
   const [persistenceError, setPersistenceError] = useState<string | null>(null);
   const [workflowLoaded, setWorkflowLoaded] = useState(false);
+
+  useEffect(() => {
+    workflowStateRef.current = workflowState;
+  }, [workflowState]);
 
   const onSessionStarted = useCallback((sessionId: string) => {
     dispatch({ type: "setSessionId", sessionId });
@@ -157,7 +162,8 @@ export function useWorkspaceController(workflowId: string) {
   };
 
   const saveWorkflow = async () => {
-    const parsed = WorkflowSchema.safeParse(workflowState.workflow);
+    const baseWorkflow = workflowState.workflow;
+    const parsed = WorkflowSchema.safeParse(baseWorkflow);
     if (!parsed.success) {
       setPersistenceStatus("error");
       setPersistenceError(`Workflow save is blocked: ${parsed.error.issues[0]?.message}`);
@@ -167,7 +173,7 @@ export function useWorkspaceController(workflowId: string) {
     setPersistenceError(null);
     try {
       const saved = await workflowEditorClient.save(workflowId, parsed.data, parsed.data.revision);
-      dispatch({ type: "saved", workflow: saved });
+      dispatch({ type: "saved", workflow: saved, baseWorkflow });
       setPersistenceStatus("ready");
       setAnnouncement("Workflow saved.");
     } catch (error) {
@@ -183,18 +189,19 @@ export function useWorkspaceController(workflowId: string) {
       setPersistenceError("Add at least one step before finishing this workflow.");
       return;
     }
-    const parsed = WorkflowSchema.safeParse(workflowState.workflow);
-    if (!parsed.success) {
-      setPersistenceStatus("error");
-      setPersistenceError(`Workflow finish is blocked: ${parsed.error.issues[0]?.message}`);
-      return;
-    }
     setPersistenceStatus("saving");
     setPersistenceError(null);
     try {
       await session.stopRecordingAndWait();
+      const baseWorkflow = workflowStateRef.current.workflow;
+      const parsed = WorkflowSchema.safeParse(baseWorkflow);
+      if (!parsed.success) {
+        setPersistenceStatus("error");
+        setPersistenceError(`Workflow finish is blocked: ${parsed.error.issues[0]?.message}`);
+        return;
+      }
       const saved = await workflowEditorClient.finish(workflowId, parsed.data, parsed.data.revision);
-      dispatch({ type: "saved", workflow: saved });
+      dispatch({ type: "saved", workflow: saved, baseWorkflow });
       setAnnouncement("Recording finished.");
       router.push(`/library?selected=${encodeURIComponent(saved.id)}`);
     } catch (error) {
