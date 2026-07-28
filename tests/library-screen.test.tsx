@@ -82,6 +82,30 @@ describe("LibraryScreen", () => {
     expect(screen.getByRole("heading", { name: "Checkout flow" })).toBeInTheDocument();
   });
 
+  it("assigns stable thumbnail variants from normalized workflow titles", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<LibraryScreen client={client()} />);
+    const checkoutButton = await screen.findByRole("button", { name: "Select Checkout flow workflow" });
+    const supportButton = screen.getByRole("button", { name: "Select Create support ticket workflow" });
+
+    expect(checkoutButton.querySelector("[data-variant]")).toHaveAttribute("data-variant", "article");
+    expect(supportButton.querySelector("[data-variant]")).toHaveAttribute("data-variant", "calendar");
+
+    await user.type(screen.getByRole("searchbox", { name: "Search workflows" }), "checkout");
+    expect(screen.getByRole("button", { name: "Select Checkout flow workflow" }).querySelector("[data-variant]"))
+      .toHaveAttribute("data-variant", "article");
+
+    const renamedWorkflows = workflows.map((workflow) => (
+      workflow.id === "checkout-flow" ? { ...workflow, name: "Renamed checkout" } : workflow
+    ));
+    rerender(<LibraryScreen client={client({
+      list: vi.fn(async () => ({ workflows: renamedWorkflows, invalidFileCount: 0 })),
+    })} />);
+
+    const renamedButton = await screen.findByRole("button", { name: "Select Renamed checkout workflow" });
+    expect(renamedButton.querySelector("[data-variant]")).toHaveAttribute("data-variant", "table");
+  });
+
   it("creates a durable draft before navigating to its editor", async () => {
     const user = userEvent.setup();
     const created = createWorkflow();

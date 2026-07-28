@@ -7,26 +7,45 @@ interface RecordingListProps {
   onSelect: (workflowId: string) => void;
 }
 
-function RecordingThumbnail() {
+const THUMBNAIL_VARIANTS = [
+  "search",
+  "analytics",
+  "products",
+  "checkout",
+  "calendar",
+  "inbox",
+  "profile",
+  "table",
+  "settings",
+  "article",
+] as const;
+
+function thumbnailVariantForTitle(title: string): (typeof THUMBNAIL_VARIANTS)[number] {
+  let hash = 2_166_136_261;
+  for (const character of title.normalize("NFKC").trim().toLowerCase()) {
+    hash ^= character.codePointAt(0) ?? 0;
+    hash = Math.imul(hash, 16_777_619);
+  }
+  return THUMBNAIL_VARIANTS[(hash >>> 0) % THUMBNAIL_VARIANTS.length];
+}
+
+function RecordingThumbnail({ title }: { title: string }) {
   return (
-    <span className={styles.thumbnail} aria-hidden="true">
-      <span className={styles.thumbnailChrome}>
+    <span className="workflow-thumb" data-variant={thumbnailVariantForTitle(title)} aria-hidden="true">
+      <span className="workflow-thumb__chrome">
         <i />
         <i />
         <i />
       </span>
-      <span className={styles.thumbnailCanvas}>
-        <span className={styles.thumbnailRail} />
-        <span className={styles.thumbnailContent}>
-          <i />
-          <i />
-          <i />
-          <span>
-            <b />
-            <b />
-            <b />
-          </span>
-        </span>
+      <span className="workflow-thumb__canvas">
+        <i />
+        <i />
+        <i />
+        <i />
+        <i />
+        <i />
+        <i />
+        <i />
       </span>
     </span>
   );
@@ -61,7 +80,7 @@ export function RecordingList({ workflows, selectedWorkflowId, onSelect }: Recor
                 aria-pressed={selected}
                 onClick={() => onSelect(workflow.id)}
               >
-                <RecordingThumbnail />
+                <RecordingThumbnail title={workflow.name} />
                 <span className={styles.recordingCopy}>
                   <strong>{workflow.name}</strong>
                   <span>

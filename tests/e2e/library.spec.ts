@@ -30,16 +30,20 @@ test("shows filesystem workflows with a static preview, search, and local select
   await page.goto(`/library?selected=${first.id}`);
 
   await expect(page.getByRole("heading", { name: "Library", level: 1 })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Select Checkout flow workflow" })).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
+  const checkoutButton = page.getByRole("button", { name: "Select Checkout flow workflow" });
+  await expect(checkoutButton).toHaveAttribute("aria-pressed", "true");
+  const checkoutThumbnail = checkoutButton.locator(".workflow-thumb");
+  await expect(checkoutThumbnail).toHaveAttribute("data-variant", "article");
+  await expect(checkoutThumbnail).toHaveCSS("width", "124px");
+  await expect(checkoutThumbnail).toHaveCSS("height", "70px");
   await expect(page.getByTestId("static-workflow-preview")).toBeVisible();
   await expect(page.getByText("Enter contact information")).toBeVisible();
   await expect(page.getByRole("link", { name: "Continue editing Checkout flow" })).toBeVisible();
 
   await page.getByRole("searchbox", { name: "Search workflows" }).fill("weekly");
-  await expect(page.getByRole("button", { name: "Select Weekly analytics export workflow" })).toBeVisible();
+  const analyticsButton = page.getByRole("button", { name: "Select Weekly analytics export workflow" });
+  await expect(analyticsButton).toBeVisible();
+  await expect(analyticsButton.locator(".workflow-thumb")).toHaveAttribute("data-variant", "calendar");
   await expect(page.getByRole("button", { name: "Select Checkout flow workflow" })).toHaveCount(0);
 
   const accessibility = await new AxeBuilder({ page }).analyze();
