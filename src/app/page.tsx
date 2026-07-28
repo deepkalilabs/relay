@@ -1,5 +1,5 @@
-import { RecorderWorkspace } from "./workspace/RecorderWorkspace";
+import { redirect } from "next/navigation";
 
 export default function Home() {
-  return <RecorderWorkspace />;
+  redirect("/library");
 }

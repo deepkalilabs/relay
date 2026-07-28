@@ -1,4 +1,4 @@
-import { act, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { BrowserPanel, type BrowserActions } from "@/features/browser";
@@ -91,6 +91,59 @@ describe("WorkspaceNavbar", () => {
     rerender(<WorkspaceNavbar collapsed={false} workflowName="Checkout" status="idle" transportStatus="connected" stepCount={1} onNameChange={onNameChange} onExpand={vi.fn()} onStart={vi.fn()} onStop={vi.fn()} onExport={onExport} />);
     await user.click(screen.getByRole("button", { name: /export/i }));
     expect(onExport).toHaveBeenCalledOnce();
+  });
+
+  it("shows explicit save state and only offers finish for drafts", async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn();
+    const onFinish = vi.fn();
+    const { container, rerender } = render(
+      <WorkspaceNavbar
+        collapsed={false}
+        workflowName="Checkout"
+        workflowStatus="draft"
+        saveState="unsaved"
+        status="idle"
+        transportStatus="connected"
+        stepCount={1}
+        onNameChange={vi.fn()}
+        onExpand={vi.fn()}
+        onStart={vi.fn()}
+        onStop={vi.fn()}
+        onExport={vi.fn()}
+        onSave={onSave}
+        onFinish={onFinish}
+      />,
+    );
+    const navbar = within(container);
+
+    expect(navbar.getByText("Unsaved changes")).toBeInTheDocument();
+    await user.click(navbar.getByRole("button", { name: "Save workflow" }));
+    await user.click(navbar.getByRole("button", { name: "Finish recording" }));
+    expect(onSave).toHaveBeenCalledOnce();
+    expect(onFinish).toHaveBeenCalledOnce();
+    expect(navbar.queryByLabelText("Import workflow")).not.toBeInTheDocument();
+
+    rerender(
+      <WorkspaceNavbar
+        collapsed={false}
+        workflowName="Checkout"
+        workflowStatus="complete"
+        saveState="saved"
+        status="idle"
+        transportStatus="connected"
+        stepCount={1}
+        onNameChange={vi.fn()}
+        onExpand={vi.fn()}
+        onStart={vi.fn()}
+        onStop={vi.fn()}
+        onExport={vi.fn()}
+        onSave={onSave}
+        onFinish={onFinish}
+      />,
+    );
+    expect(navbar.getByText("Saved")).toBeInTheDocument();
+    expect(navbar.queryByRole("button", { name: "Finish recording" })).not.toBeInTheDocument();
   });
 
   it("keeps core controls available in the collapsed rail", async () => {
@@ -609,9 +662,8 @@ describe("BrowserPanel", () => {
     expect(panel.getByRole("dialog", { name: "Choose date" })).toBeInTheDocument();
     await user.selectOptions(panel.getByRole("combobox", { name: "Month" }), "August");
     const year = panel.getByRole("textbox", { name: "Year" });
-    await user.clear(year);
-    await user.type(year, "2027");
-    await user.tab();
+    fireEvent.change(year, { target: { value: "2027" } });
+    fireEvent.blur(year);
     await user.click(panel.getByRole("button", { name: "August 22, 2027" }));
     expect(onDateSelect).toHaveBeenCalledWith("c7daf0b9-d92a-44db-9967-db33d1516976", "2027-08-22");
 

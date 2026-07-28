@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { RecordedActionSchema } from "@/lib/workflow/recorded-action";
-import { WorkflowSchema } from "@/lib/workflow/schema";
+import { CompatibleWorkflowSchema } from "@/lib/workflow/schema";
 
 const PickerRequestIdSchema = z.string().uuid();
 
@@ -20,7 +20,7 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("select.picker.dismiss"), requestId: PickerRequestIdSchema }),
   z.object({ type: z.literal("select.native.set"), enabled: z.boolean() }),
   z.object({ type: z.literal("captcha.continue"), pageId: z.string().min(1) }),
-  z.object({ type: z.literal("replay.start"), workflow: WorkflowSchema, startStepId: z.string().optional(), nativeSelects: z.boolean() }),
+  z.object({ type: z.literal("replay.start"), workflow: CompatibleWorkflowSchema, startStepId: z.string().optional(), nativeSelects: z.boolean() }),
   z.object({ type: z.literal("replay.pause") }),
   z.object({ type: z.literal("replay.resume") }),
   z.object({ type: z.literal("replay.retry") }),

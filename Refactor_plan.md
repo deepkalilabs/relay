@@ -6,6 +6,20 @@ This plan applies the frontend engineering inspection checklist to the current r
 
 The repository has a solid base. TypeScript strict mode is enabled, the application has a documented setup path, workflow data is modeled explicitly, untrusted inputs are validated with Zod, dependencies are locked with `package-lock.json`, and the test suite covers important recorder and replay behavior. The main refactor opportunity is to turn the existing informal boundaries into enforceable ones and reduce the amount of application behavior coordinated by a few large files.
 
+## Current status
+
+Phase 1.1–1.3 were completed and merged in [PR #2](https://github.com/boblancer/relay/pull/2). Cross-feature composition now lives in `src/app/workspace`, features expose narrow public APIs, import direction is enforced by ESLint, and browser presentation no longer owns recorder or replay controls. Phase 1.4 remains the next unfinished step.
+
+Verification after Phase 1.1–1.3:
+
+- Type-check: passed.
+- Lint: passed with zero warnings.
+- Unit/component tests: 107 passed across 11 files.
+- Production build: passed.
+- Local Playwright E2E: 25 passed; the paid Browserbase smoke test was skipped as designed.
+
+The completed work preserved workflow schema `1.0`, WebSocket messages, user workflows, accessible names, focus behavior, and visual layout.
+
 ## Inspection snapshot
 
 ### What is already strong
@@ -21,7 +35,7 @@ The repository has a solid base. TypeScript strict mode is enabled, the applicat
 - Server provider access is behind `BrowserProvider`.
 - Tests cover reducer behavior, schema/import behavior, session event handling, UI state, accessibility, recorder injection, navigation, replay recovery, and the Browserbase adapter.
 
-### Verification observed during inspection
+### Original verification baseline
 
 - Type-check: passed.
 - Lint: passed with zero warnings.
@@ -29,22 +43,22 @@ The repository has a solid base. TypeScript strict mode is enabled, the applicat
 - Local Playwright E2E: 22 passed; the paid Browserbase smoke test was skipped as designed.
 - Production build: not conclusively verified. A development process was using `.next`, and a later build attempt was interrupted before completion.
 
-These results are a baseline, not permission to weaken tests during extraction.
+These original results remain a historical baseline, not permission to weaken tests during later extraction.
 
 ### Main findings
 
-| Priority | Area                              | Evidence                                                                                                                                                                          | Consequence                                                                                                         |
-| -------- | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| P1       | Application composition           | `src/app/page.tsx` delegates to `features/recorder/RecorderWorkspace.tsx`, which imports browser, replay, workflow, recorder, shared UI, and persistence modules.                 | The recorder feature acts as the application layer, so feature ownership and dependency direction are unclear.      |
-| P1       | Cross-feature imports             | `BrowserPanel.tsx` imports recorder and replay controls directly. Workflow UI imports recorder session result types.                                                              | Browser, recorder, replay, and workflow features cannot evolve or be removed independently.                         |
-| P1       | Session state ownership           | `useRecorderSession.ts` contains roughly twenty independent state values, a large server-message switch, command dispatch, timers, derived display state, and reset logic.        | Valid state combinations are implicit, transition logic is difficult to audit, and duplicated reset code can drift. |
-| P1       | Oversized coordinators            | `RecorderWorkspace.tsx` is 335 lines and `BrowserPanel.tsx` is 284 lines with a very broad prop contract.                                                                         | Presentation, orchestration, policy, and side effects are mixed, making focused tests and replacement harder.       |
-| P1       | Unsafe editor updates             | `StepEditor.tsx` repeatedly casts partially updated objects to `WorkflowStep`.                                                                                                    | The discriminated union is bypassed at the exact boundary where users mutate workflow data.                         |
-| P2       | Protocol cohesion                 | `src/lib/protocol.ts` contains session, browser, picker, CAPTCHA, replay, diagnostics, and transport envelopes in one schema.                                                     | A change to one message family requires touching a global protocol module.                                          |
-| P2       | Server orchestration              | `RecordingRuntime` is about 970 lines and owns session lifecycle, pages, recorder installation, CAPTCHA state, pickers, navigation, replay coordination, sequencing, and cleanup. | Server behavior is well tested but expensive to understand and risky to change.                                     |
-| P2       | Replay engine cohesion            | `engine.ts` is about 627 lines and combines preflight, frame/locator resolution, action execution, settling, wait conditions, recovery, and run orchestration.                    | Replay policies cannot be tested or changed independently.                                                          |
-| P2       | Injected recorder maintainability | `injected.ts` is a roughly 558-line raw script string.                                                                                                                            | Logic inside the string receives less direct TypeScript, lint, and modularity support than normal source files.     |
-| P2       | Test organization                 | Several test files are very large, including navigation, component, replay, and recorder-fixture suites.                                                                          | Coverage is strong, but ownership and failure localization will worsen as features grow.                            |
+| Priority | Status              | Area                              | Current evidence                                                                                                                                                                         | Remaining consequence                                                                                               |
+| -------- | ------------------- | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| P1       | Resolved in PR #2   | Application composition           | `src/app/page.tsx` renders the app-owned workspace, and `useWorkspaceController` exposes grouped browser, recorder, replay, workflow, layout, and dialog models/actions.                 | None for ownership; further render-tree decomposition remains Phase 3 work.                                         |
+| P1       | Resolved in PR #2   | Cross-feature imports             | Browser, recorder, replay, and workflow expose public `index.ts` APIs. ESLint rejects deep cross-feature imports and lower-layer imports from `app`.                                    | Continue extending features through their public APIs.                                                              |
+| P1       | Open                | Session state ownership           | `useRecorderSession.ts` still coordinates many independent state values, server messages, timers, commands, derived display state, and reset logic.                                    | Valid state combinations remain implicit, and duplicated transition logic can drift.                               |
+| P1       | Partially addressed | Oversized coordinators            | Workspace policy moved into `useWorkspaceController`, and `BrowserPanel` now uses grouped props and slots; the workspace and browser render trees still need the Phase 3 component split. | Focused presentation units and controller tests are still needed.                                                   |
+| P1       | Open                | Unsafe editor updates             | `StepEditor.tsx` still casts partially updated objects to `WorkflowStep`.                                                                                                               | The discriminated union remains bypassed at the user-edit boundary.                                                 |
+| P2       | Open                | Protocol cohesion                 | `src/lib/protocol.ts` still contains session, browser, picker, CAPTCHA, replay, diagnostics, and transport envelopes in one schema.                                                     | A change to one message family requires touching a global protocol module.                                          |
+| P2       | Open                | Server orchestration              | `RecordingRuntime` still owns session lifecycle, pages, recorder installation, CAPTCHA state, pickers, navigation, replay coordination, sequencing, and cleanup.                        | Server behavior remains expensive to understand and risky to change.                                                |
+| P2       | Open                | Replay engine cohesion            | `engine.ts` still combines preflight, frame/locator resolution, action execution, settling, wait conditions, recovery, and run orchestration.                                         | Replay policies cannot yet be tested or changed independently.                                                      |
+| P2       | Open                | Injected recorder maintainability | `injected.ts` remains a large raw script string.                                                                                                                                         | Logic inside the string receives less direct TypeScript, lint, and modularity support than normal source files.     |
+| P2       | Open                | Test organization                 | Several test files remain large, including navigation, component, replay, and recorder-fixture suites.                                                                                  | Coverage is strong, but ownership and failure localization will worsen as features grow.                            |
 
 ## Target dependency model
 
@@ -133,54 +147,61 @@ This is a destination, not a request for one large file-moving change. Move code
 
 ## Phased implementation
 
-## Phase 1 — Establish application and feature boundaries
+## Phase 1 — Establish application and feature boundaries (in progress)
 
-### 1.1 Move workspace composition into `app`
+### 1.1 Move workspace composition into `app` — Completed
 
-- Move the cross-feature orchestration responsibility from `features/recorder/RecorderWorkspace.tsx` to `app/workspace/RecorderWorkspace.tsx`.
-- Extract non-rendering coordination into `useWorkspaceController.ts`.
-- Keep `src/app/page.tsx` as the route entry and render the app-owned workspace.
-- Leave recorder-specific controls and session behavior inside `features/recorder`.
+**Status:** Completed and merged in PR #2.
 
-The app layer should be the only place that knows the complete arrangement of browser, workflow, recorder, and replay features.
-
-Acceptance criteria:
-
-- Recorder code no longer imports workflow or browser feature internals.
-- Removing replay UI does not require editing recorder model code.
-- The workspace component primarily composes feature views and maps controller state to props.
-
-### 1.2 Add feature public APIs
-
-- Add a small `index.ts` to each feature.
-- Export only supported components, hooks, types, and actions.
-- Replace imports of feature-internal paths with public feature imports.
-- Add ESLint restricted-import rules or an equivalent boundary check:
-  - `shared` cannot import `features` or `app`;
-  - a feature cannot import another feature’s internals;
-  - client code cannot import `server`;
-  - `app` may compose feature public APIs.
+- Moved `RecorderWorkspace`, `WorkspaceNavbar`, and `useWorkspacePanels` from `features/recorder` to `app/workspace`.
+- Added `useWorkspaceController` as the owner of workflow state, session effects, derived locks, import/export policy, replay requests, dialogs, and intent handling.
+- Exposed grouped browser, recorder, replay, workflow, layout, and dialog models/actions instead of leaking the broad recorder session into composition.
+- Kept `src/app/page.tsx` as the route entry and changed it to render the app-owned workspace.
+- Left recorder controls and `useRecorderSession` inside `features/recorder`.
 
 Acceptance criteria:
 
-- Dependency direction is mechanically checked.
-- Circular feature dependencies are absent.
-- Shared folders contain code used by more than one owner, not displaced feature code.
+- [x] Recorder code no longer imports workflow or browser feature internals.
+- [x] Removing replay UI does not require editing recorder model code.
+- [x] The workspace component primarily composes feature views and maps controller groups to props.
 
-### 1.3 Remove browser-to-recorder and browser-to-replay coupling
+### 1.2 Add feature public APIs — Completed
 
-- Make `BrowserPanel` responsible for browser chrome, navigation, Live View, and browser overlays.
-- Pass recorder/replay transport controls through an intent-based slot such as `toolbar` or compose them beside the browser view in the app layer.
-- Move replay-failure actions to replay-owned presentation or pass a replay status panel as a slot.
-- Define browser-owned picker and page-state types in the browser feature rather than `lib/recorder-session`.
+**Status:** Completed and merged in PR #2.
+
+- Added narrow public `index.ts` entry points for browser, recorder, replay, and workflow.
+- Converted imports outside each feature to `@/features/<feature>` and kept same-feature imports relative.
+- Updated tests to consume public feature APIs.
+- Added ESLint restrictions that prevent deep cross-feature imports, imports from lower layers into `app`, and client imports from `server`.
+- Preserved the root-layout exception required for global feature CSS imports.
+- Removed old deep-path modules after consumers migrated; no compatibility re-exports were added.
 
 Acceptance criteria:
 
-- `features/browser` imports neither `features/recorder` nor `features/replay`.
-- Browser rendering can be tested with simple browser-view props.
-- Recorder and replay controls can change without editing browser internals.
+- [x] Dependency direction is mechanically checked by ESLint.
+- [x] Circular feature dependencies are absent.
+- [x] Shared folders did not receive displaced feature code.
 
-### 1.4 Put files under their actual owners
+### 1.3 Remove browser-to-recorder and browser-to-replay coupling — Completed
+
+**Status:** Completed and merged in PR #2.
+
+- Added browser-owned page, popup, date-picker, and select-picker state types under `features/browser/model`.
+- Replaced the broad scalar `BrowserPanel` contract with grouped `BrowserViewModel` and `BrowserActions` interfaces.
+- Added `toolbar`, `emptyActions`, and `contentOverlay` composition slots plus generic empty-state and alert contracts.
+- Moved navigation availability, preparation/reconnection flags, error wording, empty-state wording, and recorder/replay composition into the app workspace.
+- Added replay-owned `ReplayFailurePanel` presentation and replay styles.
+- Preserved Live View focus restoration, CAPTCHA locking, picker behavior, navigation, popup handling, and existing accessible names.
+
+Acceptance criteria:
+
+- [x] `features/browser` imports neither `features/recorder` nor `features/replay`.
+- [x] Browser rendering is tested through grouped browser models/actions and explicit slots.
+- [x] Recorder and replay controls can change without editing browser internals.
+
+### 1.4 Put files under their actual owners — Pending
+
+**Status:** Not started. This is the next unfinished Phase 1 step.
 
 - Move `src/hooks/use-recorder-socket.ts` to `features/recorder/transport`.
 - Move recorder presentation and lifecycle types out of `src/lib/recorder-session.ts`.
@@ -476,21 +497,25 @@ Acceptance criteria:
 
 ## Suggested implementation sequence
 
-Implement the phases as focused pull requests:
+Completed in PR #2:
 
-1. App-owned workspace composition and feature public APIs.
-2. Import-boundary lint rules and relocation of misplaced hooks/types.
-3. Pure recorder-session reducer and selectors.
-4. Browser page/picker/CAPTCHA state normalization.
-5. Workspace overlay union.
-6. Type-safe workflow edit commands and split `StepEditor`.
-7. Split `BrowserPanel` and introduce app-composed recorder/replay controls.
-8. Split protocol schemas without wire changes.
-9. Server entry-point and command-router extraction.
-10. `RecordingRuntime` collaborators.
-11. Replay engine collaborators.
-12. Typed/bundled injected recorder source.
-13. Test-suite ownership cleanup.
+1. [x] Move workspace composition into `app`, add feature public APIs, and enforce import boundaries.
+2. [x] Make `BrowserPanel` browser-only through grouped models/actions and app-composed recorder/replay slots.
+
+Continue with focused pull requests:
+
+1. Complete Phase 1.4 ownership moves for the recorder socket, remaining session types, workflow reducer, workflow contracts, and persistence adapters.
+2. Add a pure recorder-session reducer and selectors.
+3. Normalize browser page, picker, and CAPTCHA state.
+4. Replace coordinated workspace dialog state with one overlay union.
+5. Add type-safe workflow edit commands and split `StepEditor`.
+6. Split the workspace and `BrowserPanel` render trees into focused subcomponents; app-composed recorder/replay controls are already complete.
+7. Split protocol schemas without wire changes.
+8. Extract the server entry point and command router.
+9. Decompose `RecordingRuntime` into collaborators.
+10. Decompose replay engine policies.
+11. Convert the injected recorder to typed, bundled source.
+12. Align test-suite files with feature ownership.
 
 Each later pull request should include only the tests and file moves needed for that seam. Avoid combining repository-wide renames, formatting, state redesign, and behavior changes.
 
@@ -498,19 +523,19 @@ Each later pull request should include only the tests and file moves needed for 
 
 ### Architecture
 
-- [ ] `app` owns cross-feature composition.
-- [ ] Every feature exposes a small public API.
-- [ ] Feature internals are not imported across boundaries.
+- [x] `app` owns cross-feature composition.
+- [x] Every feature exposes a small public API.
+- [x] Feature internals are not imported across boundaries.
 - [ ] Shared contracts are framework- and vendor-independent.
-- [ ] Browserbase and Playwright remain behind server adapters.
-- [ ] Import direction is automatically enforced.
+- [x] Browserbase and Playwright remain behind server adapters.
+- [x] Import direction is automatically enforced.
 
 ### Components
 
 - [ ] Workspace, browser panel, and step editor are split into focused units.
-- [ ] Components receive intent-level view models and callbacks.
-- [ ] Recorder and replay controls are not hard-coded inside browser presentation.
-- [ ] Native accessible elements and current focus behavior are preserved.
+- [x] `BrowserPanel` receives grouped view models, intent callbacks, and composition slots.
+- [x] Recorder and replay controls are not hard-coded inside browser presentation.
+- [x] Native accessible elements and current focus behavior are preserved.
 
 ### State and data flow
 
@@ -527,7 +552,7 @@ Each later pull request should include only the tests and file moves needed for 
 - [ ] Recording runtime and replay policies are decomposed behind interfaces.
 - [ ] Injected browser code is normal typed source before bundling.
 - [ ] Tests are organized by feature and behavior.
-- [ ] Workflow schema `1.0` and existing wire behavior remain compatible.
+- [x] Workflow schema `1.0` and existing wire behavior remain compatible.
 
 ## Deliberate non-goals
 

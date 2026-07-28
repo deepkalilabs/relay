@@ -1,28 +1,82 @@
 "use client";
 
 import { AlertTriangle, Plus, Search, SearchX } from "lucide-react";
-import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import type { WorkflowLibraryResponse } from "@/lib/workflow/library";
 import { LibrarySidebar } from "./components/LibrarySidebar";
 import { RecordingDetails } from "./components/RecordingDetails";
 import { RecordingList } from "./components/RecordingList";
-import type { LibraryRecording } from "./model/mockRecordings";
+import {
+  workflowLibraryClient,
+  type WorkflowLibraryClient,
+} from "./model/workflow-library";
 import styles from "./LibraryScreen.module.css";
 
 export interface LibraryScreenProps {
-  recordings: readonly LibraryRecording[];
+  client?: WorkflowLibraryClient;
+  initialSelectedId?: string;
 }
 
-export function LibraryScreen({ recordings }: LibraryScreenProps) {
+const initialData: WorkflowLibraryResponse | null = null;
+
+export function LibraryScreen({
+  client = workflowLibraryClient,
+  initialSelectedId = "",
+}: LibraryScreenProps) {
+  const router = useRouter();
+  const [data, setData] = useState(initialData);
+  const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [selectedRecordingId, setSelectedRecordingId] = useState(recordings[0]?.id ?? "");
-  const visibleRecordings = useMemo(() => {
+  const [selectedWorkflowId, setSelectedWorkflowId] = useState(initialSelectedId);
+  const [creating, setCreating] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    client.list().then(
+      (result) => {
+        if (!active) return;
+        setData(result);
+        setError(null);
+      },
+      () => {
+        if (!active) return;
+        setError("Library could not be loaded. Refresh the page to try again.");
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, [client]);
+
+  const visibleWorkflows = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase();
-    if (!normalizedQuery) return recordings;
-    return recordings.filter((recording) => recording.title.toLocaleLowerCase().includes(normalizedQuery));
-  }, [query, recordings]);
-  const selectedRecording =
-    visibleRecordings.find((recording) => recording.id === selectedRecordingId) ?? visibleRecordings[0];
+    if (!data) return [];
+    if (!normalizedQuery) return data.workflows;
+    return data.workflows.filter((workflow) => workflow.name.toLocaleLowerCase().includes(normalizedQuery));
+  }, [data, query]);
+  const selectedWorkflow =
+    visibleWorkflows.find((workflow) => workflow.id === selectedWorkflowId) ?? visibleWorkflows[0];
+
+  const createRecording = async () => {
+    if (creating) return;
+    setCreating(true);
+    try {
+      const workflow = await client.create();
+      router.push(`/workflows/${workflow.id}/edit`);
+    } catch {
+      setCreating(false);
+      setError("A new recording could not be created. Try again.");
+    }
+  };
+
+  if (!data && !error) {
+    return (
+      <main className={styles.viewportState} aria-busy="true">
+        <p role="status">Loading workflows…</p>
+      </main>
+    );
+  }
 
   return (
     <>
@@ -37,37 +91,55 @@ export function LibraryScreen({ recordings }: LibraryScreenProps) {
           <header className={styles.pageHeader}>
             <div>
               <h1>Library</h1>
-              <p>Browse and manage your saved recordings.</p>
+              <p>Browse and continue your saved workflows.</p>
             </div>
-            <Link className={styles.newRecording} href="/">
-              New recording
+            <button
+              className={styles.newRecording}
+              type="button"
+              disabled={creating}
+              onClick={() => void createRecording()}
+            >
+              {creating ? "Creating…" : "New recording"}
               <Plus size={17} aria-hidden="true" />
-            </Link>
+            </button>
           </header>
-          <label className={styles.search}>
-            <span className="sr-only">Search recordings</span>
-            <Search size={17} aria-hidden="true" />
-            <input
-              type="search"
-              value={query}
-              placeholder="Search recordings"
-              onChange={(event) => setQuery(event.target.value)}
-            />
-          </label>
-          {selectedRecording ? (
+          <div className={styles.libraryTools}>
+            <label className={styles.search}>
+              <span className="sr-only">Search workflows</span>
+              <Search size={17} aria-hidden="true" />
+              <input
+                type="search"
+                value={query}
+                placeholder="Search workflows"
+                onChange={(event) => setQuery(event.target.value)}
+              />
+            </label>
+            {data?.invalidFileCount ? (
+              <p className={styles.libraryWarning} role="note">
+                {data.invalidFileCount} workflow {data.invalidFileCount === 1 ? "file" : "files"} could not be loaded.
+              </p>
+            ) : null}
+          </div>
+          {error ? (
+            <section className={styles.emptyState} role="alert">
+              <AlertTriangle size={26} aria-hidden="true" />
+              <h2>Library could not be loaded</h2>
+              <p>{error}</p>
+            </section>
+          ) : selectedWorkflow ? (
             <div className={styles.workspace}>
               <RecordingList
-                recordings={visibleRecordings}
-                selectedRecordingId={selectedRecording.id}
-                onSelect={setSelectedRecordingId}
+                workflows={visibleWorkflows}
+                selectedWorkflowId={selectedWorkflow.id}
+                onSelect={setSelectedWorkflowId}
               />
-              <RecordingDetails recording={selectedRecording} />
+              <RecordingDetails workflow={selectedWorkflow} />
             </div>
           ) : (
             <section className={styles.emptyState} role="status">
               <SearchX size={26} aria-hidden="true" />
-              <h2>No recordings match</h2>
-              <p>Try a different search term.</p>
+              <h2>{data?.workflows.length ? "No workflows match" : "No saved workflows"}</h2>
+              <p>{data?.workflows.length ? "Try a different search term." : "Create a recording to get started."}</p>
             </section>
           )}
         </main>
@@ -75,3 +147,4 @@ export function LibraryScreen({ recordings }: LibraryScreenProps) {
     </>
   );
 }
+

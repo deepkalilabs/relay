@@ -78,10 +78,14 @@ describe("workflow contract", () => {
     expect(step.metadata.sensitive).toBe(true);
   });
 
-  it("validates and serializes version 1.0 with a stable filename", () => {
+  it("creates and serializes a version 1.1 draft with lifecycle metadata", () => {
     const workflow = createWorkflow("session-1");
-    expect(WorkflowSchema.parse(workflow).schemaVersion).toBe("1.0");
-    expect(serializeWorkflow(workflow)).toContain('"schemaVersion": "1.0"');
+    expect(WorkflowSchema.parse(workflow)).toMatchObject({
+      schemaVersion: "1.1",
+      status: "draft",
+      revision: 1,
+    });
+    expect(serializeWorkflow(workflow)).toContain('"schemaVersion": "1.1"');
     expect(workflowFilename(new Date("2026-07-21T12:34:56.000Z"))).toBe("browser-memory-workflow-2026-07-21T12-34-56-000Z.json");
   });
 
@@ -185,6 +189,41 @@ describe("workflow reducer", () => {
     state = workflowReducer(state, { type: "setSessionId", sessionId: "incremental-session" });
     expect(state.workflow.source.sessionId).toBe("incremental-session");
     expect(state.workflow.steps).toHaveLength(1);
+  });
+
+  it("adopts server-owned save metadata without losing the selected step", () => {
+    let state = initialWorkflowState();
+    const step = makeStep("Navigate", 0);
+    state = workflowReducer(state, { type: "append", step });
+    const saved = {
+      ...state.workflow,
+      revision: 2,
+      updatedAt: new Date(Date.now() + 1_000).toISOString(),
+    };
+
+    state = workflowReducer(state, { type: "saved", workflow: saved });
+
+    expect(state.workflow).toEqual(saved);
+    expect(state.selectedStepId).toBe(step.id);
+    expect(state.dirty).toBe(false);
+  });
+
+  it("keeps edits that arrive while an explicit save is in flight", () => {
+    let state = initialWorkflowState();
+    state = workflowReducer(state, { type: "append", step: makeStep("First", 0) });
+    const baseWorkflow = state.workflow;
+    const saved = {
+      ...baseWorkflow,
+      revision: 2,
+      updatedAt: new Date(Date.now() + 1_000).toISOString(),
+    };
+    state = workflowReducer(state, { type: "append", step: makeStep("Arrived during save", 1) });
+
+    state = workflowReducer(state, { type: "saved", workflow: saved, baseWorkflow });
+
+    expect(state.workflow.revision).toBe(2);
+    expect(state.workflow.steps.map((step) => step.name)).toEqual(["First", "Arrived during save"]);
+    expect(state.dirty).toBe(true);
   });
 
   it("dismisses a pending delete without restoring the step", () => {

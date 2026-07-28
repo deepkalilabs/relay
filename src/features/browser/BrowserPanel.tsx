@@ -228,7 +228,7 @@ export function BrowserPanel({
             {emptyActions}
             <div className="privacy-note">
               <LockKeyhole size={14} />
-              <span>Values are held in memory until you export.</span>
+              <span>Changes are stored locally only when you choose Save or Finish.</span>
             </div>
           </div>
         )}

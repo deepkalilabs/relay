@@ -1,12 +1,18 @@
 "use client";
 
-import { ChevronRight, Download, Pencil, Play, Radio, Upload } from "lucide-react";
+import { ArrowLeft, Check, ChevronRight, Download, Pencil, Play, Radio, Save } from "lucide-react";
+import Link from "next/link";
 import { RecorderControls } from "@/features/recorder";
+import type { WorkflowStatus } from "@/lib/workflow/domain";
 import type { RecordingStatus, TransportStatus } from "@/lib/recorder-session";
+
+export type WorkflowSaveState = "saved" | "unsaved" | "saving" | "error" | "conflict";
 
 interface WorkspaceNavbarProps {
   collapsed: boolean;
   workflowName: string;
+  workflowStatus?: WorkflowStatus;
+  saveState?: WorkflowSaveState;
   status: RecordingStatus;
   transportStatus: TransportStatus;
   stepCount: number;
@@ -15,9 +21,9 @@ interface WorkspaceNavbarProps {
   onStart: () => void;
   onStop: () => void;
   onExport: () => void;
-  onImport?: (file: File) => void;
+  onSave?: () => void;
+  onFinish?: () => void;
   onReplay?: () => void;
-  importDisabled?: boolean;
   replayDisabled?: boolean;
   locked?: boolean;
 }
@@ -25,6 +31,8 @@ interface WorkspaceNavbarProps {
 export function WorkspaceNavbar({
   collapsed,
   workflowName,
+  workflowStatus = "complete",
+  saveState = "saved",
   status,
   transportStatus,
   stepCount,
@@ -33,12 +41,23 @@ export function WorkspaceNavbar({
   onStart,
   onStop,
   onExport,
-  onImport = () => undefined,
+  onSave = () => undefined,
+  onFinish = () => undefined,
   onReplay = () => undefined,
-  importDisabled = false,
   replayDisabled = false,
   locked = false,
 }: WorkspaceNavbarProps) {
+  const saving = saveState === "saving";
+  const saveLabel = saveState === "saved"
+    ? "Saved"
+    : saveState === "saving"
+      ? "Saving…"
+      : saveState === "conflict"
+        ? "Changed elsewhere"
+        : saveState === "error"
+          ? "Unable to save"
+          : "Unsaved changes";
+
   if (collapsed) {
     return (
       <aside className="workspace-rail" aria-label="Collapsed workflow navbar">
@@ -64,23 +83,28 @@ export function WorkspaceNavbar({
           variant="rail"
         />
         <span className="workspace-rail-spacer" />
-        <label
-          className={`workspace-rail-button file-button ${importDisabled ? "disabled" : ""}`}
-          aria-label="Import workflow"
-          title="Import workflow"
+        <button
+          className="workspace-rail-button"
+          type="button"
+          onClick={onSave}
+          disabled={locked || saving || saveState === "saved"}
+          aria-label="Save workflow"
+          title={saveLabel}
         >
-          <Upload size={18} aria-hidden="true" />
-          <input
-            type="file"
-            accept=".json,application/json"
-            disabled={locked || importDisabled}
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) onImport(file);
-              event.target.value = "";
-            }}
-          />
-        </label>
+          <Save size={18} aria-hidden="true" />
+        </button>
+        {workflowStatus === "draft" ? (
+          <button
+            className="workspace-rail-button"
+            type="button"
+            onClick={onFinish}
+            disabled={locked || saving || !stepCount}
+            aria-label="Finish recording"
+            title="Finish recording"
+          >
+            <Check size={18} aria-hidden="true" />
+          </button>
+        ) : null}
         <button
           className="workspace-rail-button"
           type="button"
@@ -122,23 +146,6 @@ export function WorkspaceNavbar({
         >
           <Download size={18} aria-hidden="true" />
         </button>
-        <label
-          className={`icon-button file-button ${importDisabled ? "disabled" : ""}`}
-          aria-label="Import workflow"
-          title="Import workflow"
-        >
-          <Upload size={18} aria-hidden="true" />
-          <input
-            type="file"
-            accept=".json,application/json"
-            disabled={locked || importDisabled}
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) onImport(file);
-              event.target.value = "";
-            }}
-          />
-        </label>
         <button
           className="icon-button"
           type="button"
@@ -149,6 +156,35 @@ export function WorkspaceNavbar({
         >
           <Play size={18} aria-hidden="true" />
         </button>
+      </div>
+      <Link className="workspace-library-link" href="/library">
+        <ArrowLeft size={17} aria-hidden="true" />
+        <span>Back to library</span>
+      </Link>
+      <div className="workspace-persistence">
+        <span className={`workspace-save-state ${saveState}`} role="status">{saveLabel}</span>
+        <button
+          className="button button-secondary"
+          type="button"
+          onClick={onSave}
+          disabled={locked || saving || saveState === "saved"}
+          aria-label="Save workflow"
+        >
+          <Save size={16} aria-hidden="true" />
+          Save
+        </button>
+        {workflowStatus === "draft" ? (
+          <button
+            className="button button-primary"
+            type="button"
+            onClick={onFinish}
+            disabled={locked || saving || !stepCount}
+            aria-label="Finish recording"
+          >
+            <Check size={16} aria-hidden="true" />
+            Finish
+          </button>
+        ) : null}
       </div>
       <label className="workspace-workflow-name">
         <span className="sr-only">Workflow name</span>

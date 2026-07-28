@@ -23,7 +23,7 @@ export type WorkflowAction =
   | { type: "dismissDelete" }
   | { type: "insert"; step: WorkflowStep; afterId?: string }
   | { type: "reorder"; activeId: string; overId: string }
-  | { type: "markClean" }
+  | { type: "saved"; workflow: Workflow; baseWorkflow?: Workflow }
   | { type: "setFollowLiveTail"; value: boolean };
 
 export function initialWorkflowState(): WorkflowState {
@@ -159,8 +159,30 @@ export function workflowReducer(state: WorkflowState, action: WorkflowAction): W
       steps.splice(to, 0, moved);
       return changed(state, steps);
     }
-    case "markClean":
-      return { ...state, dirty: false };
+    case "saved":
+      if (action.baseWorkflow && state.workflow !== action.baseWorkflow) {
+        return {
+          ...state,
+          dirty: true,
+          workflow: {
+            ...state.workflow,
+            schemaVersion: action.workflow.schemaVersion,
+            status: action.workflow.status,
+            revision: action.workflow.revision,
+            createdAt: action.workflow.createdAt,
+            finishedAt: action.workflow.finishedAt,
+          },
+        };
+      }
+      return {
+        ...state,
+        workflow: action.workflow,
+        dirty: false,
+        deletedStep: null,
+        selectedStepId: action.workflow.steps.some((step) => step.id === state.selectedStepId)
+          ? state.selectedStepId
+          : (action.workflow.steps[0]?.id ?? null),
+      };
     case "setFollowLiveTail":
       return { ...state, followLiveTail: action.value };
   }

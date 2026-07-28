@@ -139,6 +139,31 @@ describe("useRecorderSession", () => {
     expect(socket.send).toHaveBeenLastCalledWith({ type: "session.start", nativeSelects: true });
   });
 
+  it("waits for the browser session to stop before resolving a finish request", async () => {
+    const { result } = renderHook(() => useRecorderSession({
+      onSessionStarted: vi.fn(),
+      onReplaySessionStarted: vi.fn(),
+      onStartUrl: vi.fn(),
+      onStepRecorded: vi.fn(),
+    }));
+    act(() => result.current.startRecording());
+
+    let resolved = false;
+    let stopping!: Promise<void>;
+    act(() => {
+      stopping = result.current.stopRecordingAndWait().then(() => {
+        resolved = true;
+      });
+    });
+
+    expect(socket.send).toHaveBeenLastCalledWith({ type: "session.stop" });
+    expect(resolved).toBe(false);
+
+    act(() => socket.onMessage?.({ type: "session.status", status: "stopped" }));
+    await act(async () => stopping);
+    expect(resolved).toBe(true);
+  });
+
   it("tracks CAPTCHA state per active page and sends the continue command", () => {
     vi.useFakeTimers();
     try {

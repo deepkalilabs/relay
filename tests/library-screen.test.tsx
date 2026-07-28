@@ -1,69 +1,137 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it } from "vitest";
-import { LibraryScreen, mockRecordings } from "@/features/library";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { LibraryScreen, type WorkflowLibraryClient } from "@/features/library";
+import type { LibraryWorkflowItem } from "@/lib/workflow/library";
+import { createWorkflow } from "@/lib/workflow/schema";
 
-afterEach(cleanup);
+const push = vi.fn();
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push }),
+}));
+
+const workflows: LibraryWorkflowItem[] = [
+  {
+    id: "checkout-flow",
+    name: "Checkout flow",
+    status: "draft",
+    updatedAt: "2026-07-27T20:00:00.000Z",
+    steps: [
+      { id: "checkout-1", name: "Open checkout", order: 0 },
+      { id: "checkout-2", name: "Enter contact information", order: 1 },
+    ],
+  },
+  {
+    id: "support-ticket",
+    name: "Create support ticket",
+    status: "complete",
+    updatedAt: "2026-07-26T20:00:00.000Z",
+    steps: [{ id: "support-1", name: "Open the support portal", order: 0 }],
+  },
+];
+
+function client(overrides: Partial<WorkflowLibraryClient> = {}): WorkflowLibraryClient {
+  return {
+    list: vi.fn(async () => ({ workflows, invalidFileCount: 0 })),
+    create: vi.fn(async () => createWorkflow()),
+    ...overrides,
+  };
+}
+
+afterEach(() => {
+  cleanup();
+  push.mockReset();
+});
 
 describe("LibraryScreen", () => {
-  it("renders the mock library with Checkout flow selected", () => {
-    render(<LibraryScreen recordings={mockRecordings} />);
+  it("loads real workflow names and ordered step names with a static preview", async () => {
+    render(<LibraryScreen client={client()} initialSelectedId="checkout-flow" />);
 
-    expect(screen.getByRole("heading", { name: "Library", level: 1 })).toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: /Select .* recording/ })).toHaveLength(6);
-
-    const details = screen.getByRole("region", { name: "Recording details" });
-    expect(within(details).getByRole("heading", { name: "Checkout flow" })).toBeInTheDocument();
-    expect(within(details).getByText("Open checkout")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Select Checkout flow recording" })).toHaveAttribute(
+    expect(screen.getByRole("status")).toHaveTextContent("Loading workflows");
+    expect(await screen.findByRole("heading", { name: "Library", level: 1 })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Select Checkout flow workflow" })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
+
+    const details = screen.getByRole("region", { name: "Workflow details" });
+    expect(within(details).getByRole("heading", { name: "Checkout flow" })).toBeInTheDocument();
+    expect(within(details).getByText("Open checkout")).toBeInTheDocument();
+    expect(within(details).getByText("Enter contact information")).toBeInTheDocument();
+    expect(within(details).getByText("Draft")).toBeInTheDocument();
+    expect(within(details).getByTestId("static-workflow-preview")).toBeInTheDocument();
+    expect(within(details).getByRole("link", { name: "Continue editing Checkout flow" })).toHaveAttribute(
+      "href",
+      "/workflows/checkout-flow/edit",
+    );
+    expect(within(details).queryByRole("button", { name: /run/i })).not.toBeInTheDocument();
   });
 
-  it("updates the details when another recording is selected", async () => {
+  it("updates details and filters workflows case-insensitively", async () => {
     const user = userEvent.setup();
-    render(<LibraryScreen recordings={mockRecordings} />);
+    render(<LibraryScreen client={client()} />);
+    await screen.findByRole("button", { name: "Select Create support ticket workflow" });
 
-    await user.click(screen.getByRole("button", { name: "Select Create support ticket recording" }));
+    await user.click(screen.getByRole("button", { name: "Select Create support ticket workflow" }));
+    expect(screen.getByRole("region", { name: "Workflow details" })).toHaveTextContent("Open the support portal");
+    expect(screen.getByRole("link", { name: "Edit workflow Create support ticket" })).toBeInTheDocument();
 
-    const details = screen.getByRole("region", { name: "Recording details" });
-    expect(within(details).getByRole("heading", { name: "Create support ticket" })).toBeInTheDocument();
-    expect(within(details).getByText("Open the support portal")).toBeInTheDocument();
+    await user.type(screen.getByRole("searchbox", { name: "Search workflows" }), "CHECKOUT");
+    expect(screen.getAllByRole("button", { name: /Select .* workflow/ })).toHaveLength(1);
+    expect(screen.getByRole("heading", { name: "Checkout flow" })).toBeInTheDocument();
   });
 
-  it("filters recordings case-insensitively and selects the first visible match", async () => {
+  it("assigns stable thumbnail variants from normalized workflow titles", async () => {
     const user = userEvent.setup();
-    render(<LibraryScreen recordings={mockRecordings} />);
+    const { rerender } = render(<LibraryScreen client={client()} />);
+    const checkoutButton = await screen.findByRole("button", { name: "Select Checkout flow workflow" });
+    const supportButton = screen.getByRole("button", { name: "Select Create support ticket workflow" });
 
-    await user.type(screen.getByRole("searchbox", { name: "Search recordings" }), "WEEKLY");
+    expect(checkoutButton.querySelector("[data-variant]")).toHaveAttribute("data-variant", "article");
+    expect(supportButton.querySelector("[data-variant]")).toHaveAttribute("data-variant", "calendar");
 
-    expect(screen.getAllByRole("button", { name: /Select .* recording/ })).toHaveLength(1);
-    expect(screen.getByRole("button", { name: "Select Weekly analytics export recording" })).toBeInTheDocument();
-    expect(
-      within(screen.getByRole("region", { name: "Recording details" })).getByRole("heading", {
-        name: "Weekly analytics export",
-      }),
-    ).toBeInTheDocument();
+    await user.type(screen.getByRole("searchbox", { name: "Search workflows" }), "checkout");
+    expect(screen.getByRole("button", { name: "Select Checkout flow workflow" }).querySelector("[data-variant]"))
+      .toHaveAttribute("data-variant", "article");
+
+    const renamedWorkflows = workflows.map((workflow) => (
+      workflow.id === "checkout-flow" ? { ...workflow, name: "Renamed checkout" } : workflow
+    ));
+    rerender(<LibraryScreen client={client({
+      list: vi.fn(async () => ({ workflows: renamedWorkflows, invalidFileCount: 0 })),
+    })} />);
+
+    const renamedButton = await screen.findByRole("button", { name: "Select Renamed checkout workflow" });
+    expect(renamedButton.querySelector("[data-variant]")).toHaveAttribute("data-variant", "table");
   });
 
-  it("shows a useful empty state when search has no matches", async () => {
+  it("creates a durable draft before navigating to its editor", async () => {
     const user = userEvent.setup();
-    render(<LibraryScreen recordings={mockRecordings} />);
+    const created = createWorkflow();
+    created.id = "new-workflow";
+    const create = vi.fn(async () => created);
+    render(<LibraryScreen client={client({ create })} />);
+    await screen.findByRole("button", { name: "New recording" });
 
-    await user.type(screen.getByRole("searchbox", { name: "Search recordings" }), "not a workflow");
+    await user.click(screen.getByRole("button", { name: "New recording" }));
 
-    expect(screen.getByRole("status")).toHaveTextContent("No recordings match");
-    expect(screen.queryByRole("region", { name: "Recording details" })).not.toBeInTheDocument();
+    await waitFor(() => expect(create).toHaveBeenCalledOnce());
+    expect(push).toHaveBeenCalledWith("/workflows/new-workflow/edit");
   });
 
-  it("keeps route navigation available while mock recording actions remain disabled", () => {
-    render(<LibraryScreen recordings={mockRecordings} />);
+  it("shows empty, invalid-file warning, and load-failure states", async () => {
+    const emptyClient = client({
+      list: vi.fn(async () => ({ workflows: [], invalidFileCount: 2 })),
+    });
+    const { rerender } = render(<LibraryScreen client={emptyClient} />);
 
-    expect(screen.getByRole("link", { name: "Recorder" })).toHaveAttribute("href", "/");
-    expect(screen.getByRole("link", { name: "Library" })).toHaveAttribute("aria-current", "page");
-    expect(screen.getByRole("link", { name: "New recording" })).toHaveAttribute("href", "/");
-    expect(screen.getByRole("button", { name: "Run Checkout flow" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Open Checkout flow" })).toBeDisabled();
+    expect(await screen.findByRole("heading", { name: "No saved workflows" })).toBeInTheDocument();
+    expect(screen.getByRole("note")).toHaveTextContent("2 workflow files could not be loaded");
+
+    rerender(<LibraryScreen client={client({ list: vi.fn(async () => {
+      throw new Error("offline");
+    }) })} />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Library could not be loaded");
   });
 });

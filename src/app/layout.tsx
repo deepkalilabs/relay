@@ -5,6 +5,7 @@ import "@/features/recorder/recorder.css";
 import "@/features/replay/replay.css";
 import "@/features/browser/browser.css";
 import "@/features/workflow/workflow.css";
+import "@/features/library/workflow-thumbnail-assets.css";
 import "@/components/ui/modal.css";
 
 export const metadata: Metadata = {

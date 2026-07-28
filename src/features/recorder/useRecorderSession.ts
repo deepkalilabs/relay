@@ -47,6 +47,20 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
   const [activePageId, setActivePageId] = useState<string | null>(null);
   const [captchaStatuses, setCaptchaStatuses] = useState<Record<string, CaptchaStatus>>({});
   const captchaNoticeTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const stopWaiter = useRef<{
+    resolve: () => void;
+    reject: (error: Error) => void;
+    timeout: ReturnType<typeof setTimeout>;
+  } | null>(null);
+
+  const settleStopWaiter = useCallback((error?: Error) => {
+    const waiter = stopWaiter.current;
+    if (!waiter) return;
+    stopWaiter.current = null;
+    clearTimeout(waiter.timeout);
+    if (error) waiter.reject(error);
+    else waiter.resolve();
+  }, []);
 
   const resetCaptchaState = useCallback(() => {
     for (const timer of captchaNoticeTimers.current.values()) clearTimeout(timer);
@@ -58,7 +72,8 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
   useEffect(() => () => {
     for (const timer of captchaNoticeTimers.current.values()) clearTimeout(timer);
     captchaNoticeTimers.current.clear();
-  }, []);
+    settleStopWaiter();
+  }, [settleStopWaiter]);
 
   const handleServerMessage = useCallback((message: ServerMessage) => {
     switch (message.type) {
@@ -82,6 +97,7 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
       case "session.status":
         setStatus(message.status);
         if (message.status === "stopped") {
+          settleStopWaiter();
           resetCaptchaState();
           setStartedAt(null);
           setNavigationPending(false);
@@ -225,6 +241,7 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
         setError("Some events could not be recovered after the connection interruption. Stop and review this workflow before exporting.");
         break;
       case "server.error":
+        settleStopWaiter(new Error(message.message));
         resetCaptchaState();
         setNavigationPending(false);
         if (message.code === "INVALID_MESSAGE" && liveViewUrl) {
@@ -239,7 +256,7 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
         else setStatus("error");
         break;
     }
-  }, [liveViewUrl, onReplaySessionStarted, onReplayStepChange, onSessionStarted, onStartUrl, onStepRecorded, replayStatus, resetCaptchaState]);
+  }, [liveViewUrl, onReplaySessionStarted, onReplayStepChange, onSessionStarted, onStartUrl, onStepRecorded, replayStatus, resetCaptchaState, settleStopWaiter]);
 
   const { transportStatus, send } = useRecorderSocket(handleServerMessage);
 
@@ -287,15 +304,28 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
     }
   };
 
-  const startAfterDiscard = () => {
-    const command = sessionStartCommand();
-    resetSessionState();
-    send(command);
-  };
-
   const stopRecording = () => {
     setStatus("stopping");
     send({ type: "session.stop" });
+  };
+
+  const stopRecordingAndWait = () => {
+    if (["idle", "stopped", "error", "configurationMissing"].includes(status)) {
+      return Promise.resolve();
+    }
+    if (stopWaiter.current) {
+      return Promise.reject(new Error("The browser session is already stopping."));
+    }
+    setStatus("stopping");
+    return new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        settleStopWaiter(new Error("The browser session did not stop in time."));
+      }, 15_000);
+      stopWaiter.current = { resolve, reject, timeout };
+      if (!send({ type: "session.stop" })) {
+        settleStopWaiter(new Error("The recorder connection is unavailable."));
+      }
+    });
   };
 
   const startReplay = (workflow: Workflow, startStepId?: string) => {
@@ -382,10 +412,10 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
     selectPickerOption,
     dismissSelectPicker,
     setNativeSelects,
-    startAfterDiscard,
     startReplay,
     startRecording,
     stopRecording,
+    stopRecordingAndWait,
     switchPopup: (pageId: string) => send({ type: "popup.switch", pageId }),
     pauseReplay: () => send({ type: "replay.pause" }),
     resumeReplay: () => send({ type: "replay.resume" }),
