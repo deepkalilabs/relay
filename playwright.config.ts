@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const workflowDataDir = join(tmpdir(), `browser-replay-playwright-${process.pid}`);
+const profileDataDir = join(tmpdir(), `browser-replay-profile-playwright-${process.pid}`);
 const localPort = 41_873;
 const baseURL = process.env.BROWSERBASE_E2E
   ? "http://127.0.0.1:3000"
@@ -28,6 +29,7 @@ export default defineConfig({
         env: {
           ...process.env,
           PORT: String(localPort),
+          PROFILE_DATA_DIR: profileDataDir,
           WORKFLOW_DATA_DIR: workflowDataDir,
         },
       },

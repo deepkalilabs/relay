@@ -24,6 +24,14 @@
   line-height: 1.6;
 }
 
+.viewportState {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  background: var(--canvas);
+}
+
 .shell {
   min-height: 100dvh;
   display: grid;
@@ -76,6 +84,23 @@
   border-right: 1px solid var(--line);
 }
 
+.listBody {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.libraryWarning {
+  margin: 0;
+  padding: 10px 18px;
+  border-bottom: 1px solid color-mix(in srgb, var(--warning) 22%, white);
+  color: var(--warning);
+  background: #fff9ed;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
 .listHeader,
 .detailsHeader {
   padding: 0 18px;
@@ -103,19 +128,30 @@
 }
 
 .profileItem {
+  width: 100%;
   min-height: 110px;
   padding: 16px 18px;
   display: grid;
   grid-template-columns: 66px minmax(0, 1fr);
   align-items: center;
   gap: 16px;
+  border: 0;
   border-bottom: 1px solid var(--line);
+  text-align: left;
   background: var(--surface);
+}
+
+.profileItem:hover {
+  background: var(--surface-muted);
 }
 
 .profileItemSelected {
   background: var(--primary-soft);
   box-shadow: inset 3px 0 var(--primary);
+}
+
+.profileItemSelected:hover {
+  background: var(--primary-soft);
 }
 
 .profileIcon {
@@ -165,7 +201,7 @@
   min-width: 0;
   min-height: 0;
   display: grid;
-  grid-template-rows: 68px minmax(0, 1fr) 62px;
+  grid-template-rows: 68px minmax(0, 1fr);
 }
 
 .detailsTitle,
@@ -186,10 +222,20 @@
   text-transform: uppercase;
 }
 
+.draftBadge {
+  padding: 4px 8px;
+  border-radius: 999px;
+  color: var(--warning);
+  background: #fff1d6;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
 .secondaryAction,
 .deleteAction,
-.primaryAction,
-.runAction {
+.primaryAction {
   min-height: 38px;
   padding: 0 13px;
   display: inline-flex;
@@ -203,8 +249,7 @@
 }
 
 .secondaryAction,
-.deleteAction,
-.runAction {
+.deleteAction {
   border: 1px solid var(--primary);
   color: var(--primary);
   background: var(--surface);
@@ -217,10 +262,47 @@
   box-shadow: 0 1px 2px rgb(40 91 214 / 22%);
 }
 
+.primaryAction:hover:not(:disabled) {
+  background: var(--primary-hover);
+}
+
+.secondaryAction:hover:not(:disabled),
+.deleteAction:hover:not(:disabled) {
+  background: var(--primary-soft);
+}
+
 .formBody {
   min-height: 0;
   padding: 0 20px;
   overflow: auto;
+}
+
+.readinessHint {
+  margin: 16px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--muted);
+  background: var(--surface-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.persistenceAlert {
+  margin: 16px 0 0;
+  padding: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid color-mix(in srgb, var(--danger) 25%, white);
+  border-radius: 7px;
+  color: var(--danger);
+  background: var(--danger-soft);
+  font-size: 12px;
+}
+
+.persistenceAlert span {
+  flex: 1;
 }
 
 .formSection {
@@ -266,30 +348,44 @@
   font-weight: 400;
 }
 
-.inputWrap:has(svg) input {
-  padding-right: 38px;
+.inputWrap input[aria-invalid="true"] {
+  border-color: var(--danger);
 }
 
-.inputWrap svg {
-  position: absolute;
-  top: 50%;
-  right: 12px;
+.fieldError {
+  color: var(--danger);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.emptyState {
+  min-width: 0;
+  min-height: 0;
+  padding: 32px;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  text-align: center;
+  color: var(--muted);
+}
+
+.emptyState > svg {
+  margin-bottom: 12px;
+  color: var(--primary);
+}
+
+.emptyState h2 {
+  margin: 0;
   color: var(--ink);
-  pointer-events: none;
-  transform: translateY(-50%);
+  font-size: 18px;
 }
 
-.detailsFooter {
-  padding: 10px 20px;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  border-top: 1px solid var(--line);
-}
-
-.runAction {
-  min-height: 40px;
-  padding: 0 16px;
+.emptyState p {
+  max-width: 360px;
+  margin: 8px 0 18px;
+  font-size: 13px;
+  line-height: 1.55;
 }
 
 @media (min-width: 1024px) and (max-width: 1199px) {

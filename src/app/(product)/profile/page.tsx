@@ -6,6 +6,11 @@ export const metadata: Metadata = {
   description: "Review reusable identity, location, and browser parameters.",
 };
 
-export default function ProfilePage() {
-  return <ProfileScreen />;
+interface ProfilePageProps {
+  searchParams: Promise<{ selected?: string }>;
+}
+
+export default async function ProfilePage({ searchParams }: ProfilePageProps) {
+  const { selected } = await searchParams;
+  return <ProfileScreen initialSelectedId={selected} />;
 }
