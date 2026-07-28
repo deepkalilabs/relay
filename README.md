@@ -163,6 +163,7 @@ For local development, `npm run dev` also loads an existing, gitignored `secret.
 | `npm run typecheck` | Check TypeScript without emitting files |
 | `npm run lint` | Run ESLint with zero warnings allowed |
 | `npm test` | Run the Vitest unit and component suite |
+| `npm run test:changed` | Run tests affected by staged, unstaged, or untracked changes |
 | `npm run test:e2e` | Run local Playwright end-to-end tests |
 | `npm run test:browserbase` | Run the paid Browserbase smoke test |
 

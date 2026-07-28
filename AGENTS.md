@@ -6,6 +6,12 @@
 - Before every authorized commit, review the exact staged diff for architecture decisions and record the result with `npm run adr:review`.
 - Do not use `git commit --no-verify`, `git commit -a`, partial/pathspec commits, or a shell command that stages and commits in one invocation.
 
+## Test execution
+
+- During Codex implementation and verification, run `npm run test:changed`.
+- Do not run `npm test` or another full test suite unless the user explicitly requests it.
+- If Vitest finds no affected tests, report that result instead of running the full suite.
+
 ## ADR review policy
 
 An ADR is required when the staged diff introduces or changes an expensive-to-reverse decision involving:
