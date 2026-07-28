@@ -5,7 +5,7 @@ import {
   Plus,
   UserRound,
 } from "lucide-react";
-import { AppSidebar } from "@/components/navigation/AppSidebar";
+import { AppSidebar } from "@/shared/ui/navigation";
 import styles from "./ProfileScreen.module.css";
 
 const profiles = [
@@ -146,4 +146,3 @@ export function ProfileScreen() {
     </>
   );
 }
-

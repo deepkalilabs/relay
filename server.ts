@@ -3,9 +3,9 @@ import { parse } from "node:url";
 import next from "next";
 import { loadEnvConfig } from "@next/env";
 import { WebSocketServer, type WebSocket } from "ws";
-import { ClientMessageSchema } from "./src/lib/protocol";
-import { BrowserbaseProvider } from "./src/server/provider/browserbase";
-import { RecordingRuntime } from "./src/server/recorder/runtime";
+import { ClientMessageSchema } from "./src/shared/contracts/protocol";
+import { BrowserbaseProvider } from "./src/server/infrastructure/browser/browserbase";
+import { RecordingRuntime } from "./src/server/recording/runtime";
 import { FileWorkflowRepository } from "./src/server/workflows/filesystem-repository";
 import { handleWorkflowApi } from "./src/server/workflows/http-router";
 

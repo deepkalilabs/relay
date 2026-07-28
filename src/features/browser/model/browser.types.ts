@@ -1,34 +1,17 @@
-import type { CaptchaStatus } from "@/lib/protocol";
+import type {
+  BrowserPageState,
+  CaptchaStatus,
+  DatePickerState,
+  PopupState,
+  SelectPickerState,
+} from "@/shared/contracts/protocol";
 
-export interface BrowserPageState {
-  pageId: string;
-  title: string;
-  url: string;
-}
-
-export interface PopupState {
-  pageId: string;
-  title: string;
-  url: string;
-}
-
-export interface DatePickerState {
-  requestId: string;
-  value: string;
-  min: string;
-  max: string;
-  rect: { x: number; y: number; width: number; height: number };
-  viewport: { width: number; height: number };
-}
-
-export interface SelectPickerState {
-  requestId: string;
-  name: string;
-  value: string;
-  options: Array<{ value: string; label: string; disabled: boolean }>;
-  rect: { x: number; y: number; width: number; height: number };
-  viewport: { width: number; height: number };
-}
+export type {
+  BrowserPageState,
+  DatePickerState,
+  PopupState,
+  SelectPickerState,
+} from "@/shared/contracts/protocol";
 
 export interface BrowserNavigationState {
   enabled: boolean;

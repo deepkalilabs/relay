@@ -42,7 +42,7 @@ User explicitly saves through the local workflow API
 Atomic JSON file in .data/workflows
 ```
 
-The React client owns unsaved edits while the editor is open. The `app/workspace` layer composes the browser, recorder, replay, and workflow features through their public entry points. A custom Node server keeps Browserbase credentials out of the client, exposes the local workflow API, maintains the Playwright CDP connection, and streams sequenced recorder events over `/ws`.
+The React client owns unsaved edits while the editor is open. Route-private workspace modules under the workflow editor route compose the browser, recorder, replay, and workflow features through their public entry points. A custom Node server keeps Browserbase credentials out of the client, exposes the local workflow API, maintains the Playwright CDP connection, and streams sequenced recorder events over `/ws`.
 
 ## Repository structure
 
@@ -53,39 +53,31 @@ browser_replay/
 │       └── mvp_design.md          # Product and interaction specification
 ├── src/
 │   ├── app/
-│   │   ├── fixture/               # Controlled pages used by E2E tests
-│   │   ├── library/               # Local workflow Library route
-│   │   ├── workflows/[workflowId]/edit/ # Durable workflow editor route
-│   │   ├── workspace/             # Cross-feature composition and workspace policy
-│   │   ├── globals.css            # Global tokens, reset, and shared controls
-│   │   ├── layout.tsx             # Next.js root layout
-│   │   └── page.tsx               # Application entry page
-│   ├── components/
-│   │   └── ui/                    # Shared accessible UI primitives
+│   │   ├── (product)/             # Product routes; group is omitted from URLs
+│   │   │   ├── library/           # Local workflow Library route
+│   │   │   └── workflows/[workflowId]/edit/
+│   │   │       ├── _components/   # Route-private workspace composition
+│   │   │       └── _hooks/        # Route-private workspace policy
+│   │   ├── (test-support)/fixture/ # Controlled pages used by E2E tests
+│   │   ├── _styles/               # Global tokens, reset, and shared controls
+│   │   └── layout.tsx             # Single Next.js root layout
 │   ├── features/
-│   │   ├── browser/               # Live View, browser overlays, and browser-owned types
-│   │   ├── library/               # Saved-recording library presentation
-│   │   ├── recorder/              # Recorder session and transport controls
+│   │   ├── browser/               # Live View, overlays, hooks, and browser model
+│   │   ├── recorder/              # Recorder components, model, and transport
 │   │   ├── replay/                # Replay controls, recovery, and run dialog
-│   │   └── workflow/              # Timeline, step editor, dialogs, and styles
-│   ├── hooks/
-│   │   └── use-recorder-socket.ts # WebSocket lifecycle and recovery
-│   ├── lib/
-│   │   ├── protocol.ts            # Client/server message schemas
-│   │   ├── recorder-session.ts    # Recorder/replay presentation state
-│   │   └── workflow/
-│   │       ├── export.ts          # JSON serialization and download
-│   │       ├── recorded-action.ts # Recorder-event conversion
-│   │       ├── schema.ts          # Zod workflow model and locators
-│   │       └── store.ts           # Timeline reducer and edit operations
+│   │   ├── workflow-editor/       # Timeline, editing state, API, and export
+│   │   ├── workflow-library/      # Saved-workflow library presentation
+│   │   └── profile/               # Profile presentation
+│   ├── shared/
+│   │   ├── contracts/             # Workflow, recording, and protocol contracts
+│   │   └── ui/                    # Shared accessible UI primitives
 │   └── server/
-│       ├── provider/
-│       │   ├── browserbase.ts     # Browserbase session adapter
-│       │   └── types.ts           # Provider interfaces
-│       ├── recorder/
+│       ├── infrastructure/browser/ # Browserbase adapter and provider port
+│       ├── recording/
 │       │   ├── deduplicate.ts     # Duplicate event suppression
 │       │   ├── injected.ts        # Script installed in browser pages
 │       │   └── runtime.ts         # Session, page, and event runtime
+│       ├── replay/                # Replay engine and replay policies
 │       └── workflows/             # Filesystem repository and local HTTP API
 ├── tests/
 │   ├── e2e/                       # Playwright workspace and browser tests
@@ -98,11 +90,11 @@ browser_replay/
 └── package.json                   # Commands and dependencies
 ```
 
-Each feature exposes a small `index.ts` API. Application composition may import those APIs, while feature internals use relative imports. ESLint prevents deep cross-feature imports, lower layers from importing `app`, and client modules from importing server implementations.
+Each feature exposes a small `index.ts` API. Route-private application composition may import those APIs, while feature internals use relative imports. Shared contracts are client/server-safe and do not depend on features. ESLint prevents deep cross-feature imports, lower layers from importing `app`, and client modules from importing server implementations.
 
 ## Workflow model
 
-The dependency-free domain contract lives in `src/lib/workflow/domain.ts`. It defines the workflow aggregate, named step variants, element targets, page context, replay waits, and metadata shared by the recorder, editor, persistence, protocol, and replay engine. Runtime validation for imported files and WebSocket messages lives separately in `src/lib/workflow/schema.ts`; those schemas are compile-time checked against the domain types.
+The dependency-free workflow contract lives in `src/shared/contracts/workflow`. It defines the workflow aggregate, named step variants, element targets, page context, replay waits, serialization, and metadata shared by the recorder, editor, persistence, protocol, and replay engine. Runtime validation is kept beside the contract and compile-time checked against the domain types. Client/server message schemas are split by direction under `src/shared/contracts/protocol`.
 
 Saved workflows and new exports use schema version `1.1`, including `status`, `revision`, and optional `finishedAt` lifecycle fields. Schema `1.0` files remain readable at compatibility boundaries and normalize as completed revision-1 workflows. A workflow also contains its Browserbase source, timestamps, and an ordered list of steps. Automatic recording produces `fill`, `set_date`, `select`, and `click` steps. Manual steps and existing workflows continue to support:
 

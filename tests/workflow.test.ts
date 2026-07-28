@@ -1,6 +1,8 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
-import { serializeWorkflow, workflowFilename } from "@/lib/workflow/export";
-import { isSensitiveInput, stepFromRecordedAction } from "@/lib/workflow/recorded-action";
+import { workflowFilename } from "@/features/workflow-editor";
+import { stepFromRecordedAction } from "@/features/recorder";
+import { isSensitiveInput } from "@/shared/contracts/recording/recorded-action";
+import { serializeWorkflow } from "@/shared/contracts/workflow/serialization";
 import {
   locatorCandidatesForTarget,
   type ClickStep,
@@ -10,9 +12,9 @@ import {
   type SelectStep,
   type Workflow,
   type WorkflowStep,
-} from "@/lib/workflow/domain";
-import { createWorkflow, orderLocatorCandidates, WorkflowSchema } from "@/lib/workflow/schema";
-import { initialWorkflowState, workflowReducer } from "@/lib/workflow/store";
+} from "@/shared/contracts/workflow/domain";
+import { createWorkflow, orderLocatorCandidates, WorkflowSchema } from "@/shared/contracts/workflow/schema";
+import { initialWorkflowState, workflowReducer } from "@/features/workflow-editor";
 
 describe("workflow contract", () => {
   it("keeps the named domain model aligned with runtime validation", () => {

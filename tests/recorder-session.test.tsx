@@ -1,15 +1,15 @@
 import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ServerMessage } from "@/lib/protocol";
+import type { ServerMessage } from "@/shared/contracts/protocol";
 import { useRecorderSession } from "@/features/recorder";
-import { createWorkflow } from "@/lib/workflow/schema";
+import { createWorkflow } from "@/shared/contracts/workflow/schema";
 
 const socket = vi.hoisted(() => ({
   onMessage: null as ((message: ServerMessage) => void) | null,
   send: vi.fn(() => true),
 }));
 
-vi.mock("@/hooks/use-recorder-socket", () => ({
+vi.mock("../src/features/recorder/transport/useRecorderSocket", () => ({
   useRecorderSocket: (onMessage: (message: ServerMessage) => void) => {
     socket.onMessage = onMessage;
     return { transportStatus: "connected" as const, send: socket.send };

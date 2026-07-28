@@ -1,0 +1,88 @@
+.sidebar {
+  min-width: 0;
+  min-height: 100dvh;
+  padding: 18px 12px 20px;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.brand {
+  min-height: 38px;
+  padding: 0 6px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.brandMark {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.navigation {
+  margin-top: 25px;
+  display: grid;
+  gap: 4px;
+}
+
+.navItem {
+  min-height: 42px;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.navItem:hover {
+  color: var(--ink);
+  background: var(--surface-muted);
+}
+
+.navItemActive {
+  position: relative;
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.navItemActive::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -12px;
+  width: 3px;
+  background: var(--primary);
+  content: "";
+}
+
+.spacer {
+  flex: 1;
+}
+
+.avatar {
+  width: 36px;
+  height: 36px;
+  margin-left: 2px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: white;
+  background: #282b31;
+  box-shadow: var(--shadow-sm);
+  font-size: 13px;
+}

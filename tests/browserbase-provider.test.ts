@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { BrowserbaseProvider } from "@/server/provider/browserbase";
+import { BrowserbaseProvider } from "@/server/infrastructure/browser/browserbase";
 
 const sdk = vi.hoisted(() => ({
   create: vi.fn(),

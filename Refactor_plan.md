@@ -8,7 +8,7 @@ The repository has a solid base. TypeScript strict mode is enabled, the applicat
 
 ## Current status
 
-Phase 1.1–1.3 were completed and merged in [PR #2](https://github.com/boblancer/relay/pull/2). Cross-feature composition now lives in `src/app/workspace`, features expose narrow public APIs, import direction is enforced by ESLint, and browser presentation no longer owns recorder or replay controls. Phase 1.4 remains the next unfinished step.
+Phase 1 is complete. Phase 1.1–1.3 were merged in [PR #2](https://github.com/boblancer/relay/pull/2), and Phase 1.4 subsequently placed route composition, feature behavior, shared contracts, UI primitives, and server adapters under explicit owners. Import direction remains enforced by ESLint.
 
 Verification after Phase 1.1–1.3:
 
@@ -28,7 +28,7 @@ The completed work preserved workflow schema `1.0`, WebSocket messages, user wor
 - `package.json` exposes `dev`, `build`, `typecheck`, `lint`, `test`, and E2E commands.
 - `README.md` documents Node, npm, environment setup, the custom server, security constraints, and the verification loop.
 - Secrets are read by the Node server; no `NEXT_PUBLIC_` Browserbase credential was found.
-- Workflow concepts have explicit domain types in `src/lib/workflow/domain.ts`.
+- Workflow concepts have explicit domain types in `src/shared/contracts/workflow/domain.ts`.
 - Zod validates workflow imports, exports, recorded actions, and WebSocket messages.
 - The workflow reducer keeps step order, selection, dirty state, deletion recovery, and timestamps together.
 - UI state such as panel sizing and overlays is local rather than application-global.
@@ -54,7 +54,7 @@ These original results remain a historical baseline, not permission to weaken te
 | P1       | Open                | Session state ownership           | `useRecorderSession.ts` still coordinates many independent state values, server messages, timers, commands, derived display state, and reset logic.                                    | Valid state combinations remain implicit, and duplicated transition logic can drift.                               |
 | P1       | Partially addressed | Oversized coordinators            | Workspace policy moved into `useWorkspaceController`, and `BrowserPanel` now uses grouped props and slots; the workspace and browser render trees still need the Phase 3 component split. | Focused presentation units and controller tests are still needed.                                                   |
 | P1       | Open                | Unsafe editor updates             | `StepEditor.tsx` still casts partially updated objects to `WorkflowStep`.                                                                                                               | The discriminated union remains bypassed at the user-edit boundary.                                                 |
-| P2       | Open                | Protocol cohesion                 | `src/lib/protocol.ts` still contains session, browser, picker, CAPTCHA, replay, diagnostics, and transport envelopes in one schema.                                                     | A change to one message family requires touching a global protocol module.                                          |
+| P2       | Resolved            | Protocol cohesion                 | Client messages, server messages, and shared protocol types now have separate modules under `src/shared/contracts/protocol`.                                                          | Message families have explicit ownership while retaining one public contract entry point.                           |
 | P2       | Open                | Server orchestration              | `RecordingRuntime` still owns session lifecycle, pages, recorder installation, CAPTCHA state, pickers, navigation, replay coordination, sequencing, and cleanup.                        | Server behavior remains expensive to understand and risky to change.                                                |
 | P2       | Open                | Replay engine cohesion            | `engine.ts` still combines preflight, frame/locator resolution, action execution, settling, wait conditions, recovery, and run orchestration.                                         | Replay policies cannot yet be tested or changed independently.                                                      |
 | P2       | Open                | Injected recorder maintainability | `injected.ts` remains a large raw script string.                                                                                                                                         | Logic inside the string receives less direct TypeScript, lint, and modularity support than normal source files.     |
@@ -83,10 +83,14 @@ Recommended target structure:
 ```text
 src/
   app/
-    workspace/
-      RecorderWorkspace.tsx
-      useWorkspaceController.ts
-      workspace.types.ts
+    (product)/
+      workflows/[workflowId]/edit/
+        _components/
+        _hooks/
+        _styles/
+    (test-support)/
+      fixture/
+    _styles/
 
   features/
     browser/
@@ -107,29 +111,29 @@ src/
       components/
       model/
       index.ts
-    workflow/
+    workflow-editor/
       components/
       model/
         workflow.reducer.ts
         workflow.commands.ts
-      persistence/
-        importWorkflow.ts
+      api/
+      import-export/
         exportWorkflow.ts
       index.ts
+    workflow-library/
 
   shared/
     contracts/
       protocol/
+      recording/
       workflow/
-    config/
     ui/
 
   server/
-    app/
-    config/
-    provider/
+    infrastructure/
     recording/
     replay/
+    workflows/
 ```
 
 This is a destination, not a request for one large file-moving change. Move code only when a boundary has an API and tests.
@@ -147,13 +151,13 @@ This is a destination, not a request for one large file-moving change. Move code
 
 ## Phased implementation
 
-## Phase 1 — Establish application and feature boundaries (in progress)
+## Phase 1 — Establish application and feature boundaries (completed)
 
 ### 1.1 Move workspace composition into `app` — Completed
 
 **Status:** Completed and merged in PR #2.
 
-- Moved `RecorderWorkspace`, `WorkspaceNavbar`, and `useWorkspacePanels` from `features/recorder` to `app/workspace`.
+- Moved `RecorderWorkspace`, `WorkspaceNavbar`, and `useWorkspacePanels` out of `features/recorder`; they now live in private folders beneath the workflow editor route.
 - Added `useWorkspaceController` as the owner of workflow state, session effects, derived locks, import/export policy, replay requests, dialogs, and intent handling.
 - Exposed grouped browser, recorder, replay, workflow, layout, and dialog models/actions instead of leaking the broad recorder session into composition.
 - Kept `src/app/page.tsx` as the route entry and changed it to render the app-owned workspace.
@@ -199,20 +203,22 @@ Acceptance criteria:
 - [x] Browser rendering is tested through grouped browser models/actions and explicit slots.
 - [x] Recorder and replay controls can change without editing browser internals.
 
-### 1.4 Put files under their actual owners — Pending
+### 1.4 Put files under their actual owners — Completed
 
-**Status:** Not started. This is the next unfinished Phase 1 step.
+**Status:** Completed.
 
-- Move `src/hooks/use-recorder-socket.ts` to `features/recorder/transport`.
-- Move recorder presentation and lifecycle types out of `src/lib/recorder-session.ts`.
-- Move the workflow reducer from generic `lib` to `features/workflow/model`.
-- Keep workflow domain contracts and schemas in a client/server-safe shared contract area.
-- Keep workflow import/export adapters with the workflow feature, not in the domain contract.
+- Moved recorder transport, presentation types, selectors, and recorded-action conversion under `features/recorder`.
+- Moved replay result presentation types under `features/replay`.
+- Moved workflow reducer, client API, and browser export behavior under `features/workflow-editor`.
+- Moved workflow, recording, and protocol contracts into client/server-safe shared packages.
+- Split protocol schemas by client message, server message, and common protocol types.
+- Moved workspace composition into private folders beneath the workflow editor route.
+- Moved shared UI primitives and server infrastructure adapters under explicit owners.
 
 Acceptance criteria:
 
-- Every non-shared module has an obvious product owner.
-- Contract modules contain no React, DOM, Node, Browserbase, or Playwright dependency.
+- [x] Every non-shared module has an obvious product owner.
+- [x] Contract modules contain no React, DOM, Node, Browserbase, or Playwright dependency.
 
 ## Phase 2 — Make state transitions explicit
 

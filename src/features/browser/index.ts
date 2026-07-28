@@ -1,5 +1,5 @@
-export { BrowserPanel } from "./BrowserPanel";
-export type { BrowserPanelAlert } from "./BrowserPanel";
+export { BrowserPanel } from "./components/BrowserPanel";
+export type { BrowserPanelAlert } from "./components/BrowserPanel";
 export type {
   BrowserActions,
   BrowserPageState,

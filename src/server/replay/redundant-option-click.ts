@@ -1,4 +1,4 @@
-import { locatorCandidatesForTarget, type WorkflowStep } from "@/lib/workflow/domain";
+import { locatorCandidatesForTarget, type WorkflowStep } from "@/shared/contracts/workflow/domain";
 
 const OPTION_ROLES = new Set(["option", "menuitemradio"]);
 

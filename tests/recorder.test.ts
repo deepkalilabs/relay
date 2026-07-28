@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { RecordedAction } from "@/lib/workflow/recorded-action";
-import { ActionDeduplicator, actionFingerprint } from "@/server/recorder/deduplicate";
-import { RECORDER_SCRIPT } from "@/server/recorder/injected";
-import { isAutomaticallyRecordableAction, isValidDateValue } from "@/server/recorder/runtime";
+import type { RecordedAction } from "@/shared/contracts/recording/recorded-action";
+import { ActionDeduplicator, actionFingerprint } from "@/server/recording/deduplicate";
+import { RECORDER_SCRIPT } from "@/server/recording/injected";
+import { isAutomaticallyRecordableAction, isValidDateValue } from "@/server/recording/runtime";
 
 const action: RecordedAction = {
   type: "navigate", name: "Navigate", payload: { url: "https://example.com" }, sensitive: false,

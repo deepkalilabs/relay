@@ -1,10 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { Workflow } from "@/lib/workflow/domain";
-import { serializeWorkflow } from "@/lib/workflow/export";
-import { MAX_WORKFLOW_FILE_BYTES, parseWorkflowJson } from "@/lib/workflow/import";
-import { createWorkflow, WorkflowSchema } from "@/lib/workflow/schema";
+import type { Workflow } from "@/shared/contracts/workflow/domain";
+import {
+  MAX_WORKFLOW_FILE_BYTES,
+  parseWorkflowJson,
+  serializeWorkflow,
+} from "@/shared/contracts/workflow/serialization";
+import { createWorkflow, WorkflowSchema } from "@/shared/contracts/workflow/schema";
 import type { WorkflowListResult, WorkflowRepository } from "./repository";
 
 const WORKFLOW_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -187,4 +190,3 @@ export class FileWorkflowRepository implements WorkflowRepository {
     }
   }
 }
-

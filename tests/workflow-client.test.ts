@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { workflowEditorClient } from "@/lib/workflow/client";
-import { createWorkflow } from "@/lib/workflow/schema";
+import { workflowEditorClient } from "@/features/workflow-editor";
+import { createWorkflow } from "@/shared/contracts/workflow/schema";
 
 afterEach(() => {
   vi.unstubAllGlobals();
