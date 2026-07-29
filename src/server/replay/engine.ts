@@ -14,7 +14,7 @@ import {
 import { isRedundantOptionClickBeforeSelect } from "@/server/replay/redundant-option-click";
 
 export const REPLAY_STEP_TIMEOUT_MS = 15_000;
-export const UI_SETTLE_QUIET_MS = 500;
+export const UI_SETTLE_QUIET_MS = 200;
 export const UI_SETTLE_MAX_MS = 5_000;
 export const WAIT_CONDITION_STABLE_MS = 300;
 const WAIT_POLL_MS = 50;
