@@ -39,15 +39,14 @@ export default defineConfig([
   {
     files: ["src/features/**/*.{ts,tsx}"],
     rules: {
-      "no-restricted-imports": ["error", { patterns: [featureInternals, appModules, serverModules] }],
+      "no-restricted-imports": [
+        "error",
+        { patterns: [featureModules, appModules, serverModules] },
+      ],
     },
   },
   {
-    files: [
-      "src/components/**/*.{ts,tsx}",
-      "src/hooks/**/*.{ts,tsx}",
-      "src/lib/**/*.{ts,tsx}",
-    ],
+    files: ["src/shared/**/*.{ts,tsx}"],
     rules: {
       "no-restricted-imports": [
         "error",

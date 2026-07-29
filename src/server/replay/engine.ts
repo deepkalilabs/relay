@@ -1,16 +1,16 @@
 import type { Frame, Locator, Page, Request } from "playwright-core";
-import type { ReplayDiagnostic, ReplayStatus, ServerMessage } from "@/lib/protocol";
+import type { ReplayDiagnostic, ReplayStatus, ServerMessage } from "@/shared/contracts/protocol";
 import {
   locatorCandidatesForTarget,
   type ElementTarget,
   type LocatorCandidate,
   type Workflow,
   type WorkflowStep,
-} from "@/lib/workflow/domain";
+} from "@/shared/contracts/workflow/domain";
 import {
   WorkflowSchema,
   orderLocatorCandidates,
-} from "@/lib/workflow/schema";
+} from "@/shared/contracts/workflow/schema";
 import { isRedundantOptionClickBeforeSelect } from "@/server/replay/redundant-option-click";
 
 export const REPLAY_STEP_TIMEOUT_MS = 15_000;

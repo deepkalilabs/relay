@@ -1,4 +1,4 @@
-import type { Workflow } from "@/lib/workflow/domain";
+import type { Workflow } from "@/shared/contracts/workflow/domain";
 
 export interface WorkflowListResult {
   workflows: Workflow[];

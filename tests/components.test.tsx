@@ -2,11 +2,10 @@ import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { BrowserPanel, type BrowserActions } from "@/features/browser";
-import { RecorderControls } from "@/features/recorder";
+import { RecorderControls, stepFromRecordedAction } from "@/features/recorder";
 import { ReplayControls, ReplayFailurePanel } from "@/features/replay";
-import { WorkspaceNavbar } from "@/app/workspace/WorkspaceNavbar";
-import { ManualStepDialog, StepEditor, WorkflowTimeline } from "@/features/workflow";
-import { stepFromRecordedAction } from "@/lib/workflow/recorded-action";
+import { WorkspaceNavbar } from "@/app/(product)/workflows/[workflowId]/edit/_components/WorkspaceNavbar";
+import { ManualStepDialog, StepEditor, WorkflowTimeline } from "@/features/workflow-editor";
 import { TestBrowserPanel } from "./helpers/TestBrowserPanel";
 
 describe("WorkflowTimeline", () => {

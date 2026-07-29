@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { getDisplayError, getDisplayStatus } from "@/lib/recorder-session";
-import { clampPanelWidth, keyboardPanelWidth } from "@/app/workspace/useWorkspacePanels";
+import { getDisplayError, getDisplayStatus } from "@/features/recorder";
+import {
+  clampPanelWidth,
+  keyboardPanelWidth,
+} from "@/app/(product)/workflows/[workflowId]/edit/_hooks/useWorkspacePanels";
 
 describe("recorder presentation state", () => {
   it("maps reconnecting and offline transport states without changing the session state", () => {

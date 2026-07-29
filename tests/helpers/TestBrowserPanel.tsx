@@ -7,14 +7,20 @@ import {
   type PopupState,
   type SelectPickerState,
 } from "@/features/browser";
-import { RecorderControls } from "@/features/recorder";
-import { ReplayControls, ReplayFailurePanel } from "@/features/replay";
-import type { CaptchaStatus, ReplayStatus } from "@/lib/protocol";
+import {
+  RecorderControls,
+  type RecordingStatus,
+  type TransportStatus,
+} from "@/features/recorder";
+import {
+  ReplayControls,
+  ReplayFailurePanel,
+} from "@/features/replay";
 import type {
-  RecordingStatus,
+  CaptchaStatus,
+  ReplayStatus,
   ReplayStepResultState,
-  TransportStatus,
-} from "@/lib/recorder-session";
+} from "@/shared/contracts/protocol";
 
 interface TestBrowserPanelProps {
   status: RecordingStatus;

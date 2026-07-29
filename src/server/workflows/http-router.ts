@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { z } from "zod";
-import { toLibraryWorkflowItem } from "@/lib/workflow/library";
-import { WorkflowSchema } from "@/lib/workflow/schema";
+import { toLibraryWorkflowItem } from "./library-projection";
+import { WorkflowSchema } from "@/shared/contracts/workflow/schema";
 import {
   WorkflowConflictError,
   WorkflowNotFoundError,
@@ -95,4 +95,3 @@ export async function handleWorkflowApi(
     return true;
   }
 }
-

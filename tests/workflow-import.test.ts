@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { MAX_WORKFLOW_FILE_BYTES, parseWorkflowJson } from "@/lib/workflow/import";
-import { serializeWorkflow } from "@/lib/workflow/export";
-import { createWorkflow } from "@/lib/workflow/schema";
+import {
+  MAX_WORKFLOW_FILE_BYTES,
+  parseWorkflowJson,
+  serializeWorkflow,
+} from "@/shared/contracts/workflow/serialization";
+import { createWorkflow } from "@/shared/contracts/workflow/schema";
 
 function exportedWorkflow() {
   const workflow = createWorkflow("session-1");

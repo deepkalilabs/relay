@@ -1,9 +1,9 @@
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { LibraryScreen, type WorkflowLibraryClient } from "@/features/library";
-import type { LibraryWorkflowItem } from "@/lib/workflow/library";
-import { createWorkflow } from "@/lib/workflow/schema";
+import { LibraryScreen, type WorkflowLibraryClient } from "@/features/workflow-library";
+import type { LibraryWorkflowItem } from "@/shared/contracts/workflow/library";
+import { createWorkflow } from "@/shared/contracts/workflow/schema";
 
 const push = vi.fn();
 

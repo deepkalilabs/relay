@@ -1,14 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Browser, BrowserContext, Page } from "playwright-core";
-import { ClientMessageSchema } from "@/lib/protocol";
-import { hideLiveViewNavbar, selectLiveViewPage } from "@/server/provider/browserbase";
-import type { BrowserProvider } from "@/server/provider/types";
+import { ClientMessageSchema } from "@/shared/contracts/protocol";
+import {
+  hideLiveViewNavbar,
+  selectLiveViewPage,
+} from "@/server/infrastructure/browser/browserbase";
+import type { BrowserProvider } from "@/server/infrastructure/browser/types";
 import {
   isRecordableNavigationUrl,
   normalizeBrowserUrl,
   RecordingRuntime,
-} from "@/server/recorder/runtime";
-import { createWorkflow } from "@/lib/workflow/schema";
+} from "@/server/recording/runtime";
+import { createWorkflow } from "@/shared/contracts/workflow/schema";
 
 let captchaConsoleInfo: ReturnType<typeof vi.spyOn>;
 

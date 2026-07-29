@@ -1,3 +1,3 @@
-export { ReplayControls } from "./ReplayControls";
-export { ReplayFailurePanel } from "./ReplayFailurePanel";
-export { RunWorkflowDialog } from "./RunWorkflowDialog";
+export { ReplayControls } from "./components/ReplayControls";
+export { ReplayFailurePanel } from "./components/ReplayFailurePanel";
+export { RunWorkflowDialog } from "./components/RunWorkflowDialog";

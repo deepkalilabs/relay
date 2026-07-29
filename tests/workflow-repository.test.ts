@@ -2,7 +2,7 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { createWorkflow } from "@/lib/workflow/schema";
+import { createWorkflow } from "@/shared/contracts/workflow/schema";
 import {
   FileWorkflowRepository,
   WorkflowConflictError,

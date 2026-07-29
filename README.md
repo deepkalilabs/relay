@@ -12,6 +12,7 @@ Each step can be reviewed, renamed, reordered, disabled, or deleted before the w
 - Displays recorded actions immediately in an editable workflow timeline.
 - Creates durable drafts and saves one JSON file per workflow.
 - Lists locally saved drafts and completed workflows in the Library.
+- Creates, edits, and permanently deletes reusable local profiles backed by one JSON file each.
 - Supports reconnecting to an active recording after a short network interruption.
 - Exports the completed workflow as portable JSON.
 - Replays full workflows or starts from a selected deterministic step.
@@ -42,7 +43,7 @@ User explicitly saves through the local workflow API
 Atomic JSON file in .data/workflows
 ```
 
-The React client owns unsaved edits while the editor is open. The `app/workspace` layer composes the browser, recorder, replay, and workflow features through their public entry points. A custom Node server keeps Browserbase credentials out of the client, exposes the local workflow API, maintains the Playwright CDP connection, and streams sequenced recorder events over `/ws`.
+The React client owns unsaved edits while the editor is open. Route-private workspace modules under the workflow editor route compose the browser, recorder, replay, and workflow features through their public entry points. A custom Node server keeps Browserbase credentials out of the client, exposes the local workflow API, maintains the Playwright CDP connection, and streams sequenced recorder events over `/ws`.
 
 ## Repository structure
 
@@ -53,40 +54,34 @@ browser_replay/
 │       └── mvp_design.md          # Product and interaction specification
 ├── src/
 │   ├── app/
-│   │   ├── fixture/               # Controlled pages used by E2E tests
-│   │   ├── library/               # Local workflow Library route
-│   │   ├── workflows/[workflowId]/edit/ # Durable workflow editor route
-│   │   ├── workspace/             # Cross-feature composition and workspace policy
-│   │   ├── globals.css            # Global tokens, reset, and shared controls
-│   │   ├── layout.tsx             # Next.js root layout
-│   │   └── page.tsx               # Application entry page
-│   ├── components/
-│   │   └── ui/                    # Shared accessible UI primitives
+│   │   ├── (product)/             # Product routes; group is omitted from URLs
+│   │   │   ├── library/           # Local workflow Library route
+│   │   │   ├── profile/           # Local profile library route
+│   │   │   └── workflows/[workflowId]/edit/
+│   │   │       ├── _components/   # Route-private workspace composition
+│   │   │       └── _hooks/        # Route-private workspace policy
+│   │   ├── (test-support)/fixture/ # Controlled pages used by E2E tests
+│   │   ├── _styles/               # Global tokens, reset, and shared controls
+│   │   └── layout.tsx             # Single Next.js root layout
 │   ├── features/
-│   │   ├── browser/               # Live View, browser overlays, and browser-owned types
-│   │   ├── library/               # Saved-recording library presentation
-│   │   ├── recorder/              # Recorder session and transport controls
+│   │   ├── browser/               # Live View, overlays, hooks, and browser model
+│   │   ├── recorder/              # Recorder components, model, and transport
 │   │   ├── replay/                # Replay controls, recovery, and run dialog
-│   │   └── workflow/              # Timeline, step editor, dialogs, and styles
-│   ├── hooks/
-│   │   └── use-recorder-socket.ts # WebSocket lifecycle and recovery
-│   ├── lib/
-│   │   ├── protocol.ts            # Client/server message schemas
-│   │   ├── recorder-session.ts    # Recorder/replay presentation state
-│   │   └── workflow/
-│   │       ├── export.ts          # JSON serialization and download
-│   │       ├── recorded-action.ts # Recorder-event conversion
-│   │       ├── schema.ts          # Zod workflow model and locators
-│   │       └── store.ts           # Timeline reducer and edit operations
+│   │   ├── workflow-editor/       # Timeline, editing state, API, and export
+│   │   ├── workflow-library/      # Saved-workflow library presentation
+│   │   └── profile/               # Profile CRUD presentation and HTTP client
+│   ├── shared/
+│   │   ├── contracts/             # Profile, workflow, recording, and protocol contracts
+│   │   └── ui/                    # Shared accessible UI primitives
 │   └── server/
-│       ├── provider/
-│       │   ├── browserbase.ts     # Browserbase session adapter
-│       │   └── types.ts           # Provider interfaces
-│       ├── recorder/
+│       ├── infrastructure/browser/ # Browserbase adapter and provider port
+│       ├── recording/
 │       │   ├── deduplicate.ts     # Duplicate event suppression
 │       │   ├── injected.ts        # Script installed in browser pages
 │       │   └── runtime.ts         # Session, page, and event runtime
-│       └── workflows/             # Filesystem repository and local HTTP API
+│       ├── replay/                # Replay engine and replay policies
+│       ├── profiles/              # Profile filesystem repository and local HTTP API
+│       └── workflows/             # Workflow filesystem repository and local HTTP API
 ├── tests/
 │   ├── e2e/                       # Playwright workspace and browser tests
 │   ├── components.test.tsx        # React component behavior
@@ -98,11 +93,11 @@ browser_replay/
 └── package.json                   # Commands and dependencies
 ```
 
-Each feature exposes a small `index.ts` API. Application composition may import those APIs, while feature internals use relative imports. ESLint prevents deep cross-feature imports, lower layers from importing `app`, and client modules from importing server implementations.
+Each feature exposes a small `index.ts` API. Route-private application composition may import those APIs, while feature internals use relative imports. Shared contracts are client/server-safe and do not depend on features. ESLint prevents deep cross-feature imports, lower layers from importing `app`, and client modules from importing server implementations.
 
 ## Workflow model
 
-The dependency-free domain contract lives in `src/lib/workflow/domain.ts`. It defines the workflow aggregate, named step variants, element targets, page context, replay waits, and metadata shared by the recorder, editor, persistence, protocol, and replay engine. Runtime validation for imported files and WebSocket messages lives separately in `src/lib/workflow/schema.ts`; those schemas are compile-time checked against the domain types.
+The dependency-free workflow contract lives in `src/shared/contracts/workflow`. It defines the workflow aggregate, named step variants, element targets, page context, replay waits, serialization, and metadata shared by the recorder, editor, persistence, protocol, and replay engine. Runtime validation is kept beside the contract and compile-time checked against the domain types. Client/server message schemas are split by direction under `src/shared/contracts/protocol`.
 
 Saved workflows and new exports use schema version `1.1`, including `status`, `revision`, and optional `finishedAt` lifecycle fields. Schema `1.0` files remain readable at compatibility boundaries and normalize as completed revision-1 workflows. A workflow also contains its Browserbase source, timestamps, and an ordered list of steps. Automatic recording produces `fill`, `set_date`, `select`, and `click` steps. Manual steps and existing workflows continue to support:
 
@@ -125,6 +120,18 @@ WORKFLOW_DATA_DIR=/path/to/workflows npm run dev
 ```
 
 The Library API returns workflow names and ordered step names only. Full step payloads are loaded only when an editor route opens a specific workflow. Invalid files are skipped while valid workflows remain available.
+
+## Local profile storage
+
+Profiles are explicitly saved as `.data/profiles/{profileId}.json`. The first Save creates the file; later saves and permanent deletion require the last loaded revision so stale clients cannot silently replace or remove newer data. Writes use private permissions and same-directory atomic replacement.
+
+Set `PROFILE_DATA_DIR` to use another absolute or project-relative directory:
+
+```bash
+PROFILE_DATA_DIR=/path/to/profiles npm run dev
+```
+
+The profile list API returns only names, Draft/Ready status, and update times. Identity and location values are loaded only for the selected profile. Incomplete profiles remain persistable drafts; Ready status is derived only when every field is present and the email is valid. Invalid files are skipped and surfaced as a non-sensitive count.
 
 ## Requirements
 
@@ -156,6 +163,7 @@ For local development, `npm run dev` also loads an existing, gitignored `secret.
 | `npm run typecheck` | Check TypeScript without emitting files |
 | `npm run lint` | Run ESLint with zero warnings allowed |
 | `npm test` | Run the Vitest unit and component suite |
+| `npm run test:changed` | Run tests affected by staged, unstaged, or untracked changes |
 | `npm run test:e2e` | Run local Playwright end-to-end tests |
 | `npm run test:browserbase` | Run the paid Browserbase smoke test |
 
@@ -166,6 +174,7 @@ For local development, `npm run dev` also loads an existing, gitignored `secret.
 - Sensitive steps are marked but are not automatically redacted.
 - Recorded payloads are written to local workflow JSON only after Save or Finish and are never written to server logs.
 - Local workflow files can contain passwords, tokens, and payment values in plain text; protect the workflow data directory like other secrets.
+- Local profile files contain identity and location information in plain text; protect the profile data directory like other personal data.
 - Exported JSON is plain text and should be handled like a secret.
 - Automatic CAPTCHA solving is enabled for recording and replay sessions. During recording, detected challenges temporarily lock local browser input while Browserbase solves them; replay remains unchanged and CAPTCHA lifecycle events stay available in server diagnostics.
 - Sessions are released on Stop, disconnect timeout, replacement, or server shutdown.
@@ -177,7 +186,7 @@ This app is intended for local development or long-running Node hosting. The per
 
 The MVP supports a single active tab, with an explicit prompt when a popup opens. It is a desktop workspace intended for viewports at least 1024 pixels wide.
 
-Authentication, collaboration, assertions, variables, branching, persisted screenshots, secret management, autosave, and production deployment are intentionally out of scope. Replay remains linear and single-tab. Library deletion, duplication, rename, import, export, and Run actions are also deferred.
+Authentication, collaboration, assertions, variables, branching, persisted screenshots, secret management, autosave, and production deployment are intentionally out of scope. Replay remains linear and single-tab. Workflow Library deletion, duplication, rename, import, export, and Run actions are deferred. Profiles currently store identity and location values only.
 
 ## Verification
 
@@ -195,4 +204,4 @@ The E2E suite uses controlled pages under `/fixture` and includes an accessibili
 BROWSERBASE_API_KEY=... npm run test:browserbase
 ```
 
-For deeper product and architecture context, see [plan.md](./plan.md) and [docs/product/mvp_design.md](./docs/product/mvp_design.md).
+For deeper product and architecture context, see [tasks/plan.md](./tasks/plan.md) and [docs/product/mvp_design.md](./docs/product/mvp_design.md).
