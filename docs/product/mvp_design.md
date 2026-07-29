@@ -2,6 +2,8 @@
 
 **Frontend Product and Technical Design Document**
 
+> **Historical document.** This specification records the original MVP target. Several deferred capabilities, including local persistence and profiles, have since shipped. Use the active [product roadmap](./roadmap.md) for current priorities and sequencing.
+
 ## 1. Overview
 
 Browser Memory Recorder is a browser-first workflow capture application.
