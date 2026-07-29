@@ -1,7 +1,14 @@
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { LibraryScreen, type WorkflowLibraryClient } from "@/features/workflow-library";
+import {
+  LibraryScreen,
+  WorkflowLibraryRequestError,
+  type ParameterProfileClient,
+  type WorkflowLibraryClient,
+} from "@/features/workflow-library";
+import type { Profile } from "@/shared/contracts/profile";
+import type { Workflow } from "@/shared/contracts/workflow";
 import type { LibraryWorkflowItem } from "@/shared/contracts/workflow/library";
 import { createWorkflow } from "@/shared/contracts/workflow/schema";
 
@@ -31,11 +38,104 @@ const workflows: LibraryWorkflowItem[] = [
   },
 ];
 
+const readyProfile: Profile = {
+  schemaVersion: "1.1",
+  id: "1a4b4040-7ec0-4e5c-b727-c338ab1bd962",
+  name: "Alex · US",
+  identity: { fullName: "Alex Morgan", email: "alex@example.com" },
+  location: { countryRegion: "United States", postalCode: "94107" },
+  status: "ready",
+  revision: 1,
+  createdAt: "2026-07-29T12:00:00.000Z",
+  updatedAt: "2026-07-29T12:00:00.000Z",
+};
+
+function parameterizedWorkflow(): Workflow {
+  const workflow = createWorkflow();
+  workflow.id = "checkout-flow";
+  workflow.name = "Checkout flow";
+  workflow.steps = [{
+    id: "checkout-email",
+    order: 0,
+    name: "Enter email address",
+    enabled: true,
+    type: "fill",
+    page: { id: "page", url: "https://example.com" },
+    target: {
+      name: "Email address",
+      candidates: [{ kind: "label", value: "Email address", exact: true }],
+    },
+    payload: { value: "recorded@example.com" },
+    parameterBinding: { source: "recorded" },
+    metadata: { recordedAt: workflow.updatedAt, origin: "recorded", sensitive: true },
+  }];
+  return workflow;
+}
+
 function client(overrides: Partial<WorkflowLibraryClient> = {}): WorkflowLibraryClient {
+  const detailed = new Map(workflows.map((summary) => {
+    const workflow = createWorkflow();
+    workflow.id = summary.id;
+    workflow.name = summary.name;
+    workflow.status = summary.status;
+    workflow.updatedAt = summary.updatedAt;
+    workflow.steps = summary.steps.map((step, index) => index === 1 ? {
+      id: step.id,
+      order: step.order,
+      name: step.name,
+      enabled: true,
+      type: "fill",
+      page: { id: "page", url: "https://example.com" },
+      target: { name: step.name, candidates: [{ kind: "label", value: step.name, exact: true }] },
+      payload: { value: "Recorded value" },
+      parameterBinding: { source: "recorded" },
+      metadata: { recordedAt: workflow.updatedAt, origin: "recorded", sensitive: false },
+    } : {
+      id: step.id,
+      order: step.order,
+      name: step.name,
+      enabled: true,
+      type: "navigate",
+      page: { id: "page", url: "https://example.com" },
+      payload: { url: "https://example.com" },
+      metadata: { recordedAt: workflow.updatedAt, origin: "recorded", sensitive: false },
+    });
+    return [summary.id, workflow] as const;
+  }));
   return {
     list: vi.fn(async () => ({ workflows, invalidFileCount: 0 })),
     create: vi.fn(async () => createWorkflow()),
+    get: vi.fn(async (id) => {
+      const workflow = detailed.get(id);
+      if (!workflow) throw new Error("Workflow not found.");
+      return workflow;
+    }),
+    save: vi.fn(async (_id, workflow) => ({ ...workflow, revision: workflow.revision + 1 })),
     ...overrides,
+  };
+}
+
+function profilesClient(): ParameterProfileClient {
+  return {
+    list: vi.fn(async () => ({ profiles: [], invalidFileCount: 0 })),
+    get: vi.fn(async () => {
+      throw new Error("Profile not found.");
+    }),
+  };
+}
+
+function readyProfilesClient(): ParameterProfileClient {
+  return {
+    list: vi.fn(async () => ({
+      profiles: [{
+        id: readyProfile.id,
+        name: readyProfile.name,
+        status: readyProfile.status,
+        updatedAt: readyProfile.updatedAt,
+      }],
+      invalidFileCount: 0,
+    })),
+    get: vi.fn(async () => readyProfile),
   };
 }
 
@@ -46,7 +146,7 @@ afterEach(() => {
 
 describe("LibraryScreen", () => {
   it("loads real workflow names and ordered step names with a static preview", async () => {
-    render(<LibraryScreen client={client()} initialSelectedId="checkout-flow" />);
+    render(<LibraryScreen client={client()} profileClient={profilesClient()} initialSelectedId="checkout-flow" />);
 
     expect(screen.getByRole("status")).toHaveTextContent("Loading workflows");
     expect(await screen.findByRole("heading", { name: "Library", level: 1 })).toBeInTheDocument();
@@ -65,26 +165,30 @@ describe("LibraryScreen", () => {
       "href",
       "/workflows/checkout-flow/edit",
     );
-    expect(within(details).queryByRole("button", { name: /run/i })).not.toBeInTheDocument();
+    expect(within(details).getByRole("button", { name: "Run workflow" })).toBeEnabled();
   });
 
   it("updates details and filters workflows case-insensitively", async () => {
     const user = userEvent.setup();
-    render(<LibraryScreen client={client()} />);
+    const profileApi = profilesClient();
+    render(<LibraryScreen client={client()} profileClient={profileApi} />);
     await screen.findByRole("button", { name: "Select Create support ticket workflow" });
 
     await user.click(screen.getByRole("button", { name: "Select Create support ticket workflow" }));
-    expect(screen.getByRole("region", { name: "Workflow details" })).toHaveTextContent("Open the support portal");
+    expect(screen.getByRole("region", { name: "Workflow details" })).toHaveTextContent(
+      "This workflow has no inputs to configure",
+    );
     expect(screen.getByRole("link", { name: "Edit workflow Create support ticket" })).toBeInTheDocument();
 
     await user.type(screen.getByRole("searchbox", { name: "Search workflows" }), "CHECKOUT");
     expect(screen.getAllByRole("button", { name: /Select .* workflow/ })).toHaveLength(1);
     expect(screen.getByRole("heading", { name: "Checkout flow" })).toBeInTheDocument();
+    await waitFor(() => expect(profileApi.list).toHaveBeenCalledOnce());
   });
 
   it("assigns stable thumbnail variants from normalized workflow titles", async () => {
     const user = userEvent.setup();
-    const { rerender } = render(<LibraryScreen client={client()} />);
+    const { rerender } = render(<LibraryScreen client={client()} profileClient={profilesClient()} />);
     const checkoutButton = await screen.findByRole("button", { name: "Select Checkout flow workflow" });
     const supportButton = screen.getByRole("button", { name: "Select Create support ticket workflow" });
 
@@ -98,7 +202,7 @@ describe("LibraryScreen", () => {
     const renamedWorkflows = workflows.map((workflow) => (
       workflow.id === "checkout-flow" ? { ...workflow, name: "Renamed checkout" } : workflow
     ));
-    rerender(<LibraryScreen client={client({
+    rerender(<LibraryScreen profileClient={profilesClient()} client={client({
       list: vi.fn(async () => ({ workflows: renamedWorkflows, invalidFileCount: 0 })),
     })} />);
 
@@ -111,7 +215,7 @@ describe("LibraryScreen", () => {
     const created = createWorkflow();
     created.id = "new-workflow";
     const create = vi.fn(async () => created);
-    render(<LibraryScreen client={client({ create })} />);
+    render(<LibraryScreen client={client({ create })} profileClient={profilesClient()} />);
     await screen.findByRole("button", { name: "New recording" });
 
     await user.click(screen.getByRole("button", { name: "New recording" }));
@@ -124,14 +228,138 @@ describe("LibraryScreen", () => {
     const emptyClient = client({
       list: vi.fn(async () => ({ workflows: [], invalidFileCount: 2 })),
     });
-    const { rerender } = render(<LibraryScreen client={emptyClient} />);
+    const { rerender } = render(<LibraryScreen client={emptyClient} profileClient={profilesClient()} />);
 
     expect(await screen.findByRole("heading", { name: "No saved workflows" })).toBeInTheDocument();
     expect(screen.getByRole("note")).toHaveTextContent("2 workflow files could not be loaded");
 
-    rerender(<LibraryScreen client={client({ list: vi.fn(async () => {
+    rerender(<LibraryScreen profileClient={profilesClient()} client={client({ list: vi.fn(async () => {
       throw new Error("offline");
     }) })} />);
     expect(await screen.findByRole("alert")).toHaveTextContent("Library could not be loaded");
+  });
+
+  it("auto-maps profile values, masks sensitive previews, saves, and hands off IDs only", async () => {
+    const user = userEvent.setup();
+    let current = parameterizedWorkflow();
+    const get = vi.fn(async () => current);
+    const save = vi.fn(async (_id: string, workflow: Workflow) => {
+      current = { ...workflow, revision: workflow.revision + 1 };
+      return current;
+    });
+    render(
+      <LibraryScreen
+        client={client({ get, save })}
+        profileClient={readyProfilesClient()}
+        initialSelectedId="checkout-flow"
+      />,
+    );
+
+    await user.selectOptions(
+      await screen.findByRole("combobox", { name: "Run profile" }),
+      readyProfile.id,
+    );
+    await user.click(screen.getByRole("button", { name: "Auto-map fields" }));
+
+    expect(await screen.findByRole("combobox", { name: "Profile field for Enter email address" }))
+      .toHaveValue("identity.email");
+    expect(screen.getByText("••••••••")).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(save).toHaveBeenCalledOnce());
+    expect(current.steps[0]).toMatchObject({
+      payload: { value: "recorded@example.com" },
+      parameterBinding: { source: "profile", field: "identity.email" },
+    });
+
+    await user.click(screen.getByRole("button", { name: "Run workflow" }));
+    await waitFor(() => expect(push).toHaveBeenCalledWith(
+      `/workflows/checkout-flow/edit?profile=${readyProfile.id}`,
+    ));
+    expect(push.mock.calls[0]?.[0]).not.toContain("alex@example.com");
+  });
+
+  it("blocks Run when profile summaries fail to load", async () => {
+    const profileApi = profilesClient();
+    profileApi.list = vi.fn(async () => {
+      throw new Error("offline");
+    });
+
+    render(
+      <LibraryScreen
+        client={client({ get: vi.fn(async () => parameterizedWorkflow()) })}
+        profileClient={profileApi}
+        initialSelectedId="checkout-flow"
+      />,
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Profiles could not be loaded");
+    expect(screen.getByRole("button", { name: "Run workflow" })).toBeDisabled();
+  });
+
+  it("retries a selected profile detail load without losing the selection", async () => {
+    const user = userEvent.setup();
+    const profileApi = readyProfilesClient();
+    profileApi.get = vi.fn()
+      .mockRejectedValueOnce(new Error("Profile temporarily unavailable."))
+      .mockResolvedValueOnce(readyProfile);
+
+    render(
+      <LibraryScreen
+        client={client({ get: vi.fn(async () => parameterizedWorkflow()) })}
+        profileClient={profileApi}
+        initialSelectedId="checkout-flow"
+      />,
+    );
+
+    const profilePicker = await screen.findByRole("combobox", { name: "Run profile" });
+    await user.selectOptions(profilePicker, readyProfile.id);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Profile temporarily unavailable");
+    expect(profilePicker).toHaveValue(readyProfile.id);
+
+    await user.click(screen.getByRole("button", { name: "Retry profile" }));
+
+    await waitFor(() => expect(profileApi.get).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByText("Profile temporarily unavailable.")).not.toBeInTheDocument());
+    expect(profilePicker).toHaveValue(readyProfile.id);
+  });
+
+  it("requires row-level resolution for overlapping save conflicts", async () => {
+    const user = userEvent.setup();
+    const base = parameterizedWorkflow();
+    const latest = structuredClone(base);
+    latest.revision = 2;
+    if (latest.steps[0]?.type === "fill") latest.steps[0].parameterBinding = { source: "runtime" };
+    let getCount = 0;
+    const get = vi.fn(async () => getCount++ ? latest : base);
+    const save = vi.fn()
+      .mockRejectedValueOnce(new WorkflowLibraryRequestError("Changed.", 409))
+      .mockImplementation(async (_id: string, workflow: Workflow) => ({
+        ...workflow,
+        revision: workflow.revision + 1,
+      }));
+    render(
+      <LibraryScreen
+        client={client({ get, save })}
+        profileClient={readyProfilesClient()}
+        initialSelectedId="checkout-flow"
+      />,
+    );
+
+    await screen.findByRole("combobox", { name: "Value source for Enter email address" });
+    await user.click(screen.getByRole("button", { name: "Auto-map fields" }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByText(/changed elsewhere/i)).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Keep mine" }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(2));
+    expect(save.mock.calls[1]?.[1]).toMatchObject({
+      revision: 2,
+      steps: [expect.objectContaining({
+        parameterBinding: { source: "profile", field: "identity.email" },
+      })],
+    });
   });
 });

@@ -1,9 +1,12 @@
 import { z } from "zod";
+import { profileFieldIds } from "@/shared/contracts/profile/field";
 import {
   locatorCandidatesForTarget,
   locatorKinds,
+  MAX_PARAMETER_VALUE_LENGTH,
   type ElementTarget,
   type LocatorCandidate,
+  type ParameterBinding,
   type ReplayWait,
   type ViewportPosition,
   type Workflow,
@@ -83,50 +86,64 @@ const ElementStepBase = StepBase.extend({
   ),
 });
 
+export const ParameterBindingSchema = z.discriminatedUnion("source", [
+  z.object({ source: z.literal("recorded") }).strict(),
+  z.object({
+    source: z.literal("fixed"),
+    value: z.string().max(MAX_PARAMETER_VALUE_LENGTH),
+  }).strict(),
+  z.object({
+    source: z.literal("profile"),
+    field: z.enum(profileFieldIds),
+  }).strict(),
+  z.object({ source: z.literal("runtime") }).strict(),
+]) satisfies z.ZodType<ParameterBinding>;
+
 export const WorkflowStepSchema = z.discriminatedUnion("type", [
   StepBase.extend({
     type: z.literal("navigate"),
     payload: z.object({ url: z.string().min(1, "Enter a destination URL.") }),
-  }),
+  }).strict(),
   ElementStepBase.extend({
     type: z.literal("click"),
     payload: z.object({}).optional(),
-  }),
+  }).strict(),
   ElementStepBase.extend({
     type: z.literal("fill"),
     payload: z.object({ value: z.string() }),
-  }),
+    parameterBinding: ParameterBindingSchema,
+  }).strict(),
   ElementStepBase.extend({
     type: z.literal("set_date"),
     payload: z.object({ value: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD for dates.") }),
-  }),
+  }).strict(),
   ElementStepBase.extend({
     type: z.literal("select"),
     payload: z.object({ value: z.string(), label: z.string().optional() }),
-  }),
+  }).strict(),
   ElementStepBase.extend({
     type: z.literal("check"),
     payload: z.object({}).optional(),
-  }),
+  }).strict(),
   ElementStepBase.extend({
     type: z.literal("uncheck"),
     payload: z.object({}).optional(),
-  }),
+  }).strict(),
   ElementStepBase.extend({
     type: z.literal("keypress"),
     payload: z.object({
       key: z.string().min(1, "Enter a key."),
       modifiers: z.array(z.enum(["Alt", "Control", "Meta", "Shift"])),
     }),
-  }),
+  }).strict(),
   ElementStepBase.extend({
     type: z.literal("submit"),
     payload: z.object({}).optional(),
-  }),
+  }).strict(),
 ]) satisfies z.ZodType<WorkflowStep>;
 
 export const WorkflowSchema = z.object({
-  schemaVersion: z.literal("1.1"),
+  schemaVersion: z.literal("1.2"),
   id: z.string().min(1),
   name: z.string().trim().min(1, "Give this workflow a name."),
   status: z.enum(["draft", "complete"]),
@@ -140,7 +157,49 @@ export const WorkflowSchema = z.object({
     startUrl: z.string().optional(),
   }),
   steps: z.array(WorkflowStepSchema),
-}) satisfies z.ZodType<Workflow>;
+}).strict() satisfies z.ZodType<Workflow>;
+
+const LegacyWorkflowStepSchema = z.discriminatedUnion("type", [
+  StepBase.extend({
+    type: z.literal("navigate"),
+    payload: z.object({ url: z.string().min(1, "Enter a destination URL.") }),
+  }).strict(),
+  ElementStepBase.extend({
+    type: z.literal("click"),
+    payload: z.object({}).optional(),
+  }).strict(),
+  ElementStepBase.extend({
+    type: z.literal("fill"),
+    payload: z.object({ value: z.string() }),
+  }).strict(),
+  ElementStepBase.extend({
+    type: z.literal("set_date"),
+    payload: z.object({ value: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD for dates.") }),
+  }).strict(),
+  ElementStepBase.extend({
+    type: z.literal("select"),
+    payload: z.object({ value: z.string(), label: z.string().optional() }),
+  }).strict(),
+  ElementStepBase.extend({
+    type: z.literal("check"),
+    payload: z.object({}).optional(),
+  }).strict(),
+  ElementStepBase.extend({
+    type: z.literal("uncheck"),
+    payload: z.object({}).optional(),
+  }).strict(),
+  ElementStepBase.extend({
+    type: z.literal("keypress"),
+    payload: z.object({
+      key: z.string().min(1, "Enter a key."),
+      modifiers: z.array(z.enum(["Alt", "Control", "Meta", "Shift"])),
+    }),
+  }).strict(),
+  ElementStepBase.extend({
+    type: z.literal("submit"),
+    payload: z.object({}).optional(),
+  }).strict(),
+]);
 
 const LegacyWorkflowSchema = z.object({
   schemaVersion: z.literal("1.0"),
@@ -153,22 +212,51 @@ const LegacyWorkflowSchema = z.object({
     sessionId: z.string(),
     startUrl: z.string().optional(),
   }),
-  steps: z.array(WorkflowStepSchema),
-});
+  steps: z.array(LegacyWorkflowStepSchema),
+}).strict();
+
+const PreviousWorkflowSchema = z.object({
+  schemaVersion: z.literal("1.1"),
+  id: z.string().min(1),
+  name: z.string().trim().min(1, "Give this workflow a name."),
+  status: z.enum(["draft", "complete"]),
+  revision: z.number().int().positive(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  finishedAt: z.string().datetime().optional(),
+  source: z.object({
+    provider: z.literal("browserbase"),
+    sessionId: z.string(),
+    startUrl: z.string().optional(),
+  }),
+  steps: z.array(LegacyWorkflowStepSchema),
+}).strict();
 
 export const CompatibleWorkflowSchema = z.discriminatedUnion(
   "schemaVersion",
-  [WorkflowSchema, LegacyWorkflowSchema],
+  [WorkflowSchema, PreviousWorkflowSchema, LegacyWorkflowSchema],
 ).transform(
-  (workflow): Workflow => workflow.schemaVersion === "1.1"
-    ? workflow
-    : {
+  (workflow): Workflow => {
+    if (workflow.schemaVersion === "1.2") return workflow;
+    const steps: WorkflowStep[] = workflow.steps.map((step) => step.type === "fill"
+      ? { ...step, parameterBinding: { source: "recorded" as const } }
+      : step);
+    if (workflow.schemaVersion === "1.1") {
+      return {
         ...workflow,
-        schemaVersion: "1.1",
-        status: "complete",
-        revision: 1,
-        finishedAt: workflow.updatedAt,
-      },
+        schemaVersion: "1.2",
+        steps,
+      };
+    }
+    return {
+      ...workflow,
+      schemaVersion: "1.2",
+      status: "complete",
+      revision: 1,
+      finishedAt: workflow.updatedAt,
+      steps,
+    };
+  },
 );
 
 const locatorPriority = new Map(locatorKinds.map((kind, index) => [kind, index]));
@@ -186,7 +274,7 @@ export const emptyTarget = (): ElementTarget => ({
 export function createWorkflow(sessionId = ""): Workflow {
   const now = new Date().toISOString();
   return {
-    schemaVersion: "1.1",
+    schemaVersion: "1.2",
     id: crypto.randomUUID(),
     name: "Untitled recording",
     status: "draft",

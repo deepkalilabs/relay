@@ -3,6 +3,7 @@ import {
   profileClient,
   type ProfileClient,
 } from "@/features/profile";
+import { parameterProfileClient } from "@/features/workflow-library";
 import type { Profile, ProfileInput } from "@/shared/contracts/profile";
 
 const input: ProfileInput = {
@@ -83,5 +84,28 @@ describe("profile client", () => {
       status: 409,
       message: "The profile changed since it was loaded.",
     });
+  });
+});
+
+describe("Library parameter profile client", () => {
+  it("loads only summaries and a selected full profile", async () => {
+    const list = {
+      profiles: [{
+        id: profile.id,
+        name: profile.name,
+        status: profile.status,
+        updatedAt: profile.updatedAt,
+      }],
+      invalidFileCount: 0,
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(list), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(profile), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(parameterProfileClient.list()).resolves.toEqual(list);
+    await expect(parameterProfileClient.get(profile.id)).resolves.toEqual(profile);
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/profiles");
+    expect(fetchMock).toHaveBeenNthCalledWith(2, `/api/profiles/${profile.id}`);
   });
 });

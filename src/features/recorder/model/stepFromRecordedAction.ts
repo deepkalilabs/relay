@@ -21,7 +21,13 @@ export function stepFromRecordedAction(action: RecordedAction, order: number): W
     case "navigate":
       return { ...common, type: "navigate", payload: { url: String(action.payload?.url ?? action.page.url) } };
     case "fill":
-      return { ...common, type: "fill", target: action.target!, payload: { value: String(action.payload?.value ?? "") } };
+      return {
+        ...common,
+        type: "fill",
+        target: action.target!,
+        payload: { value: String(action.payload?.value ?? "") },
+        parameterBinding: { source: "recorded" },
+      };
     case "set_date":
       return { ...common, type: "set_date", target: action.target!, payload: { value: String(action.payload?.value ?? "") } };
     case "select":

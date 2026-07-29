@@ -110,6 +110,37 @@ test("shows a load failure for an unknown workflow", async ({ page }) => {
   await expect(page.getByText("The workflow was not found.")).toBeVisible();
 });
 
+test("blocks direct replay when a profile-bound workflow has no selected profile", async ({ page, request }) => {
+  const workflow = await createDraft(request, "Profile-bound workflow");
+  workflow.steps = [{
+    id: crypto.randomUUID(),
+    order: 0,
+    name: "Enter email address",
+    enabled: true,
+    page: { id: "manual", url: "https://example.com" },
+    metadata: { recordedAt: new Date().toISOString(), origin: "manual", sensitive: false },
+    type: "fill",
+    target: { candidates: [{ kind: "label", value: "Email address", exact: true }] },
+    payload: { value: "recorded@example.com" },
+    parameterBinding: { source: "profile", field: "identity.email" },
+  }];
+  const saved = await request.put(`/api/workflows/${workflow.id}`, {
+    data: { workflow, expectedRevision: workflow.revision },
+  });
+  expect(saved.status()).toBe(200);
+
+  await page.goto(`/workflows/${workflow.id}/edit`);
+  await page.getByRole("button", { name: "Run workflow" }).click();
+
+  const runDialog = page.getByRole("dialog", { name: "Run workflow?" });
+  await expect(runDialog.getByRole("alert")).toContainText("Choose a run profile from the Library");
+  await expect(runDialog.getByRole("link", { name: "Choose profile in Library" })).toHaveAttribute(
+    "href",
+    `/library?selected=${workflow.id}`,
+  );
+  await expect(runDialog.getByRole("button", { name: "Run workflow" })).toHaveCount(0);
+});
+
 test("keeps the desktop workspace within the 1024px viewport", async ({ page, request }) => {
   await page.setViewportSize({ width: 1024, height: 768 });
   await openDraft(page, request);

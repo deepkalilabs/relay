@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { workflowEditorClient } from "@/features/workflow-editor";
+import { workflowLibraryClient } from "@/features/workflow-library";
 import { createWorkflow } from "@/shared/contracts/workflow/schema";
 
 afterEach(() => {
@@ -47,6 +48,39 @@ describe("workflow editor client", () => {
     await expect(request).rejects.toMatchObject({
       status: 409,
       message: "The workflow changed on disk.",
+    });
+  });
+});
+
+describe("workflow Library client", () => {
+  it("loads full workflows and saves bindings with revision protection", async () => {
+    const workflow = createWorkflow();
+    const saved = { ...workflow, revision: 2 };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(workflow), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(saved), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(workflowLibraryClient.get(workflow.id)).resolves.toEqual(workflow);
+    await expect(workflowLibraryClient.save(workflow.id, workflow, 1)).resolves.toEqual(saved);
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, `/api/workflows/${workflow.id}`);
+    expect(fetchMock).toHaveBeenNthCalledWith(2, `/api/workflows/${workflow.id}`, expect.objectContaining({
+      method: "PUT",
+      body: JSON.stringify({ workflow, expectedRevision: 1 }),
+    }));
+  });
+
+  it("preserves the status of Library save conflicts", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({ error: "The workflow changed since it was loaded." }),
+      { status: 409 },
+    )));
+
+    const workflow = createWorkflow();
+    await expect(workflowLibraryClient.save(workflow.id, workflow, 1)).rejects.toMatchObject({
+      status: 409,
+      message: "The workflow changed since it was loaded.",
     });
   });
 });

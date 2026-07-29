@@ -40,7 +40,15 @@ export function ManualStepDialog({ open, order, page, onClose, onInsert }: Manua
     if (type === "navigate") candidate = { ...common, type, payload: { url: value } };
     else {
       const target = { ...emptyTarget(), candidates: [{ kind: "css" as const, value: locator, exact: true }] };
-      if (type === "fill") candidate = { ...common, type, target, payload: { value } };
+      if (type === "fill") {
+        candidate = {
+          ...common,
+          type,
+          target,
+          payload: { value },
+          parameterBinding: { source: "recorded" },
+        };
+      }
       else if (type === "select") candidate = { ...common, type, target, payload: { value } };
       else if (type === "keypress") candidate = { ...common, type, target, payload: { key: value || "Enter", modifiers: [] } };
       else candidate = { ...common, type, target };

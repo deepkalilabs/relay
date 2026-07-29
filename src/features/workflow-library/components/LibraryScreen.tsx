@@ -3,6 +3,7 @@
 import { AlertTriangle, Plus, Search, SearchX } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import type { ProfileSummary } from "@/shared/contracts/profile";
 import type { WorkflowLibraryResponse } from "@/shared/contracts/workflow/library";
 import { LibrarySidebar } from "./LibrarySidebar";
 import { RecordingDetails } from "./RecordingDetails";
@@ -11,10 +12,15 @@ import {
   workflowLibraryClient,
   type WorkflowLibraryClient,
 } from "../api/workflowLibraryClient";
+import {
+  parameterProfileClient,
+  type ParameterProfileClient,
+} from "../api/parameterProfileClient";
 import styles from "../LibraryScreen.module.css";
 
 export interface LibraryScreenProps {
   client?: WorkflowLibraryClient;
+  profileClient?: ParameterProfileClient;
   initialSelectedId?: string;
 }
 
@@ -22,6 +28,7 @@ const initialData: WorkflowLibraryResponse | null = null;
 
 export function LibraryScreen({
   client = workflowLibraryClient,
+  profileClient = parameterProfileClient,
   initialSelectedId = "",
 }: LibraryScreenProps) {
   const router = useRouter();
@@ -30,6 +37,9 @@ export function LibraryScreen({
   const [query, setQuery] = useState("");
   const [selectedWorkflowId, setSelectedWorkflowId] = useState(initialSelectedId);
   const [creating, setCreating] = useState(false);
+  const [profiles, setProfiles] = useState<ProfileSummary[]>([]);
+  const [profilesLoading, setProfilesLoading] = useState(true);
+  const [profilesError, setProfilesError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -48,6 +58,27 @@ export function LibraryScreen({
       active = false;
     };
   }, [client]);
+
+  useEffect(() => {
+    let active = true;
+    profileClient.list().then(
+      (result) => {
+        if (!active) return;
+        setProfiles(result.profiles);
+        setProfilesError(null);
+        setProfilesLoading(false);
+      },
+      () => {
+        if (!active) return;
+        setProfiles([]);
+        setProfilesError("Profiles could not be loaded.");
+        setProfilesLoading(false);
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, [profileClient]);
 
   const visibleWorkflows = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase();
@@ -133,7 +164,15 @@ export function LibraryScreen({
                 selectedWorkflowId={selectedWorkflow.id}
                 onSelect={setSelectedWorkflowId}
               />
-              <RecordingDetails workflow={selectedWorkflow} />
+              <RecordingDetails
+                workflow={selectedWorkflow}
+                workflowClient={client}
+                profileClient={profileClient}
+                profiles={profiles}
+                profilesLoading={profilesLoading}
+                profilesError={profilesError}
+                navigate={(url) => router.push(url)}
+              />
             </div>
           ) : (
             <section className={styles.emptyState} role="status">

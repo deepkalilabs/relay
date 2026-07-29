@@ -5,6 +5,15 @@
  * `schema.ts` is the runtime boundary for untrusted data. The types here are
  * the compile-time model used inside the application.
  */
+import type { ProfileFieldId } from "@/shared/contracts/profile/field";
+
+export const MAX_PARAMETER_VALUE_LENGTH = 10_000;
+
+export type ParameterBinding =
+  | { source: "recorded" }
+  | { source: "fixed"; value: string }
+  | { source: "profile"; field: ProfileFieldId }
+  | { source: "runtime" };
 
 export const locatorKinds = [
   "testId",
@@ -132,6 +141,7 @@ export type FillStep = ElementWorkflowStepBase & {
   payload: {
     value: string;
   };
+  parameterBinding: ParameterBinding;
 };
 
 export type SelectStep = ElementWorkflowStepBase & {
@@ -188,7 +198,7 @@ export type WorkflowActionType = WorkflowStep["type"];
 export type WorkflowStatus = "draft" | "complete";
 
 export type Workflow = {
-  schemaVersion: "1.1";
+  schemaVersion: "1.2";
   id: string;
   name: string;
   status: WorkflowStatus;

@@ -253,7 +253,12 @@ describe("replay engine", () => {
     const steps: WorkflowStep[] = [
       { ...baseStep("navigate", 0), type: "navigate", payload: { url: "https://example.com" } },
       { ...baseStep("click", 1), type: "click" },
-      { ...baseStep("fill", 2), type: "fill", payload: { value: "hello" } },
+      {
+        ...baseStep("fill", 2),
+        type: "fill",
+        payload: { value: "hello" },
+        parameterBinding: { source: "recorded" },
+      },
       { ...baseStep("set_date", 3), type: "set_date", payload: { value: "2026-07-21" } },
       { ...baseStep("select", 4), type: "select", payload: { value: "one" } },
       { ...baseStep("check", 5), type: "check" },

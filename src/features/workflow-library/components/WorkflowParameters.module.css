@@ -1,0 +1,324 @@
+.parametersSection {
+  margin-top: 22px;
+}
+
+.parameterToolbar {
+  margin-bottom: 12px;
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.parameterToolbar h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.parameterToolbar p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.parameterTools {
+  display: flex;
+  align-items: end;
+  gap: 8px;
+}
+
+.parameterTools label {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.parameterTools select {
+  min-width: 180px;
+  height: 40px;
+  padding: 0 30px 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  color: var(--ink);
+  background: var(--surface);
+  font-size: 11px;
+}
+
+.parameterMatrix {
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.parameterMatrix > * {
+  padding: 0 12px;
+  display: grid;
+  grid-template-columns:
+    minmax(145px, 0.9fr)
+    minmax(120px, 0.72fr)
+    minmax(145px, 1fr)
+    minmax(140px, 0.95fr);
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.parameterMatrix > *:last-child {
+  border-bottom: 0;
+}
+
+.parameterColumns {
+  min-height: 34px;
+  color: #526176;
+  background: var(--surface-muted);
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.parameterRow {
+  position: relative;
+  min-height: 66px;
+}
+
+.stepIdentity {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.stepIdentity > span {
+  width: 21px;
+  height: 21px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  color: #536176;
+  background: #f0f3f7;
+  font-size: 10px;
+}
+
+.parameterColumns + .parameterRow .stepIdentity > span {
+  color: white;
+  background: #75a0f3;
+}
+
+.stepIdentity p {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: #45546a;
+  font-size: 12px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.parameterField {
+  min-width: 0;
+}
+
+.parameterField > label {
+  display: block;
+}
+
+.parameterField input,
+.parameterField select,
+.recordedValue {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  color: var(--ink);
+  background: var(--surface);
+  font-size: 11px;
+}
+
+.parameterField input {
+  padding: 0 9px;
+}
+
+.parameterField select {
+  height: 34px;
+  padding: 0 28px 0 9px;
+}
+
+.parameterField input:hover,
+.parameterField select:hover {
+  border-color: #aebacc;
+}
+
+.recordedValue {
+  padding: 8px 9px;
+  display: block;
+  overflow: hidden;
+  color: #45546a;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.runtimeValue {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.resolvedPreview {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+}
+
+.resolvedPreview span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.resolvedPreviewSuccess {
+  color: #237a46;
+}
+
+.resolvedPreviewPending {
+  color: #8a5a08;
+}
+
+.parameterConflict {
+  grid-column: 1 / -1;
+  margin: -2px 0 10px;
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 6px;
+  color: #7a4c00;
+  background: #fff7df;
+  font-size: 11px;
+}
+
+.parameterConflict span {
+  margin-right: auto;
+}
+
+.parameterConflict button {
+  border: 0;
+  color: var(--primary);
+  background: transparent;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.parameterFooter {
+  margin-top: 12px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+}
+
+.parameterFooter strong {
+  display: block;
+  color: #45546a;
+  font-size: 11px;
+}
+
+.parameterFooter p {
+  margin: 4px 0 0;
+  color: #9c2f26;
+  font-size: 11px;
+}
+
+.parameterFooter > div:last-child {
+  display: flex;
+  gap: 8px;
+}
+
+.parameterNotice,
+.parameterAlert,
+.noParameters {
+  margin: 10px 0;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--muted);
+  background: var(--surface-muted);
+  font-size: 11px;
+}
+
+.parameterAlert {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #9c2f26;
+  background: #fff4f2;
+}
+
+.parameterAlert button {
+  border: 0;
+  color: var(--primary);
+  background: transparent;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.parameterNotice a {
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.noValue {
+  color: var(--subtle);
+  font-size: 11px;
+}
+
+@media (min-width: 1024px) and (max-width: 1199px) {
+  .parameterToolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .parameterTools {
+    align-items: stretch;
+  }
+
+  .parameterTools label {
+    flex: 1;
+  }
+
+  .parameterTools select {
+    width: 100%;
+  }
+
+  .parameterColumns {
+    display: none;
+  }
+
+  .parameterRow {
+    padding-top: 12px;
+    padding-bottom: 12px;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .parameterRow .stepIdentity {
+    grid-column: 1 / -1;
+  }
+
+  .parameterFooter {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .parameterFooter > div:last-child {
+    justify-content: flex-end;
+  }
+}

@@ -50,6 +50,81 @@ test("shows filesystem workflows with a static preview, search, and local select
   expect(accessibility.violations).toEqual([]);
 });
 
+test("configures profile and runtime inputs before handing off to replay", async ({ page, request }) => {
+  const profileResponse = await request.post("/api/profiles", {
+    data: {
+      profile: {
+        name: "Alex · US",
+        identity: { fullName: "Alex Morgan", email: "alex@example.com" },
+        location: { countryRegion: "United States", postalCode: "94107" },
+      },
+    },
+  });
+  expect(profileResponse.status()).toBe(201);
+  const profile = await profileResponse.json();
+
+  const workflowResponse = await request.post("/api/workflows");
+  const workflow = await workflowResponse.json();
+  workflow.name = "Parameterized checkout";
+  workflow.steps = [
+    {
+      id: crypto.randomUUID(),
+      order: 0,
+      name: "Enter email address",
+      enabled: true,
+      page: { id: "manual", url: "https://example.com" },
+      metadata: { recordedAt: new Date().toISOString(), origin: "manual", sensitive: false },
+      type: "fill",
+      target: { candidates: [{ kind: "label", value: "Email address", exact: true }] },
+      payload: { value: "recorded@example.com" },
+      parameterBinding: { source: "recorded" },
+    },
+    {
+      id: crypto.randomUUID(),
+      order: 1,
+      name: "Order reference",
+      enabled: true,
+      page: { id: "manual", url: "https://example.com" },
+      metadata: { recordedAt: new Date().toISOString(), origin: "manual", sensitive: false },
+      type: "fill",
+      target: { candidates: [{ kind: "label", value: "Order reference", exact: true }] },
+      payload: { value: "recorded-reference" },
+      parameterBinding: { source: "recorded" },
+    },
+  ];
+  const savedResponse = await request.put(`/api/workflows/${workflow.id}`, {
+    data: { workflow, expectedRevision: workflow.revision },
+  });
+  expect(savedResponse.status()).toBe(200);
+
+  await page.goto(`/library?selected=${workflow.id}`);
+  await page.getByRole("combobox", { name: "Run profile" }).selectOption(profile.id);
+  await page.getByRole("button", { name: "Auto-map fields" }).click();
+  await expect(page.getByText("alex@example.com")).toBeVisible();
+  await page.getByRole("combobox", { name: "Value source for Order reference" }).selectOption("runtime");
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
+
+  await page.reload();
+  await expect(page.getByRole("combobox", { name: "Value source for Order reference" })).toHaveValue("runtime");
+  await page.getByRole("combobox", { name: "Run profile" }).selectOption(profile.id);
+
+  const accessibility = await new AxeBuilder({ page }).analyze();
+  expect(accessibility.violations).toEqual([]);
+
+  await page.getByRole("button", { name: "Run workflow" }).click();
+
+  await expect(page).toHaveURL(new RegExp(
+    `/workflows/${workflow.id}/edit\\?profile=${profile.id}$`,
+  ));
+  await expect(page.getByRole("dialog", { name: "Run workflow?" })).toBeVisible();
+  const runDialog = page.getByRole("dialog", { name: "Run workflow?" });
+  await expect(runDialog.getByRole("textbox", { name: "Order reference" })).toHaveAttribute("maxlength", "10000");
+  await runDialog.getByRole("textbox", { name: "Order reference" }).fill("RUN-42");
+  await expect(runDialog.getByRole("button", { name: "Run workflow" })).toBeEnabled();
+  expect(page.url()).not.toContain("RUN-42");
+});
+
 test("new recording creates a draft before opening the editor", async ({ page }) => {
   await page.goto("/library");
   await page.getByRole("button", { name: "New recording" }).click();
