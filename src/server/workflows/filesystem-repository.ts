@@ -128,7 +128,7 @@ export class FileWorkflowRepository implements WorkflowRepository {
     }
     const next = {
       ...incoming,
-      schemaVersion: "1.1" as const,
+      schemaVersion: "1.2" as const,
       id: current.id,
       status: lifecycle.status ?? current.status,
       revision: current.revision + 1,

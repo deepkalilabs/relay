@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { BrowserActions, BrowserPanelAlert, BrowserViewModel } from "@/features/browser";
+import { profileClient } from "@/features/profile";
 import { useRecorderSession } from "@/features/recorder";
 import {
   downloadWorkflow,
@@ -12,14 +13,16 @@ import {
   workflowReducer,
 } from "@/features/workflow-editor";
 import type { ReplayStepResultState } from "@/shared/contracts/protocol";
+import type { Profile } from "@/shared/contracts/profile";
 import type { WorkflowStep } from "@/shared/contracts/workflow/domain";
+import { resolveWorkflowParameters } from "@/shared/contracts/workflow/parameters";
 import { WorkflowSchema } from "@/shared/contracts/workflow/schema";
 import { useWorkspacePanels } from "./useWorkspacePanels";
 
 type Confirmation = "sensitiveExport" | null;
 type PersistenceStatus = "loading" | "ready" | "saving" | "error" | "conflict";
 
-export function useWorkspaceController(workflowId: string) {
+export function useWorkspaceController(workflowId: string, profileId = "", autoRun = false) {
   const router = useRouter();
   const [workflowState, dispatch] = useReducer(workflowReducer, undefined, initialWorkflowState);
   const workflowStateRef = useRef(workflowState);
@@ -28,13 +31,23 @@ export function useWorkspaceController(workflowId: string) {
   const [confirmation, setConfirmation] = useState<Confirmation>(null);
   const [announcement, setAnnouncement] = useState("");
   const [pendingReplayStartId, setPendingReplayStartId] = useState<string | undefined>();
+  const [runtimeValues, setRuntimeValues] = useState<Record<string, string>>({});
+  const [runProfile, setRunProfile] = useState<Profile | null>(null);
+  const [runProfileStatus, setRunProfileStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [runProfileError, setRunProfileError] = useState<string | null>(null);
   const [persistenceStatus, setPersistenceStatus] = useState<PersistenceStatus>("loading");
   const [persistenceError, setPersistenceError] = useState<string | null>(null);
   const [workflowLoaded, setWorkflowLoaded] = useState(false);
+  const autoRunRequested = useRef(false);
+  const runProfileRequestId = useRef(0);
 
   useEffect(() => {
     workflowStateRef.current = workflowState;
   }, [workflowState]);
+
+  useEffect(() => {
+    autoRunRequested.current = false;
+  }, [workflowId]);
 
   const onSessionStarted = useCallback((sessionId: string) => {
     dispatch({ type: "setSessionId", sessionId });
@@ -123,6 +136,11 @@ export function useWorkspaceController(workflowId: string) {
       setRunDialogOpen(false);
       setConfirmation(null);
       setPendingReplayStartId(undefined);
+      setRuntimeValues({});
+      runProfileRequestId.current += 1;
+      setRunProfile(null);
+      setRunProfileStatus("idle");
+      setRunProfileError(null);
     }, 0);
     return () => window.clearTimeout(timeout);
   }, [captchaLocked]);
@@ -132,18 +150,75 @@ export function useWorkspaceController(workflowId: string) {
   const closeRunDialog = () => {
     setRunDialogOpen(false);
     setPendingReplayStartId(undefined);
+    setRuntimeValues({});
+    runProfileRequestId.current += 1;
+    setRunProfile(null);
+    setRunProfileStatus("idle");
+    setRunProfileError(null);
   };
 
-  const requestReplay = (startStepId?: string) => {
+  const rangeNeedsProfile = useCallback((startStepId?: string) => {
+    const startIndex = startStepId
+      ? workflowStateRef.current.workflow.steps.findIndex((step) => step.id === startStepId)
+      : 0;
+    return workflowStateRef.current.workflow.steps.slice(Math.max(0, startIndex)).some((step) => (
+      step.enabled && step.type === "fill" && step.parameterBinding.source === "profile"
+    ));
+  }, []);
+
+  const loadRunProfile = useCallback(async () => {
+    if (!profileId) return;
+    const requestId = ++runProfileRequestId.current;
+    setRunProfile(null);
+    setRunProfileStatus("loading");
+    setRunProfileError(null);
+    try {
+      const loaded = await profileClient.get(profileId);
+      if (requestId !== runProfileRequestId.current) return;
+      setRunProfile(loaded);
+      setRunProfileStatus("ready");
+    } catch (error) {
+      if (requestId !== runProfileRequestId.current) return;
+      setRunProfileStatus("error");
+      setRunProfileError(error instanceof Error ? error.message : "The selected profile could not be loaded.");
+    }
+  }, [profileId]);
+
+  const requestReplay = useCallback((startStepId?: string) => {
     setPendingReplayStartId(startStepId);
+    setRuntimeValues({});
+    setRunProfile(null);
+    setRunProfileError(null);
+    if (rangeNeedsProfile(startStepId) && profileId) void loadRunProfile();
+    else {
+      runProfileRequestId.current += 1;
+      setRunProfileStatus("idle");
+    }
     setRunDialogOpen(true);
-  };
+  }, [loadRunProfile, profileId, rangeNeedsProfile]);
+
+  useEffect(() => {
+    if (!autoRun || !workflowLoaded || autoRunRequested.current) return;
+    autoRunRequested.current = true;
+    requestReplay();
+  }, [autoRun, requestReplay, workflowLoaded]);
 
   const startReplayNow = () => {
     const startStepId = pendingReplayStartId;
+    const parameterResult = resolveWorkflowParameters(workflowState.workflow, {
+      profile: runProfile,
+      runtimeValues,
+      startStepId,
+    });
+    if (!parameterResult.resolvedWorkflow) return;
     setRunDialogOpen(false);
     setPendingReplayStartId(undefined);
-    session.startReplay(workflowState.workflow, startStepId);
+    setRuntimeValues({});
+    runProfileRequestId.current += 1;
+    setRunProfile(null);
+    setRunProfileStatus("idle");
+    setRunProfileError(null);
+    session.startReplay(parameterResult.resolvedWorkflow, startStepId);
   };
 
   const exportNow = () => {
@@ -223,9 +298,51 @@ export function useWorkspaceController(workflowId: string) {
     () => workflowState.workflow.steps.find((step) => step.id === pendingReplayStartId),
     [pendingReplayStartId, workflowState.workflow.steps],
   );
+  const pendingReplayRange = useMemo(() => {
+    const startIndex = pendingReplayStartId
+      ? workflowState.workflow.steps.findIndex((step) => step.id === pendingReplayStartId)
+      : 0;
+    return workflowState.workflow.steps.slice(Math.max(0, startIndex));
+  }, [pendingReplayStartId, workflowState.workflow.steps]);
+  const pendingNeedsProfile = pendingReplayRange.some((step) => (
+    step.enabled && step.type === "fill" && step.parameterBinding.source === "profile"
+  ));
+  const replayParameterResult = useMemo(() => resolveWorkflowParameters(workflowState.workflow, {
+    profile: runProfile,
+    runtimeValues,
+    startStepId: pendingReplayStartId,
+  }), [pendingReplayStartId, runProfile, runtimeValues, workflowState.workflow]);
+  const runtimeFields = pendingReplayRange.flatMap((step) => (
+    step.enabled && step.type === "fill" && step.parameterBinding.source === "runtime"
+      ? [{
+          id: step.id,
+          name: step.name,
+          value: runtimeValues[step.id] ?? "",
+          sensitive: step.metadata.sensitive,
+        }]
+      : []
+  ));
+  const firstBlockingResolution = Object.values(replayParameterResult.resolutions).find((resolution) => (
+    resolution.status === "missing-fixed"
+    || resolution.status === "missing-profile"
+    || resolution.status === "invalid-runtime"
+  ));
+  const replayBlockedReason = pendingNeedsProfile && !profileId
+    ? "Choose a run profile from the Library before replaying this workflow."
+    : pendingNeedsProfile && runProfileStatus === "loading"
+      ? "Loading the selected run profile…"
+      : pendingNeedsProfile && runProfileStatus === "error"
+        ? (runProfileError ?? "The selected profile could not be loaded.")
+        : firstBlockingResolution?.status === "missing-profile"
+          ? "The selected profile is missing a value required by this workflow."
+          : firstBlockingResolution?.status === "missing-fixed"
+            ? "A fixed parameter value is empty. Configure it in the Library before replaying."
+            : firstBlockingResolution?.status === "invalid-runtime"
+              ? "A runtime value exceeds 10,000 characters."
+              : undefined;
   const workflowContainsSensitiveValues = useMemo(
-    () => workflowState.workflow.steps.some((step) => step.metadata.sensitive),
-    [workflowState.workflow.steps],
+    () => pendingReplayRange.some((step) => step.enabled && step.metadata.sensitive),
+    [pendingReplayRange],
   );
   const activePage = selectedStep?.page ?? (session.browserPage
     ? { id: session.browserPage.pageId, url: session.browserPage.url, title: session.browserPage.title }
@@ -401,12 +518,23 @@ export function useWorkspaceController(workflowId: string) {
         closeRun: closeRunDialog,
         confirmSensitiveExport: exportNow,
         openManual: () => setManualOpen(true),
+        retryRunProfile: () => void loadRunProfile(),
+        updateRuntimeValue: (stepId: string, value: string) => {
+          setRuntimeValues((current) => ({ ...current, [stepId]: value }));
+        },
       },
       model: {
+        blockedReason: replayBlockedReason,
+        canRun: replayParameterResult.ready && !replayBlockedReason,
         confirmation,
+        libraryHref: pendingNeedsProfile && !profileId
+          ? `/library?selected=${encodeURIComponent(workflowId)}`
+          : undefined,
         manualOpen,
         pendingReplayStep,
+        profileRetryAvailable: pendingNeedsProfile && runProfileStatus === "error",
         runDialogOpen,
+        runtimeFields,
         workflowContainsSensitiveValues,
       },
     },

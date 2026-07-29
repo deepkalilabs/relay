@@ -51,6 +51,7 @@ describe("workflow HTTP API", () => {
       page: { id: "page", url: "https://example.com" },
       target: { candidates: [{ kind: "label", value: "Password", exact: true }] },
       payload: { value: "super-secret" },
+      parameterBinding: { source: "recorded" },
       metadata: { recordedAt: new Date().toISOString(), origin: "recorded", sensitive: true },
     }];
     await repository.save(created.id, created, 1);

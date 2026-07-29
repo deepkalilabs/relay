@@ -20,7 +20,7 @@ Each step can be reviewed, renamed, reordered, disabled, or deleted before the w
 - Waits for DOM and network activity to settle between replayed actions, with optional per-step delay and element conditions.
 - Pauses on failures with Retry, Skip, Take Control, and Stop recovery actions.
 
-The current MVP focuses on accurate capture, explicit local saving, review, and interactive replay. There is no autosave: leaving the editor discards changes made since the last successful Save.
+The current product foundation focuses on accurate capture, explicit local saving, review, interactive replay, and reusable local profiles. There is no autosave: leaving the editor discards changes made since the last successful Save. The active product direction is maintained in the [product roadmap](./docs/product/roadmap.md).
 
 ## How it works
 
@@ -51,7 +51,8 @@ The React client owns unsaved edits while the editor is open. Route-private work
 browser_replay/
 ├── docs/
 │   └── product/
-│       └── mvp_design.md          # Product and interaction specification
+│       ├── roadmap.md             # Active product direction and sequencing
+│       └── mvp_design.md          # Historical MVP product specification
 ├── src/
 │   ├── app/
 │   │   ├── (product)/             # Product routes; group is omitted from URLs
@@ -99,7 +100,7 @@ Each feature exposes a small `index.ts` API. Route-private application compositi
 
 The dependency-free workflow contract lives in `src/shared/contracts/workflow`. It defines the workflow aggregate, named step variants, element targets, page context, replay waits, serialization, and metadata shared by the recorder, editor, persistence, protocol, and replay engine. Runtime validation is kept beside the contract and compile-time checked against the domain types. Client/server message schemas are split by direction under `src/shared/contracts/protocol`.
 
-Saved workflows and new exports use schema version `1.1`, including `status`, `revision`, and optional `finishedAt` lifecycle fields. Schema `1.0` files remain readable at compatibility boundaries and normalize as completed revision-1 workflows. A workflow also contains its Browserbase source, timestamps, and an ordered list of steps. Automatic recording produces `fill`, `set_date`, `select`, and `click` steps. Manual steps and existing workflows continue to support:
+Saved workflows and new exports use schema version `1.2`, including `status`, `revision`, optional `finishedAt` lifecycle fields, and explicit input bindings on `fill` steps. Schema `1.0` and `1.1` files remain readable at compatibility boundaries and normalize with recorded-value bindings. A workflow also contains its Browserbase source, timestamps, and an ordered list of steps. Automatic recording produces `fill`, `set_date`, `select`, and `click` steps. Manual steps and existing workflows continue to support:
 
 ```text
 navigate · click · fill · select · check · uncheck · keypress · submit
@@ -108,6 +109,8 @@ navigate · click · fill · select · check · uncheck · keypress · submit
 `ElementTarget` keeps multiple locator candidates, ordered from semantic selectors to CSS and XPath fallbacks, rather than coupling replay to one selector. Metadata records whether a step was recorded or manually added, and whether its value may be sensitive.
 
 Steps may also define an optional replay wait. A wait can add up to 30 seconds after an action and can require an element to remain visible or hidden before replay continues.
+
+The Library can bind each enabled `fill` step to its recorded value, a fixed literal, a supported profile field, or a value requested at run time. Profile and run-time values are resolved into an ephemeral workflow before replay and are not written back to workflow files.
 
 ## Local workflow storage
 
@@ -182,11 +185,11 @@ For local development, `npm run dev` also loads an existing, gitignored `secret.
 
 This app is intended for local development or long-running Node hosting. The persistent WebSocket and Playwright connections used by recording and replay make it unsuitable for serverless deployment.
 
-## MVP boundaries
+## Current product boundaries
 
-The MVP supports a single active tab, with an explicit prompt when a popup opens. It is a desktop workspace intended for viewports at least 1024 pixels wide.
+The product supports a single active tab, with an explicit prompt when a popup opens. It is a desktop workspace intended for viewports at least 1024 pixels wide.
 
-Authentication, collaboration, assertions, variables, branching, persisted screenshots, secret management, autosave, and production deployment are intentionally out of scope. Replay remains linear and single-tab. Workflow Library deletion, duplication, rename, import, export, and Run actions are deferred. Profiles currently store identity and location values only.
+Replay remains linear and single-tab. Authentication, assertions, variables, persisted failure evidence, secret management, unattended execution, collaboration, and production deployment are not part of the current foundation. Workflow Library lifecycle actions and profile-parameterized runs are planned next. Profiles currently store identity and location values only.
 
 ## Verification
 
@@ -204,4 +207,4 @@ The E2E suite uses controlled pages under `/fixture` and includes an accessibili
 BROWSERBASE_API_KEY=... npm run test:browserbase
 ```
 
-For deeper product and architecture context, see [tasks/plan.md](./tasks/plan.md) and [docs/product/mvp_design.md](./docs/product/mvp_design.md).
+For current product direction, see [docs/product/roadmap.md](./docs/product/roadmap.md). For implementation and architecture context, see [tasks/plan.md](./tasks/plan.md), [Refactor_plan.md](./Refactor_plan.md), and the historical [docs/product/mvp_design.md](./docs/product/mvp_design.md).

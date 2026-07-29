@@ -11,10 +11,12 @@ import { useWorkspaceController } from "../_hooks/useWorkspaceController";
 
 interface RecorderWorkspaceProps {
   workflowId: string;
+  profileId?: string;
+  autoRun?: boolean;
 }
 
-export function RecorderWorkspace({ workflowId }: RecorderWorkspaceProps) {
-  const controller = useWorkspaceController(workflowId);
+export function RecorderWorkspace({ workflowId, profileId, autoRun }: RecorderWorkspaceProps) {
+  const controller = useWorkspaceController(workflowId, profileId, autoRun);
   const { browser, dialogs, layout, recorder, replay, workflow } = controller;
   const workflowState = workflow.model.state;
   const saveState = workflow.model.persistenceStatus === "saving"
@@ -300,6 +302,16 @@ export function RecorderWorkspace({ workflowId }: RecorderWorkspaceProps) {
         open={dialogs.model.runDialogOpen}
         sensitive={dialogs.model.workflowContainsSensitiveValues}
         startStepName={dialogs.model.pendingReplayStep?.name}
+        runtimeFields={dialogs.model.runtimeFields}
+        blockedReason={dialogs.model.blockedReason}
+        libraryHref={dialogs.model.libraryHref}
+        canRun={dialogs.model.canRun}
+        onRuntimeValueChange={dialogs.actions.updateRuntimeValue}
+        onRetryProfile={
+          dialogs.model.profileRetryAvailable
+            ? dialogs.actions.retryRunProfile
+            : undefined
+        }
         onClose={dialogs.actions.closeRun}
         onRun={replay.actions.start}
       />

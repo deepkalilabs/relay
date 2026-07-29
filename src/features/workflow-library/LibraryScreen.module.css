@@ -592,127 +592,26 @@
   font-size: 9px;
 }
 
-.stepsSection {
-  margin-top: 22px;
-}
-
-.stepsHeading {
-  margin-bottom: 10px;
-}
-
-.stepsHeading h3 {
-  margin: 0;
-  font-size: 14px;
-}
-
-.stepsHeading p {
-  margin: 4px 0 0;
+.parameterLoadState,
+.parameterLoadError {
+  margin: 10px 0;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
   color: var(--muted);
+  background: var(--surface-muted);
   font-size: 11px;
 }
 
-.steps {
-  margin: 0;
-  padding: 0;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  list-style: none;
+.parameterLoadError {
+  color: #9c2f26;
+  background: #fff4f2;
 }
 
-.steps > * {
-  padding: 0 12px;
-  display: grid;
-  grid-template-columns:
-    minmax(140px, 0.8fr)
-    minmax(130px, 1fr)
-    minmax(150px, 1fr);
-  align-items: center;
-  gap: 12px;
-  border-bottom: 1px solid var(--line);
-}
-
-.steps > *:last-child {
-  border-bottom: 0;
-}
-
-.stepsColumns {
-  min-height: 34px;
-  color: #526176;
-  background: var(--surface-muted);
-  font-size: 10px;
-  font-weight: 750;
-}
-
-.stepRow {
-  min-height: 56px;
-}
-
-.stepIdentity {
-  min-width: 0;
+.parameterLoadError {
   display: flex;
   align-items: center;
-  gap: 12px;
-}
-
-.stepIdentity > span {
-  width: 21px;
-  height: 21px;
-  display: grid;
-  place-items: center;
-  flex: 0 0 auto;
-  border-radius: 50%;
-  color: #536176;
-  background: #f0f3f7;
-  font-size: 10px;
-}
-
-.stepsColumns + .stepRow .stepIdentity > span {
-  color: white;
-  background: #75a0f3;
-}
-
-.stepIdentity p {
-  min-width: 0;
-  margin: 0;
-  overflow: hidden;
-  color: #45546a;
-  font-size: 12px;
-  font-weight: 650;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.parameterField {
-  min-width: 0;
-}
-
-.parameterField input,
-.parameterField select {
-  width: 100%;
-  height: 34px;
-  border: 1px solid var(--line-strong);
-  border-radius: 6px;
-  color: var(--ink);
-  background: var(--surface);
-  font-size: 11px;
-}
-
-.parameterField input {
-  padding: 0 9px;
-}
-
-.parameterField select {
-  padding: 0 28px 0 9px;
-}
-
-.parameterField input:hover,
-.parameterField select:hover {
-  border-color: #aebacc;
-}
-
-.noValue {
-  color: var(--subtle);
-  font-size: 11px;
+  gap: 8px;
 }
 
 .emptyState {
@@ -788,6 +687,7 @@
   .checkoutProgress {
     grid-template-columns: repeat(4, 16px);
   }
+
 }
 
 @media (max-width: 1023px) {

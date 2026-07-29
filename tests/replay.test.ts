@@ -253,7 +253,12 @@ describe("replay engine", () => {
     const steps: WorkflowStep[] = [
       { ...baseStep("navigate", 0), type: "navigate", payload: { url: "https://example.com" } },
       { ...baseStep("click", 1), type: "click" },
-      { ...baseStep("fill", 2), type: "fill", payload: { value: "hello" } },
+      {
+        ...baseStep("fill", 2),
+        type: "fill",
+        payload: { value: "hello" },
+        parameterBinding: { source: "recorded" },
+      },
       { ...baseStep("set_date", 3), type: "set_date", payload: { value: "2026-07-21" } },
       { ...baseStep("select", 4), type: "select", payload: { value: "one" } },
       { ...baseStep("check", 5), type: "check" },
@@ -365,14 +370,17 @@ describe("replay engine", () => {
       const emit = (event: string, request: Request) => listeners.get(event)?.forEach((listener) => listener(request));
       const request = { resourceType: () => "xhr" } as unknown as Request;
       let lastMutation = Date.now();
+      let requestFinishedAt: number | null = null;
+      let secondActionAt: number | null = null;
       const firstClick = vi.fn(async () => {
         emit("request", request);
         setTimeout(() => {
           lastMutation = Date.now();
+          requestFinishedAt = Date.now();
           emit("requestfinished", request);
         }, 100);
       });
-      const secondClick = vi.fn(async () => undefined);
+      const secondClick = vi.fn(async () => { secondActionAt = Date.now(); });
       const firstLocator = { count: vi.fn(async () => 1), isVisible: vi.fn(async () => true), click: firstClick } as unknown as Locator;
       const secondLocator = { count: vi.fn(async () => 1), isVisible: vi.fn(async () => true), click: secondClick } as unknown as Locator;
       const frame = {
@@ -380,7 +388,7 @@ describe("replay engine", () => {
       } as unknown as Frame;
       const page = {
         evaluate: vi.fn(async (_callback: unknown, quietMs?: number) => {
-          if (quietMs === 500) return Date.now() - lastMutation >= quietMs;
+          if (quietMs === 200) return Date.now() - lastMutation >= quietMs;
           lastMutation = Date.now();
           return undefined;
         }),
@@ -406,15 +414,62 @@ describe("replay engine", () => {
       const engine = new ReplayEngine(crypto.randomUUID(), page, preflightReplay(workflowWith(steps)), vi.fn());
       const running = engine.run();
 
-      await vi.advanceTimersByTimeAsync(500);
-      expect(firstClick).toHaveBeenCalledOnce();
-      expect(secondClick).not.toHaveBeenCalled();
-      await vi.advanceTimersByTimeAsync(599);
-      expect(secondClick).not.toHaveBeenCalled();
-      await vi.advanceTimersByTimeAsync(501);
-      expect(secondClick).toHaveBeenCalledOnce();
-      await vi.advanceTimersByTimeAsync(500);
+      await vi.waitFor(() => expect(firstClick).toHaveBeenCalledOnce());
+      await vi.advanceTimersByTimeAsync(1_000);
       await running;
+      expect(secondClick).toHaveBeenCalledOnce();
+      if (requestFinishedAt === null || secondActionAt === null) throw new Error("Expected both replay actions to finish.");
+      expect(secondActionAt - requestFinishedAt).toBeGreaterThanOrEqual(200);
+      expect(secondActionAt - requestFinishedAt).toBeLessThan(500);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("extends settling until DOM mutations have been quiet for 200 milliseconds", async () => {
+    vi.useFakeTimers();
+    try {
+      let lastMutation = Date.now();
+      let finalMutationAt: number | null = null;
+      let secondActionAt: number | null = null;
+      const firstClick = vi.fn(async () => {
+        setTimeout(() => { lastMutation = Date.now(); }, 150);
+        setTimeout(() => {
+          lastMutation = Date.now();
+          finalMutationAt = Date.now();
+        }, 300);
+      });
+      const secondClick = vi.fn(async () => { secondActionAt = Date.now(); });
+      const firstLocator = { count: vi.fn(async () => 1), isVisible: vi.fn(async () => true), click: firstClick } as unknown as Locator;
+      const secondLocator = { count: vi.fn(async () => 1), isVisible: vi.fn(async () => true), click: secondClick } as unknown as Locator;
+      const frame = {
+        getByTestId: vi.fn((value: string) => value === "first" ? firstLocator : secondLocator),
+      } as unknown as Frame;
+      const page = {
+        evaluate: vi.fn(async (_callback: unknown, quietMs?: number) => {
+          if (quietMs === 200) return Date.now() - lastMutation >= quietMs;
+          lastMutation = Date.now();
+          return undefined;
+        }),
+        frames: vi.fn(() => [frame]),
+        goto: vi.fn(async () => null),
+        mainFrame: vi.fn(() => frame),
+        waitForLoadState: vi.fn(async () => undefined),
+      } as unknown as Page;
+      const steps: WorkflowStep[] = [
+        { ...baseStep("click", 0), target: { candidates: [{ kind: "testId", value: "first", exact: true }] }, type: "click" },
+        { ...baseStep("click", 1), target: { candidates: [{ kind: "testId", value: "second", exact: true }] }, type: "click" },
+      ];
+      const engine = new ReplayEngine(crypto.randomUUID(), page, preflightReplay(workflowWith(steps)), vi.fn());
+      const running = engine.run();
+
+      await vi.waitFor(() => expect(firstClick).toHaveBeenCalledOnce());
+      await vi.advanceTimersByTimeAsync(1_000);
+      await running;
+      expect(secondClick).toHaveBeenCalledOnce();
+      if (finalMutationAt === null || secondActionAt === null) throw new Error("Expected DOM settling timestamps.");
+      expect(secondActionAt - finalMutationAt).toBeGreaterThanOrEqual(200);
+      expect(secondActionAt - finalMutationAt).toBeLessThan(500);
     } finally {
       vi.useRealTimers();
     }
@@ -427,7 +482,7 @@ describe("replay engine", () => {
       const frame = { getByTestId: vi.fn(() => locator) } as unknown as Frame;
       const messages: ServerMessage[] = [];
       const page = {
-        evaluate: vi.fn(async (_callback: unknown, quietMs?: number) => quietMs === 500 ? false : undefined),
+        evaluate: vi.fn(async (_callback: unknown, quietMs?: number) => quietMs === 200 ? false : undefined),
         frames: vi.fn(() => [frame]),
         goto: vi.fn(async () => null),
         mainFrame: vi.fn(() => frame),
