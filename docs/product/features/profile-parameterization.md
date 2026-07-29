@@ -1,7 +1,7 @@
 # Future Feature: Profile-Parameterized Workflow Runs
 
-- Status: Planned
-- Last updated: 2026-07-28
+- Status: Planned — current roadmap initiative
+- Last updated: 2026-07-29
 
 ## Summary
 
@@ -71,14 +71,14 @@ Before a browser session starts, the application checks every enabled mapped ste
    - Handle missing fields, draft profiles, save conflicts, deleted profiles, and profile-load failures.
    - Prevent browser-session creation until parameter validation succeeds.
 
-## Open Decisions
+## Initial Scope Decisions
 
-- Which workflow step types beyond text entry should support profile values?
-- Which profile fields belong in the initial supported vocabulary?
-- Should selecting `Recorded value` mean the original captured value or the latest edited default?
-- Can a draft profile run when every field referenced by the workflow is present?
-- How should date, select-option, and formatted phone values be transformed?
-- Should the most recently used profile be remembered per workflow or per device?
+- Parameterize `fill` steps first; other value-bearing step types require a later scoped decision.
+- Use the existing profile fields as the initial supported vocabulary.
+- Treat the latest edited default as the fallback value; the UI should call this `Default value`, not `Recorded value`.
+- Allow a draft profile to run when every field referenced by the workflow is valid and present.
+- Do not add date, select-option, or phone-format transformations in the initial increment.
+- Do not remember the most recently used profile in the initial increment.
 
 Any decision that changes workflow storage, schema compatibility, privacy boundaries, or replay protocols requires an ADR before implementation.
 

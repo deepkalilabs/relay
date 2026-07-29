@@ -20,7 +20,7 @@ Each step can be reviewed, renamed, reordered, disabled, or deleted before the w
 - Waits for DOM and network activity to settle between replayed actions, with optional per-step delay and element conditions.
 - Pauses on failures with Retry, Skip, Take Control, and Stop recovery actions.
 
-The current MVP focuses on accurate capture, explicit local saving, review, and interactive replay. There is no autosave: leaving the editor discards changes made since the last successful Save.
+The current product foundation focuses on accurate capture, explicit local saving, review, interactive replay, and reusable local profiles. There is no autosave: leaving the editor discards changes made since the last successful Save. The active product direction is maintained in the [product roadmap](./docs/product/roadmap.md).
 
 ## How it works
 
@@ -51,7 +51,8 @@ The React client owns unsaved edits while the editor is open. Route-private work
 browser_replay/
 ├── docs/
 │   └── product/
-│       └── mvp_design.md          # Product and interaction specification
+│       ├── roadmap.md             # Active product direction and sequencing
+│       └── mvp_design.md          # Historical MVP product specification
 ├── src/
 │   ├── app/
 │   │   ├── (product)/             # Product routes; group is omitted from URLs
@@ -182,11 +183,11 @@ For local development, `npm run dev` also loads an existing, gitignored `secret.
 
 This app is intended for local development or long-running Node hosting. The persistent WebSocket and Playwright connections used by recording and replay make it unsuitable for serverless deployment.
 
-## MVP boundaries
+## Current product boundaries
 
-The MVP supports a single active tab, with an explicit prompt when a popup opens. It is a desktop workspace intended for viewports at least 1024 pixels wide.
+The product supports a single active tab, with an explicit prompt when a popup opens. It is a desktop workspace intended for viewports at least 1024 pixels wide.
 
-Authentication, collaboration, assertions, variables, branching, persisted screenshots, secret management, autosave, and production deployment are intentionally out of scope. Replay remains linear and single-tab. Workflow Library deletion, duplication, rename, import, export, and Run actions are deferred. Profiles currently store identity and location values only.
+Replay remains linear and single-tab. Authentication, assertions, variables, persisted failure evidence, secret management, unattended execution, collaboration, and production deployment are not part of the current foundation. Workflow Library lifecycle actions and profile-parameterized runs are planned next. Profiles currently store identity and location values only.
 
 ## Verification
 
@@ -204,4 +205,4 @@ The E2E suite uses controlled pages under `/fixture` and includes an accessibili
 BROWSERBASE_API_KEY=... npm run test:browserbase
 ```
 
-For deeper product and architecture context, see [tasks/plan.md](./tasks/plan.md) and [docs/product/mvp_design.md](./docs/product/mvp_design.md).
+For current product direction, see [docs/product/roadmap.md](./docs/product/roadmap.md). For implementation and architecture context, see [tasks/plan.md](./tasks/plan.md), [Refactor_plan.md](./Refactor_plan.md), and the historical [docs/product/mvp_design.md](./docs/product/mvp_design.md).
