@@ -1,5 +1,5 @@
 {
-  "description": "Require an exact staged-diff ADR review before Codex commits.",
+  "description": "Prevent Codex from bypassing the repository pre-push ADR review.",
   "hooks": {
     "PreToolUse": [
       {
@@ -9,19 +9,7 @@
             "type": "command",
             "command": "node \"$(git rev-parse --show-toplevel)/scripts/adr-gate.mjs\" codex-pre-tool",
             "timeout": 30,
-            "statusMessage": "Checking ADR commit review"
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"$(git rev-parse --show-toplevel)/scripts/adr-gate.mjs\" codex-stop",
-            "timeout": 30,
-            "statusMessage": "Checking ADR review state"
+            "statusMessage": "Checking ADR push safety"
           }
         ]
       }

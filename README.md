@@ -167,8 +167,53 @@ For local development, `npm run dev` also loads an existing, gitignored `secret.
 | `npm run lint` | Run ESLint with zero warnings allowed |
 | `npm test` | Run the Vitest unit and component suite |
 | `npm run test:changed` | Run tests affected by staged, unstaged, or untracked changes |
+| `npm run ralph:plan -- "<goal>"` | Create and approve a small-increment Ralphex master plan |
+| `npm run ralph:run -- docs/plans/<slug>.md` | Execute, review, and publish an approved plan one increment at a time |
+| `npm run hooks:install` | Install the tracked pre-push ADR review hook |
+| `npm run adr:review -- --none --reason "..."` | Review the committed branch diff before an authorized push |
 | `npm run test:e2e` | Run local Playwright end-to-end tests |
 | `npm run test:browserbase` | Run the paid Browserbase smoke test |
+
+## Local Ralph loop
+
+The personal Ralph loop uses Claude for planning, implementation, and Ralphex's
+native reviews. Codex performs the independent external review. A persistent
+localhost MCP service gives each fresh Claude session read-only ast-grep search
+and TypeScript/JavaScript SolidLSP navigation without restarting the language
+server between increments.
+
+Install the host tools and Python environment once:
+
+```bash
+brew install umputun/apps/ralphex
+uv sync
+npm run hooks:install
+```
+
+Claude Code asks once whether to trust the project-scoped `ralph-code-intel`
+server from `.mcp.json`. It is available only while `ralph:run` is active and
+listens on `127.0.0.1:8765`.
+
+Create a plan interactively, accept its draft, then exit when Ralphex offers
+immediate execution:
+
+```bash
+npm run ralph:plan -- "add a small feature"
+```
+
+From a clean default branch, start the approved plan:
+
+```bash
+npm run ralph:run -- docs/plans/20260730-add-a-small-feature.md
+```
+
+Starting this command authorizes its task commits and non-force pushes only to
+the generated `codex/<plan-slug>` branch. Each increment is implemented,
+validated with `test:changed`, reviewed by Ralphex and Codex, ADR-reviewed, and
+pushed before the next begins. The command stops without pushing when tests or
+reviews fail, the worktree is dirty, the branch diverges, or the remote branch
+moves. Re-run the same command on the generated branch to resume. Merge and pull
+request creation remain manual.
 
 ## Security and session lifecycle
 

@@ -3,18 +3,16 @@
 import { createHash } from "node:crypto";
 import {
   chmodSync,
-  existsSync,
   mkdirSync,
   readFileSync,
-  readdirSync,
   renameSync,
-  rmSync,
   writeFileSync,
 } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { spawnSync } from "node:child_process";
 
-const VERSION = 1;
+const VERSION = 2;
+const ZERO_OID = "0".repeat(40);
 const ADR_PATTERN = /^docs\/decisions\/(\d{4})-[a-z0-9]+(?:-[a-z0-9]+)*\.md$/;
 
 function git(args, options = {}) {
@@ -23,13 +21,17 @@ function git(args, options = {}) {
     encoding: options.binary ? undefined : "utf8",
     maxBuffer: 32 * 1024 * 1024,
   });
-
   if (options.allowFailure) return result;
   if (result.status !== 0) {
     const detail = String(result.stderr || result.stdout || "").trim();
     throw new Error(detail || `git ${args.join(" ")} failed`);
   }
   return options.binary ? result.stdout : result.stdout.trim();
+}
+
+function optionalGit(args) {
+  const result = git(args, { allowFailure: true });
+  return result.status === 0 ? result.stdout.trim() : null;
 }
 
 function repoRoot() {
@@ -45,13 +47,12 @@ function stateRoot() {
   ]);
 }
 
-function headOrNull() {
-  const result = git(["rev-parse", "--verify", "HEAD"], { allowFailure: true });
-  return result.status === 0 ? result.stdout.trim() : null;
-}
-
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
+}
+
+function exactCommit(input) {
+  return git(["rev-parse", "--verify", "--end-of-options", `${input}^{commit}`]);
 }
 
 function parseNameStatus(buffer) {
@@ -61,30 +62,6 @@ function parseNameStatus(buffer) {
     entries.push({ status: fields[index], path: fields[index + 1] });
   }
   return entries;
-}
-
-function stagedState() {
-  const names = git(
-    ["diff", "--cached", "--name-status", "--no-renames", "-z", "--"],
-    { binary: true },
-  );
-  const empty = names.length === 0;
-  const baseHead = headOrNull();
-  const diff = git(
-    ["diff", "--cached", "--binary", "--no-ext-diff", "--no-renames", "--"],
-    { binary: true },
-  );
-  return {
-    baseHead,
-    stagedTree: empty
-      ? baseHead
-        ? git(["rev-parse", `${baseHead}^{tree}`])
-        : "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
-      : git(["write-tree"]),
-    diffSha256: sha256(diff),
-    entries: parseNameStatus(names),
-    empty,
-  };
 }
 
 function atomicJson(path, value) {
@@ -104,18 +81,6 @@ function readJson(path) {
   }
 }
 
-function reviewPath() {
-  return join(stateRoot(), "current-review.json");
-}
-
-function pendingPath() {
-  return join(stateRoot(), "pending-commit.json");
-}
-
-function auditPath(commit) {
-  return join(stateRoot(), "audits", `${commit}.json`);
-}
-
 function normalizeRepoPath(input) {
   const root = repoRoot();
   const absolute = resolve(root, input);
@@ -130,27 +95,110 @@ function normalizeRepoPath(input) {
   return normalized;
 }
 
-function assertAcceptedAdrsUnchanged(state) {
-  const changed = state.entries.filter(
-    (entry) =>
-      entry.path.startsWith("docs/decisions/") && entry.status !== "A",
-  );
-  if (changed.length > 0) {
-    throw new Error(
-      `Accepted ADRs are immutable; supersede them with a new ADR instead: ${changed
-        .map((entry) => entry.path)
-        .join(", ")}`,
-    );
+function normalizeRemoteRef(input) {
+  const normalized = input.startsWith("refs/")
+    ? input
+    : `refs/heads/${input}`;
+  if (!normalized.startsWith("refs/heads/")) {
+    throw new Error(`ADR reviews target branches, not ${normalized}.`);
   }
+  return normalized;
 }
 
-function trackedAdrNumbers() {
-  if (!headOrNull()) return [];
+function reviewPath(remoteName, remoteRef) {
+  return join(
+    stateRoot(),
+    "push-reviews",
+    `${sha256(`${remoteName}\0${remoteRef}`)}.json`,
+  );
+}
+
+function diffEntries(fromOid, toOid, paths = []) {
+  return parseNameStatus(
+    git(
+      [
+        "diff",
+        "--name-status",
+        "--no-renames",
+        "-z",
+        fromOid,
+        toOid,
+        "--",
+        ...paths,
+      ],
+      { binary: true },
+    ),
+  );
+}
+
+function branchState(baseOid, localOid) {
+  const mergeBase = git(["merge-base", baseOid, localOid]);
+  const diff = git(
+    [
+      "diff",
+      "--binary",
+      "--no-ext-diff",
+      "--no-renames",
+      mergeBase,
+      localOid,
+      "--",
+    ],
+    { binary: true },
+  );
+  return {
+    mergeBase,
+    diffSha256: sha256(diff),
+    entries: diffEntries(mergeBase, localOid),
+  };
+}
+
+function immutableAdrError(paths) {
+  return new Error(
+    `Accepted ADRs are immutable; supersede them with a new ADR instead: ${paths.join(", ")}`,
+  );
+}
+
+function assertAcceptedAdrsUnchanged(state) {
+  const changed = state.entries
+    .filter(
+      (entry) =>
+        entry.path.startsWith("docs/decisions/") && entry.status !== "A",
+    )
+    .map((entry) => entry.path);
+  if (changed.length > 0) throw immutableAdrError(changed);
+}
+
+function assertRemoteAdrsPreserved(remoteOid, localOid) {
+  if (remoteOid === ZERO_OID) return;
+  const changed = diffEntries(remoteOid, localOid, ["docs/decisions"])
+    .filter((entry) => entry.status !== "A")
+    .map((entry) => entry.path);
+  if (changed.length > 0) throw immutableAdrError(changed);
+}
+
+function addedAdrPaths(state) {
+  return state.entries
+    .filter(
+      (entry) =>
+        entry.status === "A" && entry.path.startsWith("docs/decisions/"),
+    )
+    .map((entry) => {
+      if (!ADR_PATTERN.test(entry.path)) {
+        throw new Error(
+          `ADR path must match docs/decisions/000N-lowercase-slug.md: ${entry.path}`,
+        );
+      }
+      return entry.path;
+    })
+    .sort();
+}
+
+function trackedAdrNumbersAt(commit) {
   const output = git([
     "ls-tree",
     "-r",
     "--name-only",
-    "HEAD",
+    commit,
     "--",
     "docs/decisions",
   ]);
@@ -162,263 +210,246 @@ function trackedAdrNumbers() {
     .map((match) => Number(match[1]));
 }
 
-function validateAdrPaths(paths, state) {
-  if (paths.length === 0) throw new Error("At least one --adr path is required.");
-  const unique = [...new Set(paths.map(normalizeRepoPath))];
-  if (unique.length !== paths.length) throw new Error("Duplicate --adr path.");
-
-  const added = new Map(
-    state.entries
-      .filter((entry) => entry.status === "A")
-      .map((entry) => [entry.path, entry]),
-  );
-  const numbered = unique.map((path) => {
-    const match = ADR_PATTERN.exec(path);
-    if (!match) {
-      throw new Error(
-        `ADR path must match docs/decisions/000N-lowercase-slug.md: ${path}`,
-      );
-    }
-    if (!added.has(path)) throw new Error(`ADR is not newly staged: ${path}`);
-    return { path, number: Number(match[1]) };
-  });
-
-  const existing = trackedAdrNumbers();
-  const expectedStart = existing.length === 0 ? 1 : Math.max(...existing) + 1;
-  const actual = numbered.map(({ number }) => number).sort((a, b) => a - b);
-  actual.forEach((number, index) => {
-    if (number !== expectedStart + index) {
-      throw new Error(
-        `ADR numbering must be contiguous from ${String(expectedStart).padStart(4, "0")}.`,
-      );
-    }
-  });
-  return numbered.map(({ path }) => path);
-}
-
-function exactCommit(input) {
-  const commit = git(["rev-parse", "--verify", `${input}^{commit}`]);
-  return commit;
-}
-
-function validateRemediations(commits, adrPaths) {
-  const unique = [...new Set(commits.map(exactCommit))];
-  for (const commit of unique) {
-    const audit = readJson(auditPath(commit));
-    if (!audit || audit.status !== "manual-review-required") {
-      throw new Error(`Commit does not have an unresolved bypass audit: ${commit}`);
-    }
-    const referenced = adrPaths.some((path) =>
-      git(["show", `:${path}`]).includes(commit),
-    );
-    if (!referenced) {
-      throw new Error(
-        `A staged ADR must reference the full bypassed commit SHA: ${commit}`,
-      );
-    }
+function validateAdrOutcome(paths, state) {
+  const normalized = [...new Set(paths.map(normalizeRepoPath))].sort();
+  if (normalized.length !== paths.length) {
+    throw new Error("Duplicate --adr path.");
   }
-  return unique;
+  const added = addedAdrPaths(state);
+  if (
+    normalized.length !== added.length ||
+    normalized.some((path, index) => path !== added[index])
+  ) {
+    throw new Error(
+      `Every added ADR must be passed with --adr. Added ADRs: ${
+        added.join(", ") || "none"
+      }.`,
+    );
+  }
+
+  const expectedStart =
+    trackedAdrNumbersAt(state.mergeBase).reduce(
+      (maximum, number) => Math.max(maximum, number),
+      0,
+    ) + 1;
+  normalized
+    .map((path) => Number(ADR_PATTERN.exec(path)[1]))
+    .sort((left, right) => left - right)
+    .forEach((number, index) => {
+      if (number !== expectedStart + index) {
+        throw new Error(
+          `ADR numbering must be contiguous from ${String(expectedStart).padStart(4, "0")}.`,
+        );
+      }
+    });
+  return normalized;
 }
 
-function parseOptions(args) {
+function validateReviewOutcome(options, state) {
+  assertAcceptedAdrsUnchanged(state);
+  const added = addedAdrPaths(state);
+  if (options.none) {
+    if (added.length > 0) {
+      throw new Error(
+        `The branch adds ADR files; use --adr for every added ADR: ${added.join(", ")}`,
+      );
+    }
+    return [];
+  }
+  return validateAdrOutcome(options.adr, state);
+}
+
+function configValue(key) {
+  return optionalGit(["config", "--get", key]);
+}
+
+function currentBranch() {
+  const localRef = optionalGit(["symbolic-ref", "--quiet", "HEAD"]);
+  if (!localRef?.startsWith("refs/heads/")) {
+    throw new Error("ADR review requires a checked-out local branch.");
+  }
+  return {
+    localRef,
+    shortName: localRef.slice("refs/heads/".length),
+  };
+}
+
+function resolveRemoteName(explicit, branchName) {
+  return (
+    explicit ||
+    configValue(`branch.${branchName}.pushRemote`) ||
+    configValue("remote.pushDefault") ||
+    configValue(`branch.${branchName}.remote`) ||
+    "origin"
+  );
+}
+
+function remoteTrackingRef(remoteName, remoteRef) {
+  return `refs/remotes/${remoteName}/${remoteRef.slice("refs/heads/".length)}`;
+}
+
+function resolveDefaultBase(remoteName) {
+  const symbolic = optionalGit([
+    "symbolic-ref",
+    "--quiet",
+    `refs/remotes/${remoteName}/HEAD`,
+  ]);
+  if (symbolic && optionalGit(["rev-parse", "--verify", symbolic])) {
+    return symbolic;
+  }
+  for (const candidate of [
+    `refs/remotes/${remoteName}/main`,
+    `refs/remotes/${remoteName}/master`,
+  ]) {
+    if (optionalGit(["rev-parse", "--verify", candidate])) return candidate;
+  }
+  return null;
+}
+
+function resolveReviewTarget(options) {
+  const branch = currentBranch();
+  const remoteName = resolveRemoteName(options.remote, branch.shortName);
+  const remoteRef = normalizeRemoteRef(options.remoteRef || branch.localRef);
+  const trackingRef = remoteTrackingRef(remoteName, remoteRef);
+  const trackedRemoteOid = optionalGit([
+    "rev-parse",
+    "--verify",
+    `${trackingRef}^{commit}`,
+  ]);
+  const expectedRemoteOid = trackedRemoteOid || ZERO_OID;
+  const baseRef =
+    options.base ||
+    (trackedRemoteOid ? trackingRef : resolveDefaultBase(remoteName));
+  if (!baseRef) {
+    throw new Error(
+      `Cannot resolve a comparison base for new ${remoteRef}; pass --base <ref>.`,
+    );
+  }
+  return {
+    localRef: branch.localRef,
+    localOid: exactCommit("HEAD"),
+    remoteName,
+    remoteRef,
+    expectedRemoteOid,
+    baseRef,
+    baseOid: exactCommit(baseRef),
+  };
+}
+
+function parseReviewOptions(args) {
   const parsed = {
     none: false,
     reason: null,
     adr: [],
-    remediates: [],
-    commit: null,
+    base: null,
+    remote: null,
+    remoteRef: null,
   };
   for (let index = 0; index < args.length; index += 1) {
     const flag = args[index];
     if (flag === "--none") parsed.none = true;
     else if (flag === "--reason") parsed.reason = args[++index];
     else if (flag === "--adr") parsed.adr.push(args[++index]);
-    else if (flag === "--remediates") parsed.remediates.push(args[++index]);
-    else if (flag === "--commit") parsed.commit = args[++index];
+    else if (flag === "--base") parsed.base = args[++index];
+    else if (flag === "--remote") parsed.remote = args[++index];
+    else if (flag === "--remote-ref") parsed.remoteRef = args[++index];
     else throw new Error(`Unknown argument: ${flag}`);
   }
   if (!parsed.reason?.trim()) throw new Error("--reason must be non-empty.");
   if (
     parsed.adr.includes(undefined) ||
-    parsed.remediates.includes(undefined) ||
-    parsed.commit === undefined
+    parsed.base === undefined ||
+    parsed.remote === undefined ||
+    parsed.remoteRef === undefined
   ) {
     throw new Error("Missing argument value.");
+  }
+  if (parsed.none === (parsed.adr.length > 0)) {
+    throw new Error("Choose exactly one outcome: --none or one or more --adr.");
   }
   return parsed;
 }
 
 function review(args) {
-  const options = parseOptions(args);
-  if (options.none === (options.adr.length > 0)) {
-    throw new Error("Choose exactly one outcome: --none or one or more --adr.");
-  }
-  if (options.none && options.remediates.length > 0) {
-    throw new Error("--remediates requires an ADR outcome.");
-  }
-
-  const state = stagedState();
-  if (state.empty && !options.none) {
-    throw new Error("An ADR review requires newly staged ADR files.");
-  }
-  assertAcceptedAdrsUnchanged(state);
-  const adrPaths = options.none ? [] : validateAdrPaths(options.adr, state);
-  const remediates =
-    options.remediates.length === 0
-      ? []
-      : validateRemediations(options.remediates, adrPaths);
-
+  const options = parseReviewOptions(args);
+  const target = resolveReviewTarget(options);
+  const state = branchState(target.baseOid, target.localOid);
+  assertRemoteAdrsPreserved(target.expectedRemoteOid, target.localOid);
+  const adrPaths = validateReviewOutcome(options, state);
   const marker = {
     version: VERSION,
     outcome: options.none ? "none" : "adr",
     reason: options.reason.trim(),
     adrPaths,
-    remediates,
-    baseHead: state.baseHead,
-    stagedTree: state.stagedTree,
+    ...target,
+    mergeBase: state.mergeBase,
     diffSha256: state.diffSha256,
     reviewedAt: new Date().toISOString(),
   };
-  atomicJson(reviewPath(), marker);
+  atomicJson(reviewPath(target.remoteName, target.remoteRef), marker);
   console.log(
-    `ADR review recorded (${marker.outcome}) for staged diff ${marker.diffSha256.slice(0, 12)}.`,
+    `ADR push review recorded (${marker.outcome}) for ${target.remoteName}:${target.remoteRef} ` +
+      `at ${target.localOid.slice(0, 12)} against ${target.baseRef}.`,
   );
 }
 
-function validatedReview() {
-  const marker = readJson(reviewPath());
+function validatePushReview(remoteName, remoteRef, localOid, remoteOid) {
+  const marker = readJson(reviewPath(remoteName, remoteRef));
   if (!marker || marker.version !== VERSION) {
     throw new Error(
-      'No ADR review exists. Run "npm run adr:review -- --none --reason \\"...\\"" or review staged ADRs.',
+      `No ADR push review exists for ${remoteName}:${remoteRef}. ` +
+        'Run "npm run adr:review -- --none --reason \\"...\\"" or review added ADRs.',
     );
   }
-  const state = stagedState();
-  assertAcceptedAdrsUnchanged(state);
   if (
-    marker.baseHead !== state.baseHead ||
-    marker.stagedTree !== state.stagedTree ||
+    marker.remoteName !== remoteName ||
+    marker.remoteRef !== remoteRef ||
+    !["none", "adr"].includes(marker.outcome) ||
+    !Array.isArray(marker.adrPaths)
+  ) {
+    throw new Error("The ADR push review marker is invalid. Review the branch again.");
+  }
+  if (marker.localOid !== localOid) {
+    throw new Error(
+      `The local branch changed after ADR review. Review the branch again before pushing ${remoteRef}.`,
+    );
+  }
+  if (marker.expectedRemoteOid !== remoteOid) {
+    throw new Error(
+      `The remote branch changed after ADR review. Fetch ${remoteName}, then review the branch again.`,
+    );
+  }
+  const state = branchState(marker.baseOid, localOid);
+  if (
+    marker.mergeBase !== state.mergeBase ||
     marker.diffSha256 !== state.diffSha256
   ) {
     throw new Error(
-      "The ADR review is stale because HEAD or staged content changed. Review the staged diff again.",
+      `The reviewed committed diff changed. Review the branch again before pushing ${remoteRef}.`,
     );
   }
-  if (marker.outcome === "adr") {
-    validateAdrPaths(marker.adrPaths, state);
-    validateRemediations(marker.remediates ?? [], marker.adrPaths);
-  } else if (marker.outcome !== "none") {
-    throw new Error("The ADR review has an invalid outcome.");
-  }
-  return { marker, state };
+  assertRemoteAdrsPreserved(remoteOid, localOid);
+  validateReviewOutcome(
+    { none: marker.outcome === "none", adr: marker.adrPaths },
+    state,
+  );
 }
 
-function preCommit() {
-  const { marker, state } = validatedReview();
-  atomicJson(pendingPath(), {
-    version: VERSION,
-    marker,
-    expectedParent: state.baseHead,
-    expectedTree: state.stagedTree,
-    gitProcessId: process.ppid,
-    preparedAt: new Date().toISOString(),
-  });
-}
-
-function commitInfo(commit = "HEAD") {
-  const resolved = exactCommit(commit);
-  const line = git(["rev-list", "--parents", "-n", "1", resolved]).split(" ");
-  return {
-    commit: resolved,
-    parent: line[1] ?? null,
-    tree: git(["rev-parse", `${resolved}^{tree}`]),
-  };
-}
-
-function unresolvedAudits() {
-  const directory = join(stateRoot(), "audits");
-  if (!existsSync(directory)) return [];
-  return readdirSync(directory)
-    .filter((name) => name.endsWith(".json"))
-    .map((name) => readJson(join(directory, name)))
-    .filter((audit) => audit?.status === "manual-review-required");
-}
-
-function postCommit() {
-  const info = commitInfo();
-  const pending = readJson(pendingPath());
-  let parentMatches = pending?.expectedParent === info.parent;
-  if (!parentMatches && pending?.expectedParent) {
-    const previous = commitInfo(pending.expectedParent);
-    parentMatches = previous.parent === info.parent;
-  }
-  const valid =
-    pending?.version === VERSION &&
-    pending.gitProcessId === process.ppid &&
-    parentMatches &&
-    pending.expectedTree === info.tree;
-
-  if (valid) {
-    const audit = {
-      version: VERSION,
-      status: "reviewed",
-      commit: info.commit,
-      outcome: pending.marker.outcome,
-      reason: pending.marker.reason,
-      adrPaths: pending.marker.adrPaths,
-      remediates: pending.marker.remediates ?? [],
-      stagedDiffSha256: pending.marker.diffSha256,
-      reviewedAt: pending.marker.reviewedAt,
-      committedAt: new Date().toISOString(),
-    };
-    atomicJson(auditPath(info.commit), audit);
-
-    for (const remediatedCommit of audit.remediates) {
-      const oldAudit = readJson(auditPath(remediatedCommit));
-      if (oldAudit?.status === "manual-review-required") {
-        atomicJson(auditPath(remediatedCommit), {
-          ...oldAudit,
-          status: "remediated",
-          remediationCommit: info.commit,
-          remediatedAt: new Date().toISOString(),
-        });
-      }
+function prePush(remoteName) {
+  if (!remoteName) throw new Error("pre-push requires the remote name.");
+  const input = readFileSync(0, "utf8").trim();
+  if (!input) return;
+  for (const line of input.split("\n")) {
+    const [localRef, localOid, remoteRef, remoteOid] = line.trim().split(/\s+/);
+    if (!localRef || !localOid || !remoteRef || !remoteOid) {
+      throw new Error(`Invalid pre-push update line: ${line}`);
     }
-  } else {
-    atomicJson(auditPath(info.commit), {
-      version: VERSION,
-      status: "manual-review-required",
-      commit: info.commit,
-      detectedAt: new Date().toISOString(),
-      reason: "Commit did not pass the repository ADR pre-commit review gate.",
-    });
-    console.error(
-      `ADR gate: commit ${info.commit.slice(0, 12)} requires manual review. ` +
-        "Run npm run adr:audit for a routine commit, or add a reviewed follow-up ADR.",
+    if (localOid === ZERO_OID || !remoteRef.startsWith("refs/heads/")) continue;
+    validatePushReview(remoteName, remoteRef, localOid, remoteOid);
+    console.log(
+      `ADR push review verified for ${remoteName}:${remoteRef} at ${localOid.slice(0, 12)}.`,
     );
   }
-
-  rmSync(pendingPath(), { force: true });
-  rmSync(reviewPath(), { force: true });
-}
-
-function audit(args) {
-  const options = parseOptions(args);
-  if (!options.commit || !options.none || options.adr.length > 0) {
-    throw new Error("Use --commit <sha> --none --reason \"...\".");
-  }
-  const commit = exactCommit(options.commit);
-  const existing = readJson(auditPath(commit));
-  if (!existing || existing.status !== "manual-review-required") {
-    throw new Error(`Commit does not have an unresolved bypass audit: ${commit}`);
-  }
-  atomicJson(auditPath(commit), {
-    ...existing,
-    status: "reviewed",
-    outcome: "none",
-    reason: options.reason.trim(),
-    reviewedAt: new Date().toISOString(),
-  });
-  console.log(`Bypass audit resolved as no ADR required: ${commit}`);
 }
 
 function shellTokens(command) {
@@ -430,7 +461,6 @@ function shellTokens(command) {
     if (token) tokens.push(token);
     token = "";
   };
-
   for (const character of command) {
     if (escaped) {
       token += character;
@@ -461,86 +491,23 @@ function gitInvocations(tokens) {
   for (let index = 0; index < tokens.length; index += 1) {
     if (tokens[index] !== "git") continue;
     let cursor = index + 1;
-    while (cursor < tokens.length) {
-      const value = tokens[cursor];
-      if (["-C", "-c", "--git-dir", "--work-tree", "--namespace"].includes(value)) {
+    while (cursor < tokens.length && tokens[cursor].startsWith("-")) {
+      if (["-C", "-c", "--git-dir", "--work-tree"].includes(tokens[cursor])) {
         cursor += 2;
-      } else if (value.startsWith("-")) {
-        cursor += 1;
       } else {
-        break;
+        cursor += 1;
       }
     }
-    if (tokens[cursor] && !";&|()".includes(tokens[cursor])) {
-      const end = tokens.findIndex(
-        (value, tokenIndex) =>
-          tokenIndex > cursor && ";&|()".includes(value),
-      );
-      invocations.push({
-        subcommand: tokens[cursor],
-        args: tokens.slice(cursor + 1, end === -1 ? tokens.length : end),
-      });
-    }
+    const end = tokens.findIndex(
+      (value, tokenIndex) =>
+        tokenIndex > cursor && ";&|()".includes(value),
+    );
+    invocations.push({
+      subcommand: tokens[cursor],
+      args: tokens.slice(cursor + 1, end === -1 ? tokens.length : end),
+    });
   }
   return invocations;
-}
-
-function validateCommitArgs(args) {
-  const banned = new Set([
-    "-a",
-    "--all",
-    "-i",
-    "--include",
-    "-n",
-    "--no-verify",
-    "-o",
-    "--only",
-    "--pathspec-from-file",
-    "--pathspec-file-nul",
-  ]);
-  const valueOptions = new Set([
-    "-C",
-    "-F",
-    "-c",
-    "-m",
-    "--author",
-    "--cleanup",
-    "--date",
-    "--file",
-    "--fixup",
-    "--gpg-sign",
-    "--message",
-    "--reedit-message",
-    "--reuse-message",
-    "--squash",
-    "--trailer",
-  ]);
-  for (let index = 0; index < args.length; index += 1) {
-    const argument = args[index];
-    const flag = argument.includes("=") ? argument.split("=")[0] : argument;
-    if (banned.has(flag)) {
-      throw new Error(`Codex commit form is forbidden by ADR policy: ${flag}`);
-    }
-    if (argument === "--") {
-      throw new Error("Partial/pathspec commits are forbidden by ADR policy.");
-    }
-    if (
-      /^-[A-Za-z]+$/.test(argument) &&
-      [...argument.slice(1)].some((letter) => ["a", "i", "n", "o"].includes(letter))
-    ) {
-      throw new Error(`Codex commit form is forbidden by ADR policy: ${argument}`);
-    }
-    if (valueOptions.has(argument)) {
-      if (args[++index] === undefined) {
-        throw new Error(`Missing value for git commit option: ${argument}`);
-      }
-      continue;
-    }
-    if (argument.startsWith("-")) continue;
-    throw new Error(
-      `Partial/pathspec commits are forbidden by ADR policy: ${argument}`,
-    );
-  }
 }
 
 function deny(reason) {
@@ -555,97 +522,41 @@ function deny(reason) {
   );
 }
 
-function readHookInput() {
-  const text = readFileSync(0, "utf8");
-  return text ? JSON.parse(text) : {};
-}
-
 function codexPreTool() {
-  const input = readHookInput();
+  const text = readFileSync(0, "utf8");
+  const input = text ? JSON.parse(text) : {};
   const command = input.tool_input?.command ?? input.tool_input?.cmd;
   if (typeof command !== "string") return;
-
-  const invocations = gitInvocations(shellTokens(command));
-  const commits = invocations.filter(({ subcommand }) => subcommand === "commit");
-  if (commits.length === 0) return;
-
-  try {
-    const stagingCommands = new Set([
-      "add",
-      "apply",
-      "mv",
-      "read-tree",
-      "reset",
-      "restore",
-      "rm",
-      "update-index",
-    ]);
-    if (invocations.some(({ subcommand }) => stagingCommands.has(subcommand))) {
-      throw new Error(
-        "Stage changes and record the ADR review before invoking git commit in a separate command.",
-      );
-    }
-    commits.forEach(({ args }) => validateCommitArgs(args));
-    validatedReview();
-  } catch (error) {
+  const pushes = gitInvocations(shellTokens(command)).filter(
+    ({ subcommand }) => subcommand === "push",
+  );
+  const bypassed = pushes.some(({ args }) =>
+    args.some(
+      (argument) =>
+        argument === "--no-verify" ||
+        argument === "-n" ||
+        (/^-[A-Za-z]+$/.test(argument) && argument.includes("n")),
+    ),
+  );
+  if (bypassed) {
     deny(
-      `${error.message} Inspect the exact staged diff, add and stage any required ADRs, ` +
-        'or record a justified no-ADR result with "npm run adr:review -- --none --reason \\"...\\"". ' +
-        "Do not commit unless the user explicitly authorized it.",
+      "Git push must run the repository pre-push ADR gate; --no-verify is forbidden.",
     );
   }
 }
 
-function codexStop() {
-  const input = readHookInput();
-  if (input.stop_hook_active) {
-    process.stdout.write("{}\n");
-    return;
-  }
-
-  const unresolved = unresolvedAudits();
-  let reason = null;
-  if (unresolved.length > 0) {
-    const commits = unresolved
-      .slice(0, 5)
-      .map((audit) => audit.commit.slice(0, 12))
-      .join(", ");
-    reason =
-      `ADR remediation is required for bypassed commit(s): ${commits}. ` +
-      "Inspect each commit. Resolve routine commits with npm run adr:audit; " +
-      "for architectural decisions, stage a follow-up ADR that references the full commit SHA " +
-      "and review it with --remediates. Do not create a commit unless the user authorized it.";
-  } else {
-    const state = stagedState();
-    if (!state.empty) {
-      try {
-        validatedReview();
-      } catch (error) {
-        reason =
-          `${error.message} Inspect the staged diff now. Stage one new ADR per independently ` +
-          "reversible architectural decision, or record a justified --none review. " +
-          "Do not create a commit unless the user authorized it.";
-      }
-    }
-  }
-
-  process.stdout.write(
-    `${JSON.stringify(reason ? { decision: "block", reason } : {})}\n`,
-  );
-}
-
 function install() {
   const root = repoRoot();
+  chmodSync(join(root, ".githooks", "pre-push"), 0o755);
   git(["config", "--local", "core.hooksPath", ".githooks"], { cwd: root });
-  for (const name of ["pre-commit", "post-commit"]) {
-    chmodSync(join(root, ".githooks", name), 0o755);
-  }
-  console.log("Installed repository Git hooks via core.hooksPath=.githooks");
+  console.log(
+    "Installed repository pre-push ADR hook via core.hooksPath=.githooks",
+  );
 }
 
 function usage() {
   throw new Error(
-    "Usage: adr-gate.mjs <install|review|audit|pre-commit|post-commit|codex-pre-tool|codex-stop>",
+    "Usage: adr-gate.mjs <install|review|pre-push|codex-pre-tool>",
   );
 }
 
@@ -653,11 +564,8 @@ try {
   const [command, ...args] = process.argv.slice(2);
   if (command === "install") install();
   else if (command === "review") review(args);
-  else if (command === "audit") audit(args);
-  else if (command === "pre-commit") preCommit();
-  else if (command === "post-commit") postCommit();
+  else if (command === "pre-push") prePush(args[0]);
   else if (command === "codex-pre-tool") codexPreTool();
-  else if (command === "codex-stop") codexStop();
   else usage();
 } catch (error) {
   console.error(`ADR gate: ${error.message}`);

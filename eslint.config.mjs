@@ -22,7 +22,13 @@ const featureModules = {
 export default defineConfig([
   ...nextVitals,
   ...nextTs,
-  globalIgnores([".next/**", "coverage/**", "playwright-report/**", "test-results/**"]),
+  globalIgnores([
+    ".next/**",
+    ".venv/**",
+    "coverage/**",
+    "playwright-report/**",
+    "test-results/**",
+  ]),
   {
     files: ["src/app/**/*.{ts,tsx}"],
     ignores: ["src/app/layout.tsx"],

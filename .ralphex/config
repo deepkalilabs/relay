@@ -1,0 +1,8 @@
+external_review_tool = codex
+max_external_iterations = 5
+review_patience = 3
+task_retry_count = 1
+finalize_enabled = false
+move_plan_on_completion = false
+session_timeout = 45m
+idle_timeout = 10m
