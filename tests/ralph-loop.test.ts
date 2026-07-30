@@ -6,6 +6,8 @@ import {
   assertGeneratedBranch,
   expectedBranch,
   parseIncrements,
+  ralphexPlanArgs,
+  ralphexRunArgs,
   renderIncrementPlan,
 } from "../scripts/ralph-loop.mjs";
 
@@ -53,5 +55,25 @@ describe("Ralph loop controls", () => {
     expect(renderIncrementPlan(masterPlan, increments[0]!)).not.toContain(
       "Document the command",
     );
+  });
+
+  it("uses Codex for interactive plan creation", () => {
+    expect(ralphexPlanArgs("add CSV workflow export")).toEqual([
+      "--codex",
+      "--plan",
+      "add CSV workflow export",
+    ]);
+  });
+
+  it("uses Codex for task and native review execution", () => {
+    const args = ralphexRunArgs(
+      "codex/add-export",
+      "abc123",
+      "/private/increment-1.md",
+    );
+
+    expect(args).toContain("--codex");
+    expect(args).not.toContain("--max-external-iterations");
+    expect(args).not.toContain("--review-patience");
   });
 });

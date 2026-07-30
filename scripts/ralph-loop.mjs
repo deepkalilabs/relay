@@ -299,7 +299,7 @@ function reviewAdrBoundary(root, branch, checkpoint) {
     args.push(
       "--none",
       "--reason",
-      "Ralphex and independent Codex review found no architectural decision requiring an ADR.",
+      "Ralphex's Codex reviews found no architectural decision requiring an ADR.",
     );
   } else {
     for (const adr of adrs) args.push("--adr", adr);
@@ -380,16 +380,13 @@ async function startCodeIntel(root, stateDirectory) {
   }
 }
 
-function ralphexArgs(branch, checkpoint, planPath) {
+export function ralphexRunArgs(branch, checkpoint, planPath) {
   return [
+    "--codex",
     "--branch",
     branch,
     "--base-ref",
     checkpoint,
-    "--review-patience",
-    "3",
-    "--max-external-iterations",
-    "5",
     "--session-timeout",
     "45m",
     "--idle-timeout",
@@ -469,7 +466,7 @@ async function runPlan(planInput) {
         { mode: 0o600 },
       );
 
-      command("ralphex", ralphexArgs(branch, checkpoint, incrementPlan), {
+      command("ralphex", ralphexRunArgs(branch, checkpoint, incrementPlan), {
         cwd: root,
         stdio: "inherit",
       });
@@ -498,11 +495,15 @@ async function runPlan(planInput) {
   }
 }
 
+export function ralphexPlanArgs(description) {
+  return ["--codex", "--plan", description];
+}
+
 function createPlan(description) {
   if (!description) {
     throw new Error('Usage: npm run ralph:plan -- "<goal>"');
   }
-  command("ralphex", ["--plan", description], { stdio: "inherit" });
+  command("ralphex", ralphexPlanArgs(description), { stdio: "inherit" });
 }
 
 async function main() {

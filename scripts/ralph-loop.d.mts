@@ -15,3 +15,9 @@ export function renderIncrementPlan(
   masterContent: string,
   increment: RalphIncrement,
 ): string;
+export function ralphexPlanArgs(description: string): string[];
+export function ralphexRunArgs(
+  branch: string,
+  checkpoint: string,
+  planPath: string,
+): string[];

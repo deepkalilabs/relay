@@ -27,8 +27,8 @@ Git's private state directory.
 For each increment the loop:
 
 1. Starts one persistent localhost code-intelligence service.
-2. Lets Claude implement and commit the selected increment.
-3. Runs Ralphex native review/fix passes and an independent Codex review.
+2. Lets Codex implement and commit the selected increment.
+3. Runs Ralphex's native Codex multi-agent review/fix passes.
 4. Runs `npm run test:changed` and requires a clean worktree.
 5. Records the exact ADR review for the checkpoint-to-HEAD diff.
 6. Pushes `HEAD` only to the exact generated feature branch.
@@ -40,8 +40,9 @@ creates a pull request, or pushes another branch.
 
 ## Code-intelligence boundary
 
-The project-scoped MCP endpoint is `http://127.0.0.1:8765/mcp`. It starts one
-TypeScript SolidLSP process for the complete run and exposes read-only definition,
+The project-scoped MCP endpoint is `http://127.0.0.1:8765/mcp` and is registered
+for trusted Codex sessions in `.codex/config.toml`. It starts one TypeScript
+SolidLSP process for the complete run and exposes read-only definition,
 reference, hover, symbol, and diagnostic calls. ast-grep supports JavaScript,
 JSX, TypeScript, TSX, and Python files. Every file argument must resolve inside
 the repository and result counts are bounded.
