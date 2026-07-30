@@ -1,0 +1,23 @@
+// @vitest-environment node
+
+import { resolve } from "node:path";
+import { spawnSync } from "node:child_process";
+import { describe, expect, it } from "vitest";
+
+const projectRoot = resolve(import.meta.dirname, "..");
+
+describe("Ralph code-intelligence service", () => {
+  it("loads ast-grep and SolidLSP and answers a structural smoke request", () => {
+    const result = spawnSync(
+      resolve(projectRoot, ".venv/bin/python"),
+      [resolve(projectRoot, "tools/ralph_code_intel.py"), "--smoke"],
+      { cwd: projectRoot, encoding: "utf8" },
+    );
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual({
+      astMatch: "value",
+      solidlspAvailable: true,
+    });
+  });
+});
