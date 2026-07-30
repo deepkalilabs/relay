@@ -42,33 +42,17 @@
 .content {
   min-width: 0;
   height: 100dvh;
-  padding: 26px 28px 20px;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  gap: 22px;
+  padding: 24px;
   overflow: hidden;
   background: #fcfdff;
 }
 
-.pageHeader h1 {
-  margin: 0;
-  color: #111827;
-  font-size: 27px;
-  line-height: 1.2;
-  letter-spacing: -0.03em;
-}
-
-.pageHeader p {
-  margin: 5px 0 0;
-  color: var(--muted);
-  font-size: 13px;
-}
-
 .workspace {
+  height: 100%;
   min-width: 0;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(320px, 0.76fr) minmax(0, 1.24fr);
+  grid-template-columns: minmax(320px, 0.68fr) minmax(0, 1.32fr);
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
@@ -111,7 +95,7 @@
   border-bottom: 1px solid var(--line);
 }
 
-.listHeader h2,
+.listHeader h1,
 .detailsHeader h2 {
   margin: 0;
   color: #111827;
@@ -280,12 +264,24 @@
 .readinessHint {
   margin: 16px 0 0;
   padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
   border: 1px solid var(--line);
   border-radius: 6px;
   color: var(--muted);
   background: var(--surface-muted);
   font-size: 11px;
   line-height: 1.5;
+}
+
+.readinessHint svg {
+  flex: 0 0 auto;
+  color: var(--primary);
+}
+
+.readinessHint p {
+  margin: 0;
 }
 
 .persistenceAlert {
@@ -308,6 +304,7 @@
 .formSection {
   padding: 20px 0;
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   border-bottom: 1px solid var(--line);
 }
@@ -317,6 +314,7 @@
 }
 
 .formSection h3 {
+  grid-column: 1 / -1;
   margin: 0 0 4px;
   color: #111827;
   font-size: 14px;
@@ -346,6 +344,10 @@
   box-shadow: var(--shadow-sm);
   font-size: 13px;
   font-weight: 400;
+}
+
+.inputWrap input::placeholder {
+  color: #8a9ab2;
 }
 
 .inputWrap input[aria-invalid="true"] {
@@ -394,8 +396,7 @@
   }
 
   .content {
-    padding: 20px 16px 16px;
-    gap: 16px;
+    padding: 16px;
   }
 
   .workspace {
@@ -420,6 +421,14 @@
 
   .formBody {
     padding: 0 16px;
+  }
+
+  .formSection {
+    grid-template-columns: 1fr;
+  }
+
+  .formSection h3 {
+    grid-column: auto;
   }
 }
 

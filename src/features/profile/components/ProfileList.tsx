@@ -28,7 +28,7 @@ export function ProfileList({
   return (
     <section className={styles.profileList} aria-label="Saved profiles">
       <header className={styles.listHeader}>
-        <h2>Profiles</h2>
+        <h1>Profiles</h1>
         <button className={styles.secondaryAction} type="button" onClick={onNew}>
           New profile
           <Plus size={16} aria-hidden="true" />

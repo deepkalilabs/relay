@@ -73,8 +73,14 @@ describe("ProfileScreen", () => {
 
     expect(screen.getByRole("status")).toHaveTextContent("Loading profiles");
     expect(await screen.findByRole("heading", { name: "Profiles", level: 1 })).toBeInTheDocument();
+    expect(screen.queryByText("Create reusable parameters for your workflow runs.")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Select Personal profile" })).toHaveAttribute("aria-pressed", "true");
     expect(await screen.findByLabelText("Email address")).toHaveValue("personal@example.com");
+    expect(screen.getByLabelText("Profile description (optional)")).toBeInTheDocument();
+    expect(screen.getByLabelText("Phone number (optional)")).toBeInTheDocument();
+    expect(screen.getByLabelText("Company (optional)")).toBeInTheDocument();
+    expect(screen.getByLabelText("State / Province (optional)")).toBeInTheDocument();
+    expect(screen.getByLabelText("City")).toBeInTheDocument();
     expect(profileClient.get).toHaveBeenCalledWith(personalProfile.id);
     expect(screen.getByText("Ready")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Browser" })).not.toBeInTheDocument();
@@ -101,6 +107,13 @@ describe("ProfileScreen", () => {
     expect(screen.getByLabelText("Full name")).toHaveValue("");
     expect(screen.getByText("Draft")).toBeInTheDocument();
 
+    await user.type(screen.getByLabelText("Profile description (optional)"), "Presentation only");
+    await user.type(screen.getByLabelText("Phone number (optional)"), "+1 555 123 4567");
+    await user.type(screen.getByLabelText("Company (optional)"), "Example Co.");
+    await user.type(screen.getByLabelText("State / Province (optional)"), "California");
+    await user.type(screen.getByLabelText("City"), "San Francisco");
+    expect(create).not.toHaveBeenCalled();
+
     await user.type(screen.getByLabelText("Full name"), "Taylor");
     await user.click(screen.getByRole("button", { name: "Save profile" }));
 
@@ -109,6 +122,11 @@ describe("ProfileScreen", () => {
       name: "Untitled profile",
       identity: { fullName: "Taylor", email: "" },
     });
+    expect(create.mock.calls[0][0]).not.toHaveProperty("description");
+    expect(create.mock.calls[0][0].identity).not.toHaveProperty("phone");
+    expect(create.mock.calls[0][0].identity).not.toHaveProperty("company");
+    expect(create.mock.calls[0][0].location).not.toHaveProperty("stateProvince");
+    expect(create.mock.calls[0][0].location).not.toHaveProperty("city");
     expect(replace).toHaveBeenCalledWith("/profile?selected=39cb2b34-a827-40c0-afcc-b837f972cb40");
   });
 
