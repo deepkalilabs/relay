@@ -264,10 +264,6 @@ export function ProfileScreen({
       <div className={styles.shell}>
         <AppSidebar activeDestination="profiles" />
         <main className={styles.content}>
-          <header className={styles.pageHeader}>
-            <h1>Profiles</h1>
-            <p>Create reusable parameters for your workflow runs.</p>
-          </header>
           <div className={styles.workspace}>
             <ProfileList
               profiles={profiles ?? []}

@@ -1,4 +1,4 @@
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Info } from "lucide-react";
 import {
   deriveProfileStatus,
   type ProfileInput,
@@ -13,6 +13,7 @@ interface ProfileFieldProps {
   onChange: (value: string) => void;
   type?: "text" | "email";
   autoComplete?: string;
+  placeholder?: string;
   error?: string;
 }
 
@@ -23,6 +24,7 @@ function ProfileField({
   onChange,
   type = "text",
   autoComplete,
+  placeholder,
   error,
 }: ProfileFieldProps) {
   const errorId = `${label.toLocaleLowerCase().replaceAll(/[^a-z0-9]+/g, "-")}-error`;
@@ -35,12 +37,41 @@ function ProfileField({
           value={value}
           maxLength={maxLength}
           autoComplete={autoComplete}
+          placeholder={placeholder}
           aria-invalid={Boolean(error)}
           aria-describedby={error ? errorId : undefined}
           onChange={(event) => onChange(event.target.value)}
         />
       </span>
       {error ? <span className={styles.fieldError} id={errorId}>{error}</span> : null}
+    </label>
+  );
+}
+
+interface PresentationFieldProps {
+  label: string;
+  placeholder: string;
+  type?: "text" | "tel";
+  autoComplete?: string;
+}
+
+function PresentationField({
+  label,
+  placeholder,
+  type = "text",
+  autoComplete,
+}: PresentationFieldProps) {
+  return (
+    <label className={styles.field}>
+      <span>{label}</span>
+      <span className={styles.inputWrap}>
+        <input
+          type={type}
+          defaultValue=""
+          placeholder={placeholder}
+          autoComplete={autoComplete}
+        />
+      </span>
     </label>
   );
 }
@@ -122,18 +153,26 @@ export function ProfileDetails({
             ) : null}
           </div>
         ) : null}
-        <p className={styles.readinessHint}>
-          {status === "ready"
-            ? "This profile has all required details."
-            : "Drafts can be saved. Complete every field with a valid email to mark this profile Ready."}
-        </p>
+        <div className={styles.readinessHint}>
+          <Info size={18} aria-hidden="true" />
+          <p>
+            {status === "ready"
+              ? "This profile has all required details."
+              : "Drafts can be saved. Complete every field with a valid email to mark this profile Ready."}
+          </p>
+        </div>
         <section className={styles.formSection} aria-labelledby="profile-heading">
           <h3 id="profile-heading">Profile</h3>
           <ProfileField
             label="Profile name"
             value={input.name}
             maxLength={100}
+            placeholder="Enter profile name"
             onChange={(name) => onChange({ ...input, name })}
+          />
+          <PresentationField
+            label="Profile description (optional)"
+            placeholder="e.g., Internal client profile"
           />
         </section>
         <section className={styles.formSection} aria-labelledby="identity-heading">
@@ -143,6 +182,7 @@ export function ProfileDetails({
             value={input.identity.fullName}
             maxLength={200}
             autoComplete="name"
+            placeholder="Enter full name"
             onChange={(fullName) => onChange({
               ...input,
               identity: { ...input.identity, fullName },
@@ -154,11 +194,23 @@ export function ProfileDetails({
             maxLength={254}
             type="email"
             autoComplete="email"
+            placeholder="Enter email address"
             error={emailInvalid ? "Enter a complete email address to mark this profile Ready." : undefined}
             onChange={(email) => onChange({
               ...input,
               identity: { ...input.identity, email },
             })}
+          />
+          <PresentationField
+            label="Phone number (optional)"
+            placeholder="e.g., +1 (555) 123–4567"
+            type="tel"
+            autoComplete="tel"
+          />
+          <PresentationField
+            label="Company (optional)"
+            placeholder="Enter company name"
+            autoComplete="organization"
           />
         </section>
         <section className={styles.formSection} aria-labelledby="location-heading">
@@ -168,6 +220,7 @@ export function ProfileDetails({
             value={input.location.countryRegion}
             maxLength={100}
             autoComplete="country-name"
+            placeholder="Select country or region"
             onChange={(countryRegion) => onChange({
               ...input,
               location: { ...input.location, countryRegion },
@@ -178,10 +231,21 @@ export function ProfileDetails({
             value={input.location.postalCode}
             maxLength={32}
             autoComplete="postal-code"
+            placeholder="Enter ZIP or postal code"
             onChange={(postalCode) => onChange({
               ...input,
               location: { ...input.location, postalCode },
             })}
+          />
+          <PresentationField
+            label="State / Province (optional)"
+            placeholder="Enter state or province"
+            autoComplete="address-level1"
+          />
+          <PresentationField
+            label="City"
+            placeholder="Enter city"
+            autoComplete="address-level2"
           />
         </section>
       </div>
