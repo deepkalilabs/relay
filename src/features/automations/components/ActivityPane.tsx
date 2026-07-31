@@ -1,45 +1,95 @@
-import { CircleAlert } from "lucide-react";
-import { automationRuns, type AutomationRun } from "../mockData";
+import { CheckCircle2, CircleAlert } from "lucide-react";
+import type { AutomationRun } from "../model/automationWorkspace";
 import { AutomationThumbnail } from "./AutomationThumbnail";
 import styles from "../AutomationsScreen.module.css";
 
-function RunCard({ run }: { run: AutomationRun }) {
+interface RunCardProps {
+  run: AutomationRun;
+  onViewDetails: (runId: string) => void;
+}
+
+function RunCard({ run, onViewDetails }: RunCardProps) {
+  const progress = run.totalSteps ? Math.round((run.currentStep / run.totalSteps) * 100) : 0;
+  const status = run.state === "running"
+    ? `Running · Step ${run.currentStep} of ${run.totalSteps}`
+    : run.state === "failed"
+      ? `Failed at step ${run.failedStep}`
+      : run.state === "completed"
+        ? `Completed · ${run.totalSteps} steps`
+        : "Queued";
   return (
-    <article className={styles.runCard}>
-      <AutomationThumbnail variant={run.thumbnail} />
+    <article className={styles.runCard} aria-label={`${run.name}: ${status}`}>
+      <AutomationThumbnail variant={run.thumbnail ?? "search"} />
       <div className={styles.runCopy}>
         <div className={styles.runTitle}>
           <h4>{run.name}</h4>
           <span>{run.updated}</span>
         </div>
         <p className={styles[`${run.state}Status`]}>
-          {run.state === "failed" ? <CircleAlert size={13} fill="currentColor" aria-hidden="true" /> : null}
-          {run.status}
+          {run.state === "failed"
+            ? <CircleAlert size={13} fill="currentColor" aria-hidden="true" />
+            : null}
+          {run.state === "completed"
+            ? <CheckCircle2 size={13} aria-hidden="true" />
+            : null}
+          {status}
         </p>
-        {run.progress ? (
-          <div
-            className={styles.progressTrack}
-            role="progressbar"
+        {run.state === "running" ? (
+          <progress
+            className={styles.runProgress}
             aria-label={`${run.name} progress`}
-            aria-valuenow={run.progress}
-            aria-valuemin={0}
-            aria-valuemax={100}
-          >
-            <span />
-          </div>
+            value={progress}
+            max={100}
+          />
         ) : null}
         {run.detail ? <p className={styles.failureDetail}>{run.detail}</p> : null}
         {run.state === "failed" ? (
-          <button className={styles.viewDetails} type="button" disabled>View details</button>
+          <button
+            className={styles.viewDetails}
+            type="button"
+            aria-label={`View details for ${run.name}`}
+            onClick={() => onViewDetails(run.id)}
+          >
+            View details
+          </button>
         ) : null}
       </div>
     </article>
   );
 }
 
-export function ActivityPane() {
-  const activeRuns = automationRuns.filter((run) => run.state !== "failed");
-  const failedRuns = automationRuns.filter((run) => run.state === "failed");
+interface RunSectionProps {
+  id: string;
+  title: string;
+  runs: AutomationRun[];
+  className?: string;
+  onViewDetails: (runId: string) => void;
+}
+
+function RunSection({ id, title, runs, className, onViewDetails }: RunSectionProps) {
+  return (
+    <section className={className} aria-labelledby={id} aria-label={title}>
+      <h3 id={id}>{title}</h3>
+      <div className={styles.runList}>
+        {runs.length
+          ? runs.map((run) => (
+            <RunCard run={run} onViewDetails={onViewDetails} key={run.id} />
+          ))
+          : <p className={styles.runEmpty}>No {title.toLocaleLowerCase()}.</p>}
+      </div>
+    </section>
+  );
+}
+
+interface ActivityPaneProps {
+  runs: AutomationRun[];
+  onViewDetails: (runId: string) => void;
+}
+
+export function ActivityPane({ runs, onViewDetails }: ActivityPaneProps) {
+  const activeRuns = runs.filter((run) => run.state === "running" || run.state === "queued");
+  const failedRuns = runs.filter((run) => run.state === "failed");
+  const completedRuns = runs.filter((run) => run.state === "completed");
 
   return (
     <section className={styles.activity} aria-label="Run activity">
@@ -47,18 +97,28 @@ export function ActivityPane() {
         <h2>Run activity</h2>
       </header>
       <div className={styles.activityBody}>
-        <section aria-labelledby="active-runs-heading">
-          <h3 id="active-runs-heading">Active runs</h3>
-          <div className={styles.runList}>
-            {activeRuns.map((run) => <RunCard run={run} key={run.id} />)}
-          </div>
-        </section>
-        <section className={styles.failedSection} aria-labelledby="failed-runs-heading">
-          <h3 id="failed-runs-heading">Failed runs</h3>
-          <div className={styles.runList}>
-            {failedRuns.map((run) => <RunCard run={run} key={run.id} />)}
-          </div>
-        </section>
+        <RunSection
+          id="active-runs-heading"
+          title="Active runs"
+          runs={activeRuns}
+          onViewDetails={onViewDetails}
+        />
+        <RunSection
+          id="failed-runs-heading"
+          title="Failed runs"
+          runs={failedRuns}
+          className={styles.failedSection}
+          onViewDetails={onViewDetails}
+        />
+        {completedRuns.length ? (
+          <RunSection
+            id="completed-runs-heading"
+            title="Completed runs"
+            runs={completedRuns}
+            className={styles.completedSection}
+            onViewDetails={onViewDetails}
+          />
+        ) : null}
       </div>
     </section>
   );

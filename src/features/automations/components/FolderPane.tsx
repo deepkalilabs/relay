@@ -1,50 +1,101 @@
 import { ChevronDown, ChevronRight, Folder, Plus } from "lucide-react";
+import {
+  taskCountForFolder,
+  type AutomationFolder,
+  type AutomationWorkspaceState,
+} from "../model/automationWorkspace";
 import styles from "../AutomationsScreen.module.css";
+
+interface FolderNodeProps {
+  folder: AutomationFolder;
+  state: AutomationWorkspaceState;
+  onSelect: (folderId: string) => void;
+  onToggle: (folderId: string) => void;
+}
 
 function Count({ value }: { value: number }) {
   return <span className={styles.folderCount}>{value}</span>;
 }
 
-export function FolderPane() {
+function FolderNode({ folder, state, onSelect, onToggle }: FolderNodeProps) {
+  const children = state.folders.filter((candidate) => candidate.parentId === folder.id);
+  const expanded = state.expandedFolderIds.includes(folder.id);
+  const selected = state.selectedFolderId === folder.id;
+  return (
+    <div className={styles.folderNode}>
+      <div className={`${styles.folderRow} ${selected ? styles.folderRowSelected : ""}`}>
+        {children.length ? (
+          <button
+            className={styles.folderToggle}
+            type="button"
+            aria-label={`${expanded ? "Collapse" : "Expand"} ${folder.name} folder`}
+            aria-expanded={expanded}
+            onClick={() => onToggle(folder.id)}
+          >
+            {expanded
+              ? <ChevronDown size={15} aria-hidden="true" />
+              : <ChevronRight size={15} aria-hidden="true" />}
+          </button>
+        ) : <span className={styles.folderTogglePlaceholder} />}
+        <Folder size={17} aria-hidden="true" />
+        <button
+          className={styles.folderSelect}
+          type="button"
+          aria-label={`Select ${folder.name} folder`}
+          aria-pressed={selected}
+          onClick={() => onSelect(folder.id)}
+        >
+          {folder.name}
+        </button>
+        <Count value={taskCountForFolder(state, folder.id)} />
+      </div>
+      {children.length && expanded ? (
+        <div className={styles.folderChildren}>
+          {children.map((child) => (
+            <FolderNode
+              folder={child}
+              state={state}
+              onSelect={onSelect}
+              onToggle={onToggle}
+              key={child.id}
+            />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+interface FolderPaneProps {
+  state: AutomationWorkspaceState;
+  onNew: () => void;
+  onSelect: (folderId: string) => void;
+  onToggle: (folderId: string) => void;
+}
+
+export function FolderPane({ state, onNew, onSelect, onToggle }: FolderPaneProps) {
+  const inbox = state.folders.find((folder) => folder.id === "inbox")!;
+  const roots = state.folders.filter((folder) => folder.parentId === null && folder.id !== "inbox");
   return (
     <section className={styles.folders} aria-label="Automation folders">
       <header className={styles.paneHeader}>
         <h2>Folders</h2>
-        <button className={styles.textAction} type="button" disabled>
+        <button className={styles.textAction} type="button" onClick={onNew}>
           <Plus size={15} aria-hidden="true" />
           New folder
         </button>
       </header>
       <div className={styles.folderTree}>
-        <div className={styles.folderRow}>
-          <ChevronRight size={15} aria-hidden="true" />
-          <Folder size={17} aria-hidden="true" />
-          <span>Inbox</span>
-          <Count value={12} />
-        </div>
-        <div className={styles.folderRow}>
-          <ChevronDown size={15} aria-hidden="true" />
-          <Folder size={17} aria-hidden="true" />
-          <span>Customers</span>
-        </div>
-        <div className={`${styles.folderRow} ${styles.folderRowNested} ${styles.folderRowSelected}`}>
-          <span className={styles.treeIndent} />
-          <Folder size={17} aria-hidden="true" />
-          <span aria-current="true">Verification</span>
-          <Count value={8} />
-        </div>
-        <div className={`${styles.folderRow} ${styles.folderRowNested}`}>
-          <span className={styles.treeIndent} />
-          <Folder size={17} aria-hidden="true" />
-          <span>Leads</span>
-          <Count value={4} />
-        </div>
-        <div className={styles.folderRow}>
-          <ChevronRight size={15} aria-hidden="true" />
-          <Folder size={17} aria-hidden="true" />
-          <span>Research</span>
-          <Count value={6} />
-        </div>
+        <FolderNode folder={inbox} state={state} onSelect={onSelect} onToggle={onToggle} />
+        {roots.map((folder) => (
+          <FolderNode
+            folder={folder}
+            state={state}
+            onSelect={onSelect}
+            onToggle={onToggle}
+            key={folder.id}
+          />
+        ))}
       </div>
     </section>
   );
