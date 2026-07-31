@@ -1,0 +1,594 @@
+.viewportGuard {
+  display: none;
+  min-height: 100dvh;
+  padding: 32px;
+  place-content: center;
+  text-align: center;
+  background: var(--canvas);
+}
+
+.viewportGuard svg {
+  margin: 0 auto 16px;
+  color: var(--warning);
+}
+
+.viewportGuard h1 {
+  margin: 0 0 8px;
+  font-size: 24px;
+}
+
+.viewportGuard p {
+  max-width: 460px;
+  margin: 0 auto;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.shell {
+  min-height: 100dvh;
+  display: grid;
+  grid-template-columns: 216px minmax(0, 1fr);
+  background: var(--surface);
+}
+
+.content {
+  min-width: 0;
+  height: 100dvh;
+  padding: 26px 28px 20px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 18px;
+  overflow: hidden;
+  background: #fcfdff;
+}
+
+.pageHeader {
+  min-width: 0;
+}
+
+.pageHeader h1 {
+  margin: 0;
+  color: #111827;
+  font-size: 27px;
+  line-height: 1.2;
+  letter-spacing: -0.03em;
+}
+
+.pageHeader p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.workspace {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns:
+    minmax(250px, 0.72fr)
+    minmax(560px, 1.58fr)
+    minmax(330px, 1.05fr);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.folders,
+.tasks,
+.activity {
+  min-width: 0;
+  min-height: 0;
+}
+
+.folders,
+.tasks {
+  border-right: 1px solid var(--line);
+}
+
+.folders,
+.activity {
+  overflow: auto;
+}
+
+.paneHeader,
+.taskHeader,
+.activityHeader {
+  min-height: 68px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.paneHeader {
+  padding: 0 18px;
+}
+
+.paneHeader h2,
+.taskHeader h2,
+.activityHeader h2 {
+  margin: 0;
+  color: #111827;
+  font-size: 15px;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+}
+
+.textAction,
+.primaryAction,
+.secondaryAction,
+.removeAction,
+.viewDetails {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.textAction {
+  min-height: 36px;
+  padding: 0;
+  gap: 5px;
+  border: 0;
+  color: var(--primary);
+  background: transparent;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.textAction:disabled,
+.primaryAction:disabled,
+.secondaryAction:disabled,
+.removeAction:disabled,
+.viewDetails:disabled {
+  cursor: default;
+}
+
+.textAction:disabled,
+.primaryAction:disabled,
+.viewDetails:disabled {
+  opacity: 0.78;
+}
+
+.secondaryAction:disabled,
+.removeAction:disabled {
+  opacity: 0.64;
+}
+
+.folderTree {
+  padding: 2px 12px 20px;
+}
+
+.folderRow {
+  min-height: 42px;
+  padding: 0 10px;
+  display: grid;
+  grid-template-columns: 16px 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  border-radius: var(--radius-sm);
+  color: #4d5f78;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.folderRow > svg {
+  color: #72829a;
+}
+
+.folderRowNested {
+  margin-left: 24px;
+  grid-template-columns: 0 18px minmax(0, 1fr) auto;
+}
+
+.folderRowSelected {
+  color: var(--primary);
+  background: var(--primary-soft);
+  font-weight: 750;
+}
+
+.folderRowSelected > svg {
+  color: var(--primary);
+}
+
+.treeIndent {
+  width: 0;
+}
+
+.folderCount {
+  min-width: 24px;
+  height: 20px;
+  padding: 0 7px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  color: #52627a;
+  background: #eef2f6;
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.folderRowSelected .folderCount {
+  color: #56709c;
+  background: white;
+}
+
+.tasks {
+  padding: 0 20px;
+  overflow: auto;
+}
+
+.taskHeader {
+  padding: 0 2px;
+}
+
+.taskHeader p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.taskActions {
+  display: flex;
+  gap: 10px;
+}
+
+.primaryAction,
+.secondaryAction {
+  min-height: 38px;
+  padding: 0 14px;
+  gap: 7px;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.primaryAction {
+  border: 1px solid var(--primary);
+  color: white;
+  background: var(--primary);
+  box-shadow: 0 1px 2px rgb(40 91 214 / 22%);
+}
+
+.secondaryAction {
+  border: 1px solid var(--line-strong);
+  color: var(--ink);
+  background: var(--surface);
+}
+
+.sectionLabel {
+  margin: 4px 0 12px 2px;
+  color: #111827;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.tableWrap {
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.taskTable {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  color: #50627d;
+  font-size: 11px;
+}
+
+.taskTable th,
+.taskTable td {
+  height: 63px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.taskTable thead th {
+  height: 38px;
+  color: #52627a;
+  background: #f8fafc;
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.taskTable tbody tr:last-child th,
+.taskTable tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.taskTable th:first-child {
+  width: 50%;
+}
+
+.taskTable th:nth-child(2) {
+  width: 19%;
+}
+
+.taskTable th:nth-child(3) {
+  width: 24%;
+}
+
+.taskTable th:last-child {
+  width: 7%;
+}
+
+.taskTable tbody th {
+  color: var(--ink);
+  font-weight: 720;
+}
+
+.taskIdentity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.taskIdentity > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.removeAction {
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  color: #52627a;
+  background: white;
+}
+
+.taskNote {
+  margin: 16px 2px 22px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.thumbnail {
+  width: 40px;
+  height: 32px;
+  flex: 0 0 40px;
+  display: block;
+  overflow: hidden;
+  border: 1px solid #d8e0eb;
+  border-radius: 3px;
+  background: white;
+  box-shadow: 0 1px 1px rgb(15 23 42 / 5%);
+}
+
+.thumbnailChrome {
+  height: 6px;
+  padding-left: 3px;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  border-bottom: 1px solid #e6ebf1;
+  background: #eef1f5;
+}
+
+.thumbnailChrome i {
+  width: 2px;
+  height: 2px;
+  border-radius: 50%;
+  background: #c4ccd7;
+}
+
+.thumbnailCanvas {
+  position: relative;
+  height: 25px;
+  display: block;
+  background:
+    linear-gradient(#2e66df, #2e66df) 5px 5px / 14px 2px no-repeat,
+    linear-gradient(#dce6f4, #dce6f4) 5px 10px / 29px 2px no-repeat,
+    linear-gradient(#e8edf4, #e8edf4) 5px 15px / 23px 2px no-repeat,
+    white;
+}
+
+.thumbnailCanvas i {
+  display: none;
+}
+
+.thumbnail[data-variant="form"] .thumbnailCanvas {
+  background:
+    linear-gradient(#2e66df, #2e66df) 5px 4px / 10px 2px no-repeat,
+    linear-gradient(#e2e8f1, #e2e8f1) 5px 9px / 15px 5px no-repeat,
+    linear-gradient(#dce8ff, #dce8ff) 23px 9px / 11px 5px no-repeat,
+    linear-gradient(#e8edf4, #e8edf4) 5px 18px / 29px 2px no-repeat,
+    white;
+}
+
+.thumbnail[data-variant="table"] .thumbnailCanvas {
+  background:
+    linear-gradient(#2e66df, #2e66df) 5px 4px / 10px 2px no-repeat,
+    repeating-linear-gradient(to bottom, #dfe6ee 0 1px, transparent 1px 5px) 5px 9px / 29px 13px no-repeat,
+    linear-gradient(to right, transparent 0 9px, #e8edf3 9px 10px, transparent 10px 19px, #e8edf3 19px 20px, transparent 20px) 5px 9px / 29px 13px no-repeat,
+    white;
+}
+
+.thumbnail[data-variant="message"] .thumbnailCanvas {
+  background:
+    radial-gradient(circle, #2e66df 0 3px, transparent 3.5px) 5px 5px / 7px 7px no-repeat,
+    linear-gradient(#d7e3f7, #d7e3f7) 15px 6px / 18px 2px no-repeat,
+    linear-gradient(#e8edf4, #e8edf4) 15px 11px / 14px 2px no-repeat,
+    linear-gradient(#e3e9f1, #e3e9f1) 5px 18px / 29px 2px no-repeat,
+    white;
+}
+
+.activityHeader {
+  padding: 0 20px;
+}
+
+.activityBody {
+  padding: 14px 20px 24px;
+}
+
+.activityBody h3 {
+  margin: 0 0 14px;
+  color: #25324a;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.runList {
+  display: grid;
+  gap: 12px;
+}
+
+.runCard {
+  min-width: 0;
+  min-height: 88px;
+  padding: 14px;
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: white;
+  box-shadow: var(--shadow-sm);
+}
+
+.runCopy {
+  min-width: 0;
+}
+
+.runTitle {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.runTitle h4 {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.runTitle span {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.runningStatus,
+.queuedStatus,
+.failedStatus,
+.failureDetail {
+  margin: 5px 0 0;
+  font-size: 11px;
+}
+
+.runningStatus {
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.queuedStatus,
+.failureDetail {
+  color: var(--muted);
+}
+
+.failedStatus {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.progressTrack {
+  height: 4px;
+  margin-top: 17px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e6ebf2;
+}
+
+.progressTrack span {
+  width: 38%;
+  height: 100%;
+  display: block;
+  border-radius: inherit;
+  background: var(--primary);
+}
+
+.failedSection {
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+}
+
+.viewDetails {
+  min-height: 34px;
+  margin-top: 12px;
+  padding: 0;
+  border: 0;
+  color: var(--primary);
+  background: transparent;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+@media (min-width: 1024px) and (max-width: 1399px) {
+  .shell {
+    grid-template-columns: 184px minmax(0, 1fr);
+  }
+
+  .content {
+    height: auto;
+    min-height: 100dvh;
+    padding: 18px;
+    overflow: auto;
+  }
+
+  .workspace {
+    min-height: 980px;
+    grid-template-columns: minmax(230px, 0.7fr) minmax(520px, 1.3fr);
+    grid-template-rows: minmax(680px, auto) auto;
+    overflow: visible;
+  }
+
+  .tasks {
+    border-right: 0;
+  }
+
+  .activity {
+    grid-column: 1 / -1;
+    border-top: 1px solid var(--line);
+  }
+
+  .activityBody {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+  }
+
+  .failedSection {
+    margin-top: 0;
+    padding: 0 0 0 24px;
+    border-top: 0;
+    border-left: 1px solid var(--line);
+  }
+}
+@media (max-width: 1023px) {
+  .shell {
+    display: none;
+  }
+
+  .viewportGuard {
+    display: grid;
+  }
+}
