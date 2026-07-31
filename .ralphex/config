@@ -1,6 +1,4 @@
-external_review_tool = codex
-max_external_iterations = 5
-review_patience = 3
+external_review_tool = none
 task_retry_count = 1
 finalize_enabled = false
 move_plan_on_completion = false

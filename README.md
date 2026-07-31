@@ -176,11 +176,11 @@ For local development, `npm run dev` also loads an existing, gitignored `secret.
 
 ## Local Ralph loop
 
-The personal Ralph loop uses Claude for planning, implementation, and Ralphex's
-native reviews. Codex performs the independent external review. A persistent
-localhost MCP service gives each fresh Claude session read-only ast-grep search
-and TypeScript/JavaScript SolidLSP navigation without restarting the language
-server between increments.
+The personal Ralph loop runs Ralphex in Codex executor mode for planning,
+implementation, and native multi-agent reviews. Ralphex skips its separate
+external-review phase in this mode. A persistent localhost MCP service gives
+each fresh Codex session read-only ast-grep search and TypeScript/JavaScript
+SolidLSP navigation without restarting the language server between increments.
 
 Install the host tools and Python environment once:
 
@@ -188,11 +188,13 @@ Install the host tools and Python environment once:
 brew install umputun/apps/ralphex
 uv sync
 npm run hooks:install
+codex login status
 ```
 
-Claude Code asks once whether to trust the project-scoped `ralph-code-intel`
-server from `.mcp.json`. It is available only while `ralph:run` is active and
-listens on `127.0.0.1:8765`.
+Run `codex login` first if the status command reports that Codex is signed out.
+Codex loads the project-scoped `ralph-code-intel` server from
+`.codex/config.toml` after the repository is trusted. The server is available
+only while `ralph:run` is active and listens on `127.0.0.1:8765`.
 
 Create a plan interactively, accept its draft, then exit when Ralphex offers
 immediate execution:
@@ -209,11 +211,11 @@ npm run ralph:run -- docs/plans/20260730-add-a-small-feature.md
 
 Starting this command authorizes its task commits and non-force pushes only to
 the generated `codex/<plan-slug>` branch. Each increment is implemented,
-validated with `test:changed`, reviewed by Ralphex and Codex, ADR-reviewed, and
-pushed before the next begins. The command stops without pushing when tests or
-reviews fail, the worktree is dirty, the branch diverges, or the remote branch
-moves. Re-run the same command on the generated branch to resume. Merge and pull
-request creation remain manual.
+validated with `test:changed`, reviewed by Ralphex's Codex agents, ADR-reviewed,
+and pushed before the next begins. The command stops without pushing when tests
+or reviews fail, the worktree is dirty, the branch diverges, or the remote
+branch moves. Re-run the same command on the generated branch to resume. Merge
+and pull request creation remain manual.
 
 ## Security and session lifecycle
 

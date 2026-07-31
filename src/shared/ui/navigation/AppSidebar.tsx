@@ -1,8 +1,8 @@
-import { Folder, Radio, UserRound } from "lucide-react";
+import { Folder, Radio, UserRound, Zap } from "lucide-react";
 import Link from "next/link";
 import styles from "./AppSidebar.module.css";
 
-export type AppDestination = "library" | "profiles";
+export type AppDestination = "library" | "automations" | "profiles";
 
 interface AppSidebarProps {
   activeDestination: AppDestination;
@@ -10,6 +10,7 @@ interface AppSidebarProps {
 
 const destinations = [
   { id: "library" as const, href: "/library", label: "Library", Icon: Folder },
+  { id: "automations" as const, href: "/automations", label: "Automations", Icon: Zap },
   { id: "profiles" as const, href: "/profile", label: "Profiles", Icon: UserRound },
 ];
 
@@ -39,7 +40,8 @@ export function AppSidebar({ activeDestination }: AppSidebarProps) {
         })}
       </nav>
       <span className={styles.spacer} />
-      <span className={styles.avatar} aria-label="Signed in as N">
+      <span className={styles.avatar}>
+        <span className="sr-only">Signed in as </span>
         N
       </span>
     </aside>

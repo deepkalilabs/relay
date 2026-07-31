@@ -2,6 +2,7 @@
 
 import { resolve } from "node:path";
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const projectRoot = resolve(import.meta.dirname, "..");
@@ -19,5 +20,16 @@ describe("Ralph code-intelligence service", () => {
       astMatch: "value",
       solidlspAvailable: true,
     });
+  });
+
+  it("registers the localhost service in project-scoped Codex config", () => {
+    const config = readFileSync(
+      resolve(projectRoot, ".codex/config.toml"),
+      "utf8",
+    );
+
+    expect(config).toContain("[mcp_servers.ralph-code-intel]");
+    expect(config).toContain('url = "http://127.0.0.1:8765/mcp"');
+    expect(config).toContain("required = false");
   });
 });
