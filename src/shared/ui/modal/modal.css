@@ -1,5 +1,5 @@
 .modal-backdrop { position: fixed; z-index: 100; inset: 0; padding: 24px; display: grid; place-items: center; background: rgb(15 23 42 / 48%); backdrop-filter: blur(2px); }
-.modal { width: min(480px, 100%); max-height: calc(100dvh - 48px); overflow: auto; padding: 20px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: white; box-shadow: 0 24px 60px rgb(15 23 42 / 26%); animation: modal-in .2s ease-out; }
+.modal { width: min(480px, 100%); max-height: calc(var(--app-viewport-height) - 48px); overflow: auto; padding: 20px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: white; box-shadow: 0 24px 60px rgb(15 23 42 / 26%); animation: modal-in .2s ease-out; }
 .modal-heading { display: flex; justify-content: space-between; gap: 16px; }.modal-heading h2 { margin: 0; font-size: 18px; }.modal-heading p { margin: 5px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .modal-copy { margin: 18px 0 4px; color: var(--muted); font-size: 13px; line-height: 1.6; }.modal-form { margin-top: 18px; display: grid; gap: 13px; }.modal-form .field input, .modal-form .field select { height: 42px; font-size: 13px; }
 .modal-actions { margin-top: 22px; display: flex; justify-content: flex-end; gap: 8px; }.field-error { margin: 0; color: var(--danger); font-size: 12px; }

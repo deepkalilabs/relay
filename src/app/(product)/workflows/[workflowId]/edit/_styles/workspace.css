@@ -1,5 +1,5 @@
-.viewport-guard { display: none; min-height: 100dvh; padding: 32px; place-content: center; text-align: center; background: var(--canvas); }
-.workspace-load-state { min-height: 100dvh; padding: 32px; display: grid; place-content: center; justify-items: center; gap: 12px; text-align: center; background: var(--canvas); }
+.viewport-guard { display: none; min-height: var(--app-viewport-height); padding: 32px; place-content: center; text-align: center; background: var(--canvas); }
+.workspace-load-state { min-height: var(--app-viewport-height); padding: 32px; display: grid; place-content: center; justify-items: center; gap: 12px; text-align: center; background: var(--canvas); }
 .workspace-load-state h1 { margin: 0; font-size: 24px; }
 .workspace-load-state p { max-width: 480px; margin: 0; color: var(--muted); line-height: 1.6; }
 .workspace-load-spinner { width: 28px; height: 28px; border: 3px solid var(--line); border-top-color: var(--primary); border-radius: 999px; animation: workspace-spin .7s linear infinite; }
@@ -9,7 +9,7 @@
 .viewport-guard h1 { font-size: 24px; margin: 16px 0 8px; }
 .viewport-guard p { color: var(--muted); max-width: 460px; margin: 0 auto; line-height: 1.6; }
 .guard-icon { width: 52px; height: 52px; margin: auto; display: grid; place-items: center; border-radius: 15px; color: var(--warning); background: #fff7e9; border: 1px solid #f1d39c; }
-.desktop-app { height: 100dvh; overflow: hidden; }
+.desktop-app { height: var(--app-viewport-height); overflow: hidden; }
 .workspace-navbar { flex: 0 0 auto; padding: 6px 10px 10px; background: var(--surface); border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .workspace-navbar-primary { min-height: 40px; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .brand { margin: 0; display: flex; align-items: center; gap: 9px; font-size: 14px; font-weight: 700; white-space: nowrap; }
@@ -28,7 +28,7 @@
 .workspace-workflow-name input:hover { border-color: var(--line-strong); background: var(--surface-muted); }
 .workspace-workflow-name input:focus { border-color: #9db8f5; background: var(--surface); }
 .workspace-workflow-name > svg { position: absolute; top: 50%; right: 11px; transform: translateY(-50%); color: var(--subtle); pointer-events: none; }
-.workspace { --timeline-width: 280px; --inspector-width: 360px; position: relative; height: 100dvh; display: grid; grid-template-columns: var(--timeline-width) minmax(0, 1fr) var(--inspector-width); overflow: hidden; }
+.workspace { --timeline-width: 280px; --inspector-width: 360px; position: relative; height: var(--app-viewport-height); display: grid; grid-template-columns: var(--timeline-width) minmax(0, 1fr) var(--inspector-width); overflow: hidden; }
 .timeline-shell, .inspector-shell { min-width: 0; min-height: 0; height: 100%; position: relative; }
 .timeline-shell { display: flex; flex-direction: column; }
 .inspector-shell { background: var(--surface); border-left: 1px solid var(--line); }

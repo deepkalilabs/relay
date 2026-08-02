@@ -100,7 +100,7 @@ Each feature exposes a small `index.ts` API. Route-private application compositi
 
 The dependency-free workflow contract lives in `src/shared/contracts/workflow`. It defines the workflow aggregate, named step variants, element targets, page context, replay waits, serialization, and metadata shared by the recorder, editor, persistence, protocol, and replay engine. Runtime validation is kept beside the contract and compile-time checked against the domain types. Client/server message schemas are split by direction under `src/shared/contracts/protocol`.
 
-Saved workflows and new exports use schema version `1.2`, including `status`, `revision`, optional `finishedAt` lifecycle fields, and explicit input bindings on `fill` steps. Schema `1.0` and `1.1` files remain readable at compatibility boundaries and normalize with recorded-value bindings. A workflow also contains its Browserbase source, timestamps, and an ordered list of steps. Automatic recording produces `fill`, `set_date`, `select`, and `click` steps. Manual steps and existing workflows continue to support:
+Saved workflows and new exports use schema version `1.2`, including `status`, `revision`, optional `finishedAt` lifecycle fields, and explicit input bindings on `fill` steps. Schema `1.0` and `1.1` files remain readable at compatibility boundaries and normalize with recorded-value bindings. A workflow also contains its Browserbase source, timestamps, and an ordered list of steps. Automatic recording produces `fill`, `set_date`, `select`, `click`, and Enter `keypress` steps. Manual steps and existing workflows continue to support:
 
 ```text
 navigate · click · fill · select · check · uncheck · keypress · submit
