@@ -10,30 +10,15 @@ import {
   type Profile,
   type ProfileInput,
 } from "@/shared/contracts/profile";
-import type { ProfileListResult, ProfileRepository } from "./repository";
+import {
+  ProfileConflictError,
+  ProfileNotFoundError,
+  ProfileValidationError,
+  type ProfileListResult,
+  type ProfileRepository,
+} from "./repository";
 
 const PROFILE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-export class ProfileNotFoundError extends Error {
-  constructor() {
-    super("The profile was not found.");
-    this.name = "ProfileNotFoundError";
-  }
-}
-
-export class ProfileConflictError extends Error {
-  constructor() {
-    super("The profile changed since it was loaded.");
-    this.name = "ProfileConflictError";
-  }
-}
-
-export class ProfileValidationError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "ProfileValidationError";
-  }
-}
 
 export function defaultProfileDataDirectory(): string {
   return process.env.PROFILE_DATA_DIR || path.join(process.cwd(), ".data", "profiles");
@@ -63,7 +48,10 @@ export class FileProfileRepository implements ProfileRepository {
     }));
 
     profiles.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
-    return { profiles, invalidFileCount };
+    return {
+      profiles: profiles.map(({ id, name, status, updatedAt }) => ({ id, name, status, updatedAt })),
+      skippedRecordCount: invalidFileCount,
+    };
   }
 
   async create(input: ProfileInput): Promise<Profile> {

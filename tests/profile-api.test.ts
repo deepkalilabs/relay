@@ -5,7 +5,10 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { FileProfileRepository } from "@/server/profiles/filesystem-repository";
 import { handleProfileApi } from "@/server/profiles/http-router";
-import type { ProfileRepository } from "@/server/profiles/repository";
+import {
+  ProfileUnavailableError,
+  type ProfileRepository,
+} from "@/server/profiles/repository";
 import type { ProfileInput } from "@/shared/contracts/profile";
 
 const servers: Server[] = [];
@@ -140,5 +143,24 @@ describe("profile HTTP API", () => {
     expect(response.status).toBe(500);
     expect(body).toEqual({ error: "The profile storage operation failed." });
     expect(JSON.stringify(body)).not.toContain("alex@example.com");
+  });
+
+  it("returns 503 when profile storage is temporarily unavailable", async () => {
+    const failure = async () => {
+      throw new ProfileUnavailableError();
+    };
+    const repository: ProfileRepository = {
+      list: failure,
+      create: failure,
+      get: failure,
+      save: failure,
+      delete: failure,
+    };
+    const failingApi = await api(repository);
+
+    const response = await fetch(`${failingApi.url}/api/profiles`);
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: "Profile storage is temporarily unavailable." });
   });
 });

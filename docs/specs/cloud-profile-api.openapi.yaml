@@ -1,0 +1,393 @@
+openapi: 3.1.0
+info:
+  title: Browser Memory Recorder Cloud Profile API
+  version: 1.0.0
+  summary: Cloud persistence contract for reusable browser profiles.
+  description: |
+    This contract is the handoff boundary between Browser Memory Recorder's
+    local BFF and a separately implemented cloud persistence backend.
+
+    Profile records contain personal identity and location data. Clients
+    authenticate with a server-held bearer token. Lists and errors must never
+    include identity, email, location, or backend implementation details.
+jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
+tags:
+  - name: Profiles
+    description: Canonical profile persistence.
+security:
+  - BearerAuth: []
+x-contract-semantics:
+  canonicalSchemaVersion: "1.1"
+  maximumRequestBytes: 65536
+  listOrdering: updatedAt descending
+  authentication: Server-held HTTP bearer token.
+  mutationRules:
+    - Compare expectedRevision and apply the mutation in one atomic operation.
+    - Increment revision exactly once for a successful create or save.
+    - Do not mutate stored state when validation or persistence fails.
+    - Return the original result when an idempotency key is replayed with the same request.
+    - Return an idempotency conflict when a key is reused for different request content.
+  privacyRules:
+    - Never include identity or location fields in list responses.
+    - Never include profile content, credentials, or backend details in error messages.
+
+paths:
+  /v1/profiles:
+    get:
+      operationId: listProfiles
+      tags: [Profiles]
+      summary: List profile summaries
+      responses:
+        "200":
+          description: Profile summaries ordered by most recent update.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProfileListResponse"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+    post:
+      operationId: createProfile
+      tags: [Profiles]
+      summary: Create a profile
+      description: |
+        Creates a canonical profile. The backend generates the UUID, derives
+        Draft or Ready status, sets revision 1, and owns both timestamps.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [profile]
+              properties:
+                profile:
+                  $ref: "#/components/schemas/ProfileInput"
+      responses:
+        "201":
+          description: Canonical profile created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Profile"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "409":
+          $ref: "#/components/responses/MutationConflict"
+        "413":
+          $ref: "#/components/responses/RequestTooLarge"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/profiles/{profileId}:
+    parameters:
+      - $ref: "#/components/parameters/ProfileId"
+
+    get:
+      operationId: getProfile
+      tags: [Profiles]
+      summary: Load a canonical profile
+      responses:
+        "200":
+          description: Complete canonical profile.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Profile"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+    put:
+      operationId: saveProfile
+      tags: [Profiles]
+      summary: Save a profile snapshot
+      description: |
+        Atomically saves the input when expectedRevision equals the current
+        stored revision. The backend preserves identity and creation time,
+        derives status, updates the timestamp, and increments revision once.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        $ref: "#/components/requestBodies/SaveProfileRequest"
+      responses:
+        "200":
+          description: Canonical saved profile.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Profile"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/MutationConflict"
+        "413":
+          $ref: "#/components/responses/RequestTooLarge"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+    delete:
+      operationId: deleteProfile
+      tags: [Profiles]
+      summary: Permanently delete a profile
+      description: |
+        Deletes the profile only when expectedRevision equals the current
+        stored revision. Replaying the same idempotency key and request returns
+        the original successful result.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [expectedRevision]
+              properties:
+                expectedRevision:
+                  type: integer
+                  minimum: 1
+      responses:
+        "204":
+          description: Profile deleted.
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/MutationConflict"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: Server-held credential supplied by the local BFF.
+
+  parameters:
+    ProfileId:
+      name: profileId
+      in: path
+      required: true
+      description: Server-generated profile UUID.
+      schema:
+        type: string
+        format: uuid
+
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: UUID identifying one logical mutation.
+      schema:
+        type: string
+        format: uuid
+
+  requestBodies:
+    SaveProfileRequest:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [profile, expectedRevision]
+            properties:
+              profile:
+                $ref: "#/components/schemas/ProfileInput"
+              expectedRevision:
+                type: integer
+                minimum: 1
+
+  responses:
+    ValidationFailed:
+      description: The path or request body is invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    NotFound:
+      description: The profile does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    MutationConflict:
+      description: The revision is stale or the idempotency key conflicts.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    RequestTooLarge:
+      description: The request exceeds 64 KiB.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Unavailable:
+      description: Profile persistence is temporarily unavailable.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Internal:
+      description: An unexpected persistence failure occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+  schemas:
+    ProfileInput:
+      type: object
+      additionalProperties: false
+      required: [name, identity, location]
+      properties:
+        name:
+          type: string
+          maxLength: 100
+        identity:
+          type: object
+          additionalProperties: false
+          required: [fullName, email]
+          properties:
+            fullName:
+              type: string
+              maxLength: 200
+            email:
+              type: string
+              maxLength: 254
+        location:
+          type: object
+          additionalProperties: false
+          required: [countryRegion, postalCode]
+          properties:
+            countryRegion:
+              type: string
+              maxLength: 100
+            postalCode:
+              type: string
+              maxLength: 32
+
+    Profile:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, id, name, identity, location, status, revision, createdAt, updatedAt]
+      properties:
+        schemaVersion:
+          type: string
+          const: "1.1"
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 100
+        identity:
+          type: object
+          additionalProperties: false
+          required: [fullName, email]
+          properties:
+            fullName:
+              type: string
+              maxLength: 200
+            email:
+              type: string
+              maxLength: 254
+        location:
+          type: object
+          additionalProperties: false
+          required: [countryRegion, postalCode]
+          properties:
+            countryRegion:
+              type: string
+              maxLength: 100
+            postalCode:
+              type: string
+              maxLength: 32
+        status:
+          type: string
+          enum: [draft, ready]
+        revision:
+          type: integer
+          minimum: 1
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    ProfileSummary:
+      type: object
+      additionalProperties: false
+      required: [id, name, status, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 100
+        status:
+          type: string
+          enum: [draft, ready]
+        updatedAt:
+          type: string
+          format: date-time
+
+    ProfileListResponse:
+      type: object
+      additionalProperties: false
+      required: [profiles]
+      properties:
+        profiles:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProfileSummary"
+
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum:
+                - validation_failed
+                - not_found
+                - revision_conflict
+                - idempotency_conflict
+                - unavailable
+                - internal
+            message:
+              type: string
+              minLength: 1
+              description: Safe message containing no profile or storage details.

@@ -3,10 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  FileProfileRepository,
   ProfileConflictError,
   ProfileNotFoundError,
-} from "@/server/profiles/filesystem-repository";
+} from "@/server/profiles/repository";
+import { FileProfileRepository } from "@/server/profiles/filesystem-repository";
 import type { ProfileInput } from "@/shared/contracts/profile";
 
 const directories: string[] = [];
@@ -59,8 +59,11 @@ describe("FileProfileRepository", () => {
 
     const listed = await profiles.list();
 
-    expect(listed.profiles.map(({ id }) => id)).toEqual([second.id, first.id]);
-    expect(listed.invalidFileCount).toBe(1);
+    expect(listed.profiles).toEqual([
+      { id: second.id, name: second.name, status: second.status, updatedAt: second.updatedAt },
+      { id: first.id, name: first.name, status: first.status, updatedAt: first.updatedAt },
+    ]);
+    expect(listed.skippedRecordCount).toBe(1);
   });
 
   it("saves drafts and rejects stale or concurrent writes", async () => {
@@ -108,7 +111,12 @@ describe("FileProfileRepository", () => {
     );
 
     const listed = await profiles.list();
-    expect(listed.profiles).toEqual([created]);
-    expect(listed.invalidFileCount).toBe(1);
+    expect(listed.profiles).toEqual([{
+      id: created.id,
+      name: created.name,
+      status: created.status,
+      updatedAt: created.updatedAt,
+    }]);
+    expect(listed.skippedRecordCount).toBe(1);
   });
 });

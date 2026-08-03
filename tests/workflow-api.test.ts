@@ -5,7 +5,10 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { FileWorkflowRepository } from "@/server/workflows/filesystem-repository";
 import { handleWorkflowApi } from "@/server/workflows/http-router";
-import type { WorkflowRepository } from "@/server/workflows/repository";
+import {
+  WorkflowUnavailableError,
+  type WorkflowRepository,
+} from "@/server/workflows/repository";
 
 const servers: Server[] = [];
 const directories: string[] = [];
@@ -147,5 +150,24 @@ describe("workflow HTTP API", () => {
     expect(response.status).toBe(500);
     expect(body).toEqual({ error: "The workflow storage operation failed." });
     expect(JSON.stringify(body)).not.toContain("secret-name");
+  });
+
+  it("returns 503 when workflow storage is temporarily unavailable", async () => {
+    const failure = async () => {
+      throw new WorkflowUnavailableError();
+    };
+    const repository: WorkflowRepository = {
+      list: failure,
+      create: failure,
+      get: failure,
+      save: failure,
+      finish: failure,
+    };
+    const { url } = await api(repository);
+
+    const response = await fetch(`${url}/api/workflows`);
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: "Workflow storage is temporarily unavailable." });
   });
 });

@@ -1,8 +1,36 @@
-import type { Profile, ProfileInput } from "@/shared/contracts/profile";
+import type { Profile, ProfileInput, ProfileSummary } from "@/shared/contracts/profile";
 
 export interface ProfileListResult {
-  profiles: Profile[];
-  invalidFileCount: number;
+  profiles: ProfileSummary[];
+  skippedRecordCount: number;
+}
+
+export class ProfileNotFoundError extends Error {
+  constructor() {
+    super("The profile was not found.");
+    this.name = "ProfileNotFoundError";
+  }
+}
+
+export class ProfileConflictError extends Error {
+  constructor() {
+    super("The profile changed since it was loaded.");
+    this.name = "ProfileConflictError";
+  }
+}
+
+export class ProfileValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ProfileValidationError";
+  }
+}
+
+export class ProfileUnavailableError extends Error {
+  constructor() {
+    super("Profile storage is temporarily unavailable.");
+    this.name = "ProfileUnavailableError";
+  }
 }
 
 export interface ProfileRepository {

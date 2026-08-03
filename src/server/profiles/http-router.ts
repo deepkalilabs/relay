@@ -2,15 +2,14 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { z } from "zod";
 import {
   ProfileInputSchema,
-  type Profile,
-  type ProfileSummary,
 } from "@/shared/contracts/profile";
 import {
   ProfileConflictError,
   ProfileNotFoundError,
+  ProfileUnavailableError,
   ProfileValidationError,
-} from "./filesystem-repository";
-import type { ProfileRepository } from "./repository";
+  type ProfileRepository,
+} from "./repository";
 
 const MAX_REQUEST_BYTES = 65_536;
 const CreateRequestSchema = z.object({ profile: ProfileInputSchema });
@@ -21,15 +20,6 @@ const SaveRequestSchema = z.object({
 const DeleteRequestSchema = z.object({
   expectedRevision: z.number().int().positive(),
 });
-
-function toSummary(profile: Profile): ProfileSummary {
-  return {
-    id: profile.id,
-    name: profile.name,
-    status: profile.status,
-    updatedAt: profile.updatedAt,
-  };
-}
 
 function sendJson(response: ServerResponse, status: number, value: unknown): void {
   response.statusCode = status;
@@ -64,6 +54,7 @@ function errorMessage(error: unknown): { status: number; message: string } {
   }
   if (error instanceof ProfileNotFoundError) return { status: 404, message: error.message };
   if (error instanceof ProfileConflictError) return { status: 409, message: error.message };
+  if (error instanceof ProfileUnavailableError) return { status: 503, message: error.message };
   return { status: 500, message: "The profile storage operation failed." };
 }
 
@@ -80,8 +71,8 @@ export async function handleProfileApi(
     if (segments.length === 2 && request.method === "GET") {
       const result = await repository.list();
       sendJson(response, 200, {
-        profiles: result.profiles.map(toSummary),
-        invalidFileCount: result.invalidFileCount,
+        profiles: result.profiles,
+        invalidFileCount: result.skippedRecordCount,
       });
       return true;
     }

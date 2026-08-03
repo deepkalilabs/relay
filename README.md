@@ -136,6 +136,26 @@ PROFILE_DATA_DIR=/path/to/profiles npm run dev
 
 The profile list API returns only names, Draft/Ready status, and update times. Identity and location values are loaded only for the selected profile. Incomplete profiles remain persistable drafts; Ready status is derived only when every field is present and the email is valid. Invalid files are skipped and surfaced as a non-sensitive count.
 
+## Remote storage adapter
+
+The server can select HTTP-backed workflow and profile repositories at startup.
+Remote mode does not copy, mirror, or fall back to local files; each mode exposes
+its own independent dataset.
+
+```bash
+DATA_SOURCE=remote \
+REMOTE_STORAGE_BASE_URL=https://storage.example.com/ \
+REMOTE_STORAGE_BEARER_TOKEN=server-secret \
+npm run dev
+```
+
+The remote service must implement the versioned
+[workflow](./docs/specs/cloud-workflow-api.openapi.yaml) and
+[profile](./docs/specs/cloud-profile-api.openapi.yaml) contracts. The adapters
+send the bearer token only from the Node server, validate all remote responses,
+and retry one transient failure with the same idempotency key. This repository
+does not implement the remote service or its database.
+
 ## Requirements
 
 - Node.js 24 LTS (`nvm use` reads `.nvmrc`)

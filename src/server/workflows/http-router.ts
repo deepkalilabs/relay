@@ -1,13 +1,13 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { z } from "zod";
-import { toLibraryWorkflowItem } from "./library-projection";
 import { WorkflowSchema } from "@/shared/contracts/workflow/schema";
 import {
   WorkflowConflictError,
   WorkflowNotFoundError,
+  WorkflowUnavailableError,
   WorkflowValidationError,
-} from "./filesystem-repository";
-import type { WorkflowRepository } from "./repository";
+  type WorkflowRepository,
+} from "./repository";
 
 const MAX_REQUEST_BYTES = 1_048_576;
 const SaveRequestSchema = z.object({
@@ -45,6 +45,7 @@ function errorMessage(error: unknown): { status: number; message: string } {
   }
   if (error instanceof WorkflowNotFoundError) return { status: 404, message: error.message };
   if (error instanceof WorkflowConflictError) return { status: 409, message: error.message };
+  if (error instanceof WorkflowUnavailableError) return { status: 503, message: error.message };
   return { status: 500, message: "The workflow storage operation failed." };
 }
 
@@ -61,8 +62,8 @@ export async function handleWorkflowApi(
     if (segments.length === 2 && request.method === "GET") {
       const result = await repository.list();
       sendJson(response, 200, {
-        workflows: result.workflows.map(toLibraryWorkflowItem),
-        invalidFileCount: result.invalidFileCount,
+        workflows: result.workflows,
+        invalidFileCount: result.skippedRecordCount,
       });
       return true;
     }

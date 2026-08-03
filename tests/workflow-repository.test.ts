@@ -4,9 +4,9 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createWorkflow } from "@/shared/contracts/workflow/schema";
 import {
-  FileWorkflowRepository,
   WorkflowConflictError,
-} from "@/server/workflows/filesystem-repository";
+} from "@/server/workflows/repository";
+import { FileWorkflowRepository } from "@/server/workflows/filesystem-repository";
 
 const directories: string[] = [];
 
@@ -37,7 +37,16 @@ describe("FileWorkflowRepository", () => {
       steps: [],
     });
     expect(loaded).toEqual(created);
-    expect(listed).toEqual({ workflows: [created], invalidFileCount: 0 });
+    expect(listed).toEqual({
+      workflows: [{
+        id: created.id,
+        name: created.name,
+        status: created.status,
+        updatedAt: created.updatedAt,
+        steps: [],
+      }],
+      skippedRecordCount: 0,
+    });
     expect(JSON.parse(await readFile(join(rootDir, `${created.id}.json`), "utf8"))).toEqual(created);
   });
 
@@ -92,7 +101,13 @@ describe("FileWorkflowRepository", () => {
 
     const listed = await workflows.list();
 
-    expect(listed.workflows).toEqual([created]);
-    expect(listed.invalidFileCount).toBe(1);
+    expect(listed.workflows).toEqual([{
+      id: created.id,
+      name: created.name,
+      status: created.status,
+      updatedAt: created.updatedAt,
+      steps: [],
+    }]);
+    expect(listed.skippedRecordCount).toBe(1);
   });
 });

@@ -1,15 +1,16 @@
 openapi: 3.1.0
 info:
   title: Browser Memory Recorder Cloud Workflow API
-  version: 1.0.0
+  version: 1.1.0
   summary: Cloud persistence contract for canonical browser workflows.
   description: |
     This contract is the handoff boundary between Browser Memory Recorder's
     local BFF and a separately implemented cloud persistence backend.
 
-    Version 1 intentionally covers workflow persistence only. It does not
-    define authentication, profiles, deletion, migration, pagination,
-    collaboration, replay execution, or local-file mirroring.
+    Version 1 intentionally covers workflow persistence only. Clients
+    authenticate with a server-held bearer token. Profiles use their own
+    versioned contract. Deletion, migration, pagination, collaboration, replay
+    execution, and local-file mirroring remain outside this contract.
 
     The backend is authoritative for workflow identity, lifecycle fields,
     timestamps, and revisions. All writes must be atomic. Workflow values can
@@ -19,11 +20,13 @@ jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 tags:
   - name: Workflows
     description: Canonical workflow persistence.
+security:
+  - BearerAuth: []
 x-contract-semantics:
   canonicalSchemaVersion: "1.2"
   maximumRequestBytes: 1048576
   listOrdering: updatedAt descending
-  authentication: Not defined in version 1.
+  authentication: Server-held HTTP bearer token.
   mutationRules:
     - Compare expectedRevision and apply the mutation in one atomic operation.
     - Increment revision exactly once for a successful new mutation.
@@ -212,6 +215,12 @@ paths:
           $ref: "#/components/responses/Internal"
 
 components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: Server-held credential supplied by the local BFF.
+
   parameters:
     WorkflowId:
       name: workflowId

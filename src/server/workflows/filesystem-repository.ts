@@ -8,30 +8,16 @@ import {
   serializeWorkflow,
 } from "@/shared/contracts/workflow/serialization";
 import { createWorkflow, WorkflowSchema } from "@/shared/contracts/workflow/schema";
-import type { WorkflowListResult, WorkflowRepository } from "./repository";
+import { toLibraryWorkflowItem } from "./library-projection";
+import {
+  WorkflowConflictError,
+  WorkflowNotFoundError,
+  WorkflowValidationError,
+  type WorkflowListResult,
+  type WorkflowRepository,
+} from "./repository";
 
 const WORKFLOW_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-export class WorkflowNotFoundError extends Error {
-  constructor() {
-    super("The workflow was not found.");
-    this.name = "WorkflowNotFoundError";
-  }
-}
-
-export class WorkflowConflictError extends Error {
-  constructor() {
-    super("The workflow changed since it was loaded.");
-    this.name = "WorkflowConflictError";
-  }
-}
-
-export class WorkflowValidationError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "WorkflowValidationError";
-  }
-}
 
 export function defaultWorkflowDataDirectory(): string {
   return process.env.WORKFLOW_DATA_DIR || path.join(process.cwd(), ".data", "workflows");
@@ -61,7 +47,10 @@ export class FileWorkflowRepository implements WorkflowRepository {
     }));
 
     workflows.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
-    return { workflows, invalidFileCount };
+    return {
+      workflows: workflows.map(toLibraryWorkflowItem),
+      skippedRecordCount: invalidFileCount,
+    };
   }
 
   async create(): Promise<Workflow> {
