@@ -53,6 +53,19 @@ describe("workflow editor client", () => {
 });
 
 describe("workflow Library client", () => {
+  it("preserves the status of Library list failures", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({ error: "Workflow storage is unavailable." }),
+      { status: 503 },
+    )));
+
+    await expect(workflowLibraryClient.list()).rejects.toMatchObject({
+      name: "WorkflowLibraryRequestError",
+      status: 503,
+      message: "Workflow storage is unavailable.",
+    });
+  });
+
   it("loads full workflows and saves bindings with revision protection", async () => {
     const workflow = createWorkflow();
     const saved = { ...workflow, revision: 2 };

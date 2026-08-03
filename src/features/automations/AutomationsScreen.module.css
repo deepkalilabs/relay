@@ -295,6 +295,16 @@
   font-weight: 750;
 }
 
+.taskWarning {
+  margin: -2px 0 12px;
+  padding: 9px 11px;
+  border: 1px solid #ead9ad;
+  border-radius: 5px;
+  color: #745b1d;
+  background: #fffbeb;
+  font-size: 11px;
+}
+
 .emptyTasks {
   min-height: 170px;
   padding: 28px;

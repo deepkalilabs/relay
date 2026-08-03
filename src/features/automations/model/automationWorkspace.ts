@@ -6,6 +6,7 @@ export interface AutomationFolder {
   name: string;
   parentId: string | null;
   system?: boolean;
+  readOnly?: boolean;
 }
 
 export interface AutomationTask {
@@ -54,7 +55,16 @@ export type AutomationWorkspaceAction =
   | { type: "start-run"; batchId: string }
   | { type: "tick-run" };
 
+export const ALL_WORKFLOWS_FOLDER_ID = "all-workflows";
+
 const folders: AutomationFolder[] = [
+  {
+    id: ALL_WORKFLOWS_FOLDER_ID,
+    name: "All workflows",
+    parentId: null,
+    system: true,
+    readOnly: true,
+  },
   { id: "inbox", name: "Inbox", parentId: null, system: true },
   { id: "customers", name: "Customers", parentId: null },
   { id: "verification", name: "Verification", parentId: "customers" },
@@ -149,7 +159,7 @@ export function createInitialAutomationState(): AutomationWorkspaceState {
     folders: folders.map((folder) => ({ ...folder })),
     tasks: tasks.map((item) => ({ ...item })),
     runs: runs.map((run) => ({ ...run })),
-    selectedFolderId: "verification",
+    selectedFolderId: ALL_WORKFLOWS_FOLDER_ID,
     expandedFolderIds: ["customers"],
     activeBatch: null,
     announcement: "",
@@ -191,6 +201,9 @@ export function folderNameError(
   value: string,
   parentId: string | null,
 ): string | null {
+  if (parentId && state.folders.find((folder) => folder.id === parentId)?.system) {
+    return "Choose a custom folder as the parent.";
+  }
   const name = value.trim();
   if (!name) return "Enter a folder name.";
   if (name.length > 80) return "Folder names must be 80 characters or fewer.";
@@ -251,7 +264,7 @@ export function workspaceReducer(
     case "move-task": {
       const movedTask = state.tasks.find((item) => item.id === action.taskId);
       const targetFolder = state.folders.find((folder) => folder.id === action.folderId);
-      if (!movedTask || !targetFolder) return state;
+      if (!movedTask || !targetFolder || targetFolder.readOnly) return state;
       return {
         ...state,
         tasks: state.tasks.map((item) => item.id === action.taskId
@@ -264,7 +277,7 @@ export function workspaceReducer(
       if (state.activeBatch) return state;
       const folder = state.folders.find((item) => item.id === state.selectedFolderId);
       const selectedTasks = tasksForFolder(state, state.selectedFolderId);
-      if (!folder || !selectedTasks.length) return state;
+      if (!folder || folder.readOnly || !selectedTasks.length) return state;
       const queuedRuns = selectedTasks.map<AutomationRun>((item) => ({
         id: `${action.batchId}:${item.id}`,
         taskId: item.id,

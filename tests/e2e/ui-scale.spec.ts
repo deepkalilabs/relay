@@ -47,6 +47,7 @@ test("keeps automation dialogs inside the scaled viewport", async ({ page }) => 
   const viewport = { width: 1024, height: 768 };
   await page.setViewportSize(viewport);
   await page.goto("/automations");
+  await page.getByRole("button", { name: "Select Verification folder" }).click();
   await page.getByRole("button", { name: "Add task" }).click();
 
   const dialog = page.getByRole("dialog", { name: /Add task to Verification/ });

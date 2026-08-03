@@ -1,6 +1,10 @@
 import type { Workflow } from "@/shared/contracts/workflow/domain";
 import type { WorkflowLibraryResponse } from "@/shared/contracts/workflow/library";
 import { WorkflowSchema } from "@/shared/contracts/workflow/schema";
+import {
+  WorkflowListRequestError,
+  workflowListClient,
+} from "@/shared/api/workflowListClient";
 
 export class WorkflowLibraryRequestError extends Error {
   constructor(
@@ -33,7 +37,14 @@ async function readResponse(response: Response): Promise<unknown> {
 
 export const workflowLibraryClient: WorkflowLibraryClient = {
   async list() {
-    return await readResponse(await fetch("/api/workflows")) as WorkflowLibraryResponse;
+    try {
+      return await workflowListClient.list() as WorkflowLibraryResponse;
+    } catch (error) {
+      if (error instanceof WorkflowListRequestError) {
+        throw new WorkflowLibraryRequestError(error.message, error.status);
+      }
+      throw error;
+    }
   },
   async create() {
     return WorkflowSchema.parse(await readResponse(await fetch("/api/workflows", { method: "POST" })));
