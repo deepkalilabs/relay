@@ -205,6 +205,17 @@ async function executeStep(page: Page, step: WorkflowStep): Promise<{ locatorKin
       await resolved.locator.click(options);
       break;
     case "fill":
+      if (locatorCandidatesForTarget(step.target).some((candidate) => (
+        candidate.kind === "role" && candidate.value === "combobox"
+      ))) {
+        await resolved.locator.focus(options);
+        await resolved.locator.press("ControlOrMeta+A", options);
+        await resolved.locator.press("Backspace", options);
+        await resolved.locator.pressSequentially(step.payload.value, { ...options, delay: 20 });
+        break;
+      }
+      await resolved.locator.fill(step.payload.value, options);
+      break;
     case "set_date":
       await resolved.locator.fill(step.payload.value, options);
       break;

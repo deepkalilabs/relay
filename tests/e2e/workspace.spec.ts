@@ -152,7 +152,8 @@ test("keeps the desktop workspace within the 1024px viewport", async ({ page, re
   }));
   expect(overflow.document).toBeLessThanOrEqual(0);
   expect(overflow.body).toBeLessThanOrEqual(0);
-  await expect(page.locator(".workspace")).toHaveCSS("height", "768px");
+  const workspaceBounds = await page.locator(".workspace").boundingBox();
+  expect(workspaceBounds?.height).toBeCloseTo(768, 0);
 });
 
 test("shows the desktop-only guard below 1024px", async ({ page, request }) => {

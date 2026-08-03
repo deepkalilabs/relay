@@ -8,6 +8,8 @@ export const RECORDER_SCRIPT = String.raw`(() => {
   let datePickerOpen = false;
   let selectPickerOpen = false;
   let pendingOptionClick = null;
+  let suppressKeyboardClick = false;
+  let suppressKeyboardClickTimer = null;
   window.__browserMemorySuppressSelectChange = false;
   window.__browserMemoryNativeSelects = window.__browserMemoryNativeSelects === true;
   window.__browserMemoryCaptchaLocked = window.__browserMemoryCaptchaLocked === true;
@@ -34,6 +36,9 @@ export const RECORDER_SCRIPT = String.raw`(() => {
     selectPickerOpen = false;
     if (pendingOptionClick) clearTimeout(pendingOptionClick.timer);
     pendingOptionClick = null;
+    if (suppressKeyboardClickTimer) clearTimeout(suppressKeyboardClickTimer);
+    suppressKeyboardClick = false;
+    suppressKeyboardClickTimer = null;
   };
 
   const viewportPosition = () => ({
@@ -381,6 +386,17 @@ export const RECORDER_SCRIPT = String.raw`(() => {
     return signaled || content[0] || null;
   };
 
+  const resolveEnterTarget = (event) => {
+    const element = eventElement(event);
+    if (!(element instanceof HTMLElement)) return null;
+    if (element instanceof HTMLTextAreaElement || element.isContentEditable) return null;
+    if (element instanceof HTMLSelectElement) return null;
+    if (element instanceof HTMLInputElement && element.type === "date") return null;
+    if (isEditableField(element)) return element;
+    const target = element.closest(semanticClickSelector);
+    return target instanceof HTMLElement ? target : null;
+  };
+
   const flushInput = (element) => {
     if (!dirtyFields.has(element)) return;
     dirtyFields.delete(element);
@@ -462,6 +478,12 @@ export const RECORDER_SCRIPT = String.raw`(() => {
 
   window.addEventListener("click", (event) => {
     if (window.__browserMemoryCaptchaLocked) return;
+    if (suppressKeyboardClick && event.detail === 0) {
+      suppressKeyboardClick = false;
+      if (suppressKeyboardClickTimer) clearTimeout(suppressKeyboardClickTimer);
+      suppressKeyboardClickTimer = null;
+      return;
+    }
     const origin = eventElement(event);
     const select = origin ? nativeSelectForInteraction(origin) : null;
     if (select instanceof HTMLSelectElement && !select.disabled && !select.multiple && select.size <= 1) {
@@ -547,6 +569,30 @@ export const RECORDER_SCRIPT = String.raw`(() => {
       selectPickerOpen = false;
       emit({ type: "select-picker.dismiss" });
     }
+    if (event.key !== "Enter" || event.isComposing) return;
+    const element = resolveEnterTarget(event);
+    if (!element) return;
+    suppressKeyboardClick = true;
+    if (suppressKeyboardClickTimer) clearTimeout(suppressKeyboardClickTimer);
+    suppressKeyboardClickTimer = setTimeout(() => {
+      suppressKeyboardClick = false;
+      suppressKeyboardClickTimer = null;
+    }, 0);
+    if (event.repeat) return;
+    flushInput(element);
+    const modifiers = [
+      event.altKey ? "Alt" : null,
+      event.ctrlKey ? "Control" : null,
+      event.metaKey ? "Meta" : null,
+      event.shiftKey ? "Shift" : null,
+    ].filter(Boolean);
+    emitAction({
+      type: "keypress",
+      name: targetName(element),
+      target: describe(element),
+      payload: { key: "Enter", modifiers },
+      sensitive: false,
+    });
   }, true);
 
   window.addEventListener("scroll", () => {

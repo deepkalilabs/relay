@@ -62,13 +62,14 @@ describe("recorder normalization", () => {
     expect(RECORDER_SCRIPT).not.toContain('"pushState", "replaceState"');
   });
 
-  it("allows fill, click, select, and final semantic date actions through the automatic recorder", () => {
+  it("allows fill, click, select, final semantic date, and keypress actions through the automatic recorder", () => {
     const withType = (type: RecordedAction["type"]): RecordedAction => ({ ...action, type });
     expect(isAutomaticallyRecordableAction(withType("fill"))).toBe(true);
     expect(isAutomaticallyRecordableAction(withType("click"))).toBe(true);
     expect(isAutomaticallyRecordableAction(withType("select"))).toBe(true);
     expect(isAutomaticallyRecordableAction(withType("set_date"))).toBe(true);
-    for (const type of ["navigate", "check", "uncheck", "keypress", "submit"] as const) {
+    expect(isAutomaticallyRecordableAction(withType("keypress"))).toBe(true);
+    for (const type of ["navigate", "check", "uncheck", "submit"] as const) {
       expect(isAutomaticallyRecordableAction(withType(type))).toBe(false);
     }
   });

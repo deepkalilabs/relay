@@ -3,6 +3,109 @@ import { RECORDER_SCRIPT } from "../../src/server/recording/injected";
 import { applyPositionBefore } from "../../src/server/replay/engine";
 import type { WorkflowStep } from "../../src/shared/contracts/workflow/domain";
 
+test("records Enter after a completed fill without recording its synthetic submit click", async ({ page }) => {
+  const actions: Array<Record<string, unknown>> = [];
+  await page.exposeFunction("__browserMemoryEmit", (action: Record<string, unknown>) => { actions.push(action); });
+  await page.addInitScript({ content: RECORDER_SCRIPT });
+  await page.goto("/fixture");
+
+  const email = page.getByLabel("Email");
+  await email.fill("person@example.com");
+  await email.press("Enter");
+
+  await expect(page.getByRole("status")).toHaveText("Submitted");
+  await expect.poll(() => actions.map((action) => action.type)).toEqual(["fill", "keypress"]);
+  expect(actions[0]).toMatchObject({
+    type: "fill",
+    name: "Email",
+    payload: { value: "person@example.com" },
+  });
+  expect(actions[1]).toMatchObject({
+    type: "keypress",
+    name: "Email",
+    payload: { key: "Enter", modifiers: [] },
+    position: { x: 0, y: 0 },
+  });
+  expect((actions[1].target as { candidates: Array<{ kind: string }> }).candidates[0].kind).toBe("testId");
+  expect(actions.some((action) => action.type === "click")).toBe(false);
+});
+
+test("records Enter on semantic controls while preserving their activation", async ({ page }) => {
+  const actions: Array<Record<string, unknown>> = [];
+  await page.exposeFunction("__browserMemoryEmit", (action: Record<string, unknown>) => { actions.push(action); });
+  await page.addInitScript({ content: RECORDER_SCRIPT });
+  await page.goto("/fixture");
+
+  const openDetails = page.getByRole("button", { name: "Open details" });
+  await openDetails.focus();
+  await openDetails.press("Enter");
+
+  await expect(page).toHaveURL(/view=details/);
+  await expect.poll(() => actions).toHaveLength(1);
+  expect(actions[0]).toMatchObject({
+    type: "keypress",
+    name: "Open details",
+    payload: { key: "Enter", modifiers: [] },
+  });
+});
+
+test("records Enter modifiers in replay order", async ({ page }) => {
+  const actions: Array<Record<string, unknown>> = [];
+  await page.exposeFunction("__browserMemoryEmit", (action: Record<string, unknown>) => { actions.push(action); });
+  await page.addInitScript({ content: RECORDER_SCRIPT });
+  await page.goto("/fixture");
+
+  const email = page.getByLabel("Email");
+  await email.focus();
+  await email.press("Control+Shift+Enter");
+
+  await expect.poll(() => actions).toHaveLength(1);
+  expect(actions[0]).toMatchObject({
+    type: "keypress",
+    name: "Email",
+    payload: { key: "Enter", modifiers: ["Control", "Shift"] },
+  });
+});
+
+test("ignores Enter used for multiline text, native pickers, composition, or key repeat", async ({ page }) => {
+  const actions: Array<Record<string, unknown>> = [];
+  await page.exposeFunction("__browserMemoryEmit", (action: Record<string, unknown>) => { actions.push(action); });
+  await page.addInitScript({ content: RECORDER_SCRIPT });
+  await page.goto("/fixture");
+
+  await page.evaluate(() => {
+    const textarea = document.createElement("textarea");
+    const editor = document.createElement("div");
+    const genericFocusable = document.createElement("div");
+    const repeatButton = document.createElement("button");
+    editor.contentEditable = "true";
+    genericFocusable.tabIndex = 0;
+    repeatButton.type = "button";
+    document.body.append(textarea, editor, genericFocusable, repeatButton);
+
+    const enter = (target: Element, init: KeyboardEventInit = {}) => {
+      target.dispatchEvent(new KeyboardEvent("keydown", {
+        bubbles: true,
+        composed: true,
+        key: "Enter",
+        ...init,
+      }));
+    };
+
+    enter(textarea);
+    enter(editor);
+    enter(genericFocusable);
+    enter(document.querySelector("select[name='plan']")!);
+    enter(document.querySelector("input[type='date']")!);
+    enter(document.querySelector("input[name='email']")!, { isComposing: true });
+    enter(repeatButton, { repeat: true });
+    repeatButton.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true, detail: 0 }));
+  });
+
+  await page.waitForTimeout(50);
+  expect(actions).toHaveLength(0);
+});
+
 test("injected recorder captures completed fills, native selects, and semantic control clicks", async ({ page }) => {
   const actions: Array<Record<string, unknown>> = [];
   await page.exposeFunction("__browserMemoryEmit", (action: Record<string, unknown>) => { actions.push(action); });

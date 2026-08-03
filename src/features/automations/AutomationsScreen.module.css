@@ -1,5 +1,5 @@
 .shell {
-  min-height: 100dvh;
+  min-height: var(--app-viewport-height);
   display: grid;
   grid-template-columns: 216px minmax(0, 1fr);
   background: var(--surface);
@@ -7,7 +7,7 @@
 
 .content {
   min-width: 0;
-  height: 100dvh;
+  height: var(--app-viewport-height);
   padding: 26px 28px 20px;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
@@ -696,7 +696,7 @@
 
   .content {
     height: auto;
-    min-height: 100dvh;
+    min-height: var(--app-viewport-height);
     padding: 18px;
     overflow: auto;
   }
@@ -734,7 +734,7 @@
 
 @media (max-width: 1023px) {
   .shell {
-    min-height: 100dvh;
+    min-height: var(--app-viewport-height);
     display: block;
   }
 
@@ -769,7 +769,7 @@
 
   .content {
     height: auto;
-    min-height: calc(100dvh - 59px);
+    min-height: calc(var(--app-viewport-height) - 59px);
     padding: 22px;
     overflow: visible;
   }

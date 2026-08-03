@@ -34,8 +34,9 @@ test("shows filesystem workflows with a static preview, search, and local select
   await expect(checkoutButton).toHaveAttribute("aria-pressed", "true");
   const checkoutThumbnail = checkoutButton.locator(".workflow-thumb");
   await expect(checkoutThumbnail).toHaveAttribute("data-variant", "article");
-  await expect(checkoutThumbnail).toHaveCSS("width", "124px");
-  await expect(checkoutThumbnail).toHaveCSS("height", "70px");
+  const thumbnailBounds = await checkoutThumbnail.boundingBox();
+  expect(thumbnailBounds?.width).toBeCloseTo(124 * 0.8, 0);
+  expect(thumbnailBounds?.height).toBeCloseTo(70 * 0.8, 0);
   await expect(page.getByTestId("static-workflow-preview")).toBeVisible();
   await expect(page.getByText("Enter contact information")).toBeVisible();
   await expect(page.getByRole("link", { name: "Continue editing Checkout flow" })).toBeVisible();

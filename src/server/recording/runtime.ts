@@ -108,6 +108,7 @@ interface PendingSelectPicker {
 const AUTOMATICALLY_RECORDABLE_ACTION_TYPES: ReadonlySet<RecordedAction["type"]> = new Set([
   "click",
   "fill",
+  "keypress",
   "select",
   "set_date",
 ]);

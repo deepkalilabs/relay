@@ -36,12 +36,17 @@ function replayPage(click = vi.fn(async () => undefined)) {
     count: vi.fn(async () => 1),
     evaluate: vi.fn(async () => true),
     fill: vi.fn(async () => undefined),
+    focus: vi.fn(async () => undefined),
     isVisible: vi.fn(async () => true),
     press: vi.fn(async () => undefined),
+    pressSequentially: vi.fn(async () => undefined),
     selectOption: vi.fn(async () => ["value"]),
     uncheck: vi.fn(async () => undefined),
   } as unknown as Locator;
-  const frame = { getByTestId: vi.fn(() => locator) } as unknown as Frame;
+  const frame = {
+    getByRole: vi.fn(() => locator),
+    getByTestId: vi.fn(() => locator),
+  } as unknown as Frame;
   const page = {
     frames: vi.fn(() => [frame]),
     goto: vi.fn(async () => null),
@@ -279,6 +284,43 @@ describe("replay engine", () => {
     expect(locator.press).toHaveBeenCalledWith("Control+Enter", expect.anything());
     expect(locator.evaluate).toHaveBeenCalledOnce();
     expect(messages.at(-1)).toMatchObject({ type: "replay.status", status: "completed" });
+  });
+
+  it("types naturally into combobox fills without changing ordinary fills", async () => {
+    const ordinaryFill: WorkflowStep = {
+      ...baseStep("fill", 0),
+      type: "fill",
+      payload: { value: "ordinary value" },
+      parameterBinding: { source: "recorded" },
+    };
+    const comboboxFill: WorkflowStep = {
+      ...baseStep("fill", 1),
+      type: "fill",
+      target: {
+        candidates: [{ kind: "role", value: "combobox", name: "Location", exact: true }],
+      },
+      payload: { value: "9320 S Clifton Park Ave" },
+      parameterBinding: { source: "recorded" },
+    };
+    const { page, locator } = replayPage();
+    const engine = new ReplayEngine(
+      crypto.randomUUID(),
+      page,
+      preflightReplay(workflowWith([ordinaryFill, comboboxFill])),
+      vi.fn(),
+    );
+
+    await engine.run();
+
+    expect(locator.fill).toHaveBeenCalledOnce();
+    expect(locator.fill).toHaveBeenCalledWith("ordinary value", expect.anything());
+    expect(locator.focus).toHaveBeenCalledOnce();
+    expect(locator.press).toHaveBeenNthCalledWith(1, "ControlOrMeta+A", expect.anything());
+    expect(locator.press).toHaveBeenNthCalledWith(2, "Backspace", expect.anything());
+    expect(locator.pressSequentially).toHaveBeenCalledWith(
+      "9320 S Clifton Park Ave",
+      expect.objectContaining({ delay: 20 }),
+    );
   });
 
   it("restores the action frame position before resolving its locator", async () => {

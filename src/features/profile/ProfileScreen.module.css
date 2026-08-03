@@ -1,6 +1,6 @@
 .viewportGuard {
   display: none;
-  min-height: 100dvh;
+  min-height: var(--app-viewport-height);
   padding: 32px;
   place-content: center;
   text-align: center;
@@ -25,7 +25,7 @@
 }
 
 .viewportState {
-  min-height: 100dvh;
+  min-height: var(--app-viewport-height);
   display: grid;
   place-items: center;
   color: var(--muted);
@@ -33,7 +33,7 @@
 }
 
 .shell {
-  min-height: 100dvh;
+  min-height: var(--app-viewport-height);
   display: grid;
   grid-template-columns: 216px minmax(0, 1fr);
   background: var(--surface);
@@ -41,7 +41,7 @@
 
 .content {
   min-width: 0;
-  height: 100dvh;
+  height: var(--app-viewport-height);
   padding: 24px;
   overflow: hidden;
   background: #fcfdff;
