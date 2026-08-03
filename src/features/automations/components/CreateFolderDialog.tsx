@@ -20,7 +20,8 @@ export function CreateFolderDialog({
   onClose,
   onCreate,
 }: CreateFolderDialogProps) {
-  const initialParentId = state.selectedFolderId === "inbox" ? "" : state.selectedFolderId;
+  const selectedFolder = state.folders.find((folder) => folder.id === state.selectedFolderId);
+  const initialParentId = selectedFolder?.system ? "" : state.selectedFolderId;
   const [name, setName] = useState("");
   const [parentId, setParentId] = useState(initialParentId);
   const [submitted, setSubmitted] = useState(false);
@@ -33,7 +34,7 @@ export function CreateFolderDialog({
     onCreate(name, parentId || null);
   };
 
-  const availableParents = state.folders.filter((folder) => folder.id !== "inbox");
+  const availableParents = state.folders.filter((folder) => !folder.system);
 
   return (
     <Modal

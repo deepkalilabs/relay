@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 // Reducer unit tests intentionally target this feature-private model.
 // eslint-disable-next-line no-restricted-imports
 import {
+  ALL_WORKFLOWS_FOLDER_ID,
   createInitialAutomationState,
   folderNameError,
   isSimulationActive,
@@ -12,6 +13,26 @@ import {
 } from "@/features/automations/model/automationWorkspace";
 
 describe("automation workspace model", () => {
+  it("selects All workflows by default and protects it from folder mutations", () => {
+    const state = createInitialAutomationState();
+    const allWorkflows = state.folders.find((folder) => folder.id === ALL_WORKFLOWS_FOLDER_ID);
+    const inboxTask = tasksForFolder(state, "inbox")[0];
+
+    expect(state.selectedFolderId).toBe(ALL_WORKFLOWS_FOLDER_ID);
+    expect(allWorkflows).toMatchObject({ name: "All workflows", system: true, readOnly: true });
+    expect(folderNameError(state, "Nested", ALL_WORKFLOWS_FOLDER_ID)).toMatch(/custom folder/i);
+    expect(workspaceReducer(state, {
+      type: "create-folder",
+      folder: { id: "nested", name: "Nested", parentId: ALL_WORKFLOWS_FOLDER_ID },
+    })).toMatchObject({ folders: state.folders });
+    expect(workspaceReducer(state, {
+      type: "move-task",
+      taskId: inboxTask.id,
+      folderId: ALL_WORKFLOWS_FOLDER_ID,
+    })).toBe(state);
+    expect(workspaceReducer(state, { type: "start-run", batchId: "protected" })).toBe(state);
+  });
+
   it("derives direct and nested task collections from the folder tree", () => {
     const state = createInitialAutomationState();
 
