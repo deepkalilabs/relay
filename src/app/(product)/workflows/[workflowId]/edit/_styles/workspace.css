@@ -52,6 +52,20 @@
 .undo-toast button { min-width: 44px; min-height: 44px; padding: 0 10px; border: 0; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; color: #c8d7ff; background: transparent; font-weight: 700; }
 .undo-toast button:hover { color: white; background: rgb(255 255 255 / 10%); }
 .undo-toast-close { padding: 0 !important; color: #d5dbe5 !important; }
+.add-step-choices { margin-top: 18px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.add-step-choice { min-height: 112px; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius-md); display: flex; align-items: flex-start; gap: 12px; color: var(--ink); background: var(--surface); text-align: left; }
+.add-step-choice:hover:not(:disabled) { border-color: #9db8f5; background: var(--primary-soft); }
+.add-step-choice:disabled { color: var(--subtle); background: var(--surface-muted); cursor: not-allowed; }
+.add-step-choice > svg { flex: 0 0 auto; color: var(--primary); }
+.add-step-choice span { display: grid; gap: 5px; }
+.add-step-choice small { color: var(--muted); line-height: 1.45; }
+.assertion-session-prompt { margin-top: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--surface-muted); }
+.assertion-session-prompt p { margin: 0; color: var(--muted); font-size: 12px; }
+.assertion-target-summary { margin: 0; display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; }
+.assertion-picker-notice { position: absolute; z-index: 24; left: 16px; right: 16px; bottom: 16px; min-height: 68px; padding: 10px 12px; display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; gap: 10px; border: 1px solid #9db8f5; border-radius: 10px; color: var(--primary); background: color-mix(in srgb, white 96%, var(--primary-soft)); box-shadow: 0 10px 30px rgb(15 23 42 / 18%); pointer-events: none; }
+.assertion-picker-notice span { display: grid; gap: 2px; }
+.assertion-picker-notice small { color: var(--muted); font-size: 11px; }
+.assertion-picker-notice button { min-height: 40px; pointer-events: auto; }
 @keyframes undo-toast-in { from { opacity: 0; transform: translate(-50%, 8px); } }
 
 @media (min-width: 1024px) and (max-width: 1439px) {

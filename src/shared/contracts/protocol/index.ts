@@ -5,15 +5,18 @@ export type { SequencedServerMessage, ServerMessage } from "./server-message";
 export {
   CaptchaStatusSchema,
   ReplayDiagnosticSchema,
+  ReplayPhaseSchema,
   ReplayStatusSchema,
   ReplayStepStatusSchema,
 } from "./protocol.types";
 export type {
+  AssertionPickState,
   BrowserPageState,
   CaptchaStatus,
   DatePickerState,
   PopupState,
   ReplayDiagnostic,
+  ReplayPhase,
   ReplayStatus,
   ReplayStepResultState,
   ReplayStepStatus,

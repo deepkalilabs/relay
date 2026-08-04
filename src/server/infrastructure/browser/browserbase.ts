@@ -49,6 +49,7 @@ export class BrowserbaseProvider implements BrowserProvider {
     const session = await this.client.sessions.create({
       keepAlive: true,
       projectId: this.projectId || undefined,
+      proxies: true,
       region: options.region,
       timeout: options.timeoutSeconds,
       browserSettings: {

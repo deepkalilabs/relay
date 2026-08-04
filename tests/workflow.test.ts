@@ -5,12 +5,15 @@ import { isSensitiveInput } from "@/shared/contracts/recording/recorded-action";
 import { serializeWorkflow } from "@/shared/contracts/workflow/serialization";
 import {
   locatorCandidatesForTarget,
+  type ActionStep,
+  type AssertionStep,
   type ClickStep,
   type ElementTarget,
   type FillStep,
   type NavigateStep,
   type SelectStep,
   type Workflow,
+  type WorkflowActionType,
   type WorkflowStep,
 } from "@/shared/contracts/workflow/domain";
 import { createWorkflow, orderLocatorCandidates, WorkflowSchema } from "@/shared/contracts/workflow/schema";
@@ -25,6 +28,9 @@ describe("workflow contract", () => {
     expectTypeOf<Extract<WorkflowStep, { type: "click" }>>().toEqualTypeOf<ClickStep>();
     expectTypeOf<Extract<WorkflowStep, { type: "fill" }>>().toEqualTypeOf<FillStep>();
     expectTypeOf<Extract<WorkflowStep, { type: "select" }>>().toEqualTypeOf<SelectStep>();
+    expectTypeOf<Extract<WorkflowStep, { type: "assertion" }>>().toEqualTypeOf<AssertionStep>();
+    expectTypeOf<Extract<ActionStep, { type: "assertion" }>>().toEqualTypeOf<never>();
+    expectTypeOf<"assertion">().not.toMatchTypeOf<WorkflowActionType>();
     expectTypeOf<ClickStep["target"]>().toEqualTypeOf<ElementTarget>();
 
     expect(workflow.steps).toEqual([]);
@@ -80,14 +86,14 @@ describe("workflow contract", () => {
     expect(step.metadata.sensitive).toBe(true);
   });
 
-  it("creates and serializes a version 1.2 draft with lifecycle metadata", () => {
+  it("creates and serializes a version 1.3 draft with lifecycle metadata", () => {
     const workflow = createWorkflow("session-1");
     expect(WorkflowSchema.parse(workflow)).toMatchObject({
-      schemaVersion: "1.2",
+      schemaVersion: "1.3",
       status: "draft",
       revision: 1,
     });
-    expect(serializeWorkflow(workflow)).toContain('"schemaVersion": "1.2"');
+    expect(serializeWorkflow(workflow)).toContain('"schemaVersion": "1.3"');
     expect(workflowFilename(new Date("2026-07-21T12:34:56.000Z"))).toBe("browser-memory-workflow-2026-07-21T12-34-56-000Z.json");
   });
 

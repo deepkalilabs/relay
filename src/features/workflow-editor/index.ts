@@ -13,3 +13,5 @@ export {
   downloadWorkflow,
   workflowFilename,
 } from "./import-export/exportWorkflow";
+export { AddStepDialog } from "./components/AddStepDialog";
+export { AssertionStepDialog } from "./components/AssertionStepDialog";

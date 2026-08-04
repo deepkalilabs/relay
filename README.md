@@ -10,6 +10,7 @@ Each step can be reviewed, renamed, reordered, disabled, or deleted before the w
 - Records browser activity as semantic actions rather than raw mouse coordinates.
 - Builds ordered locator candidates from roles, labels, text, CSS, and XPath.
 - Displays recorded actions immediately in an editable workflow timeline.
+- Adds manual assertions by selecting an element in the live browser.
 - Creates durable drafts and saves one JSON file per workflow.
 - Lists locally saved drafts and completed workflows in the Library.
 - Creates, edits, and permanently deletes reusable local profiles backed by one JSON file each.
@@ -19,6 +20,7 @@ Each step can be reviewed, renamed, reordered, disabled, or deleted before the w
 - Returns to recording after replay so workflows can be built and verified incrementally.
 - Waits for DOM and network activity to settle between replayed actions, with optional per-step delay and element conditions.
 - Pauses on failures with Retry, Skip, Take Control, and Stop recovery actions.
+- Checks element visibility or normalized text containment without changing the page.
 
 The current product foundation focuses on accurate capture, explicit local saving, review, interactive replay, and reusable local profiles. There is no autosave: leaving the editor discards changes made since the last successful Save. The active product direction is maintained in the [product roadmap](./docs/product/roadmap.md).
 
@@ -100,7 +102,7 @@ Each feature exposes a small `index.ts` API. Route-private application compositi
 
 The dependency-free workflow contract lives in `src/shared/contracts/workflow`. It defines the workflow aggregate, named step variants, element targets, page context, replay waits, serialization, and metadata shared by the recorder, editor, persistence, protocol, and replay engine. Runtime validation is kept beside the contract and compile-time checked against the domain types. Client/server message schemas are split by direction under `src/shared/contracts/protocol`.
 
-Saved workflows and new exports use schema version `1.2`, including `status`, `revision`, optional `finishedAt` lifecycle fields, and explicit input bindings on `fill` steps. Schema `1.0` and `1.1` files remain readable at compatibility boundaries and normalize with recorded-value bindings. A workflow also contains its Browserbase source, timestamps, and an ordered list of steps. Automatic recording produces `fill`, `set_date`, `select`, `click`, and Enter `keypress` steps. Manual steps and existing workflows continue to support:
+Saved workflows and new exports use schema version `1.3`, including `status`, `revision`, optional `finishedAt` lifecycle fields, explicit input bindings on `fill` steps, and a separate assertion step family. Schema `1.0` through `1.2` files remain readable at compatibility boundaries and normalize in memory to `1.3`, with legacy fills receiving recorded-value bindings. A workflow also contains its Browserbase source, timestamps, and an ordered list of steps. Automatic recording produces `fill`, `set_date`, `select`, `click`, and Enter `keypress` steps. Manual action steps and existing workflows continue to support:
 
 ```text
 navigate · click · fill · select · check · uncheck · keypress · submit
@@ -108,7 +110,9 @@ navigate · click · fill · select · check · uncheck · keypress · submit
 
 `ElementTarget` keeps multiple locator candidates, ordered from semantic selectors to CSS and XPath fallbacks, rather than coupling replay to one selector. Metadata records whether a step was recorded or manually added, and whether its value may be sensitive.
 
-Steps may also define an optional replay wait. A wait can add up to 30 seconds after an action and can require an element to remain visible or hidden before replay continues.
+Assertions are manually authored and remain outside the recorded-action contract. A live-session picker captures the selected element's locator evidence and page context without activating the website or recording the selection click. Replay evaluates the assertion once: `visible` requires one visible match, while `text_contains` compares trimmed, whitespace-collapsed, case-insensitive visible text. Assertions do not define post-step waits.
+
+Action steps may also define an optional replay wait. A wait can add up to 30 seconds after an action and can require an element to remain visible or hidden before replay continues.
 
 The Library can bind each enabled `fill` step to its recorded value, a fixed literal, a supported profile field, or a value requested at run time. Profile and run-time values are resolved into an ephemeral workflow before replay and are not written back to workflow files.
 
@@ -246,6 +250,7 @@ and pull request creation remain manual.
 - Local workflow files can contain passwords, tokens, and payment values in plain text; protect the workflow data directory like other secrets.
 - Local profile files contain identity and location information in plain text; protect the profile data directory like other personal data.
 - Exported JSON is plain text and should be handled like a secret.
+- Assertion expected text and observed mismatch text remain plain in workflow files, exports, the UI, and diagnostics. Do not create assertions from secrets or other sensitive page content.
 - Automatic CAPTCHA solving is enabled for recording and replay sessions. During recording, detected challenges temporarily lock local browser input while Browserbase solves them; replay remains unchanged and CAPTCHA lifecycle events stay available in server diagnostics.
 - Sessions are released on Stop, disconnect timeout, replacement, or server shutdown.
 - The default Browserbase session timeout is 30 minutes and may incur usage charges.
@@ -256,7 +261,7 @@ This app is intended for local development or long-running Node hosting. The per
 
 The product supports a single active tab, with an explicit prompt when a popup opens. It is a desktop workspace intended for viewports at least 1024 pixels wide.
 
-Replay remains linear and single-tab. Authentication, assertions, variables, persisted failure evidence, secret management, unattended execution, collaboration, and production deployment are not part of the current foundation. Workflow Library lifecycle actions and profile-parameterized runs are planned next. Profiles currently store identity and location values only.
+Replay remains linear and single-tab. Assertions are limited to element visibility and normalized text containment. Authentication, variables, persisted failure evidence, secret management, unattended execution, collaboration, and production deployment are not part of the current foundation. Profiles currently store identity and location values only.
 
 ## Verification
 

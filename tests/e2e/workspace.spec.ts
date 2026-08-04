@@ -37,7 +37,7 @@ test("loads a workflow route and keeps the editor accessible", async ({ page, re
   await expect(navbar.getByText("Memory Recorder", { exact: true })).toBeVisible();
   await expect(navbar.getByRole("button", { name: "Save workflow" })).toBeDisabled();
   await expect(navbar.getByRole("button", { name: "Finish recording" })).toBeDisabled();
-  await expect(page.getByRole("heading", { name: /recorded steps/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /workflow steps/i })).toBeVisible();
   await expect(page.getByRole("heading", { name: /fresh cloud browser/i })).toBeVisible();
   await expect(browserNavigation.getByRole("button", { name: /start recording/i })).toBeVisible();
 
@@ -55,6 +55,7 @@ test("creates, saves, refreshes, finishes, selects, and reopens a local workflow
   const workflow = await openDraft(page, request, "Durable checkout");
 
   await page.getByRole("button", { name: "Or add a step manually" }).click();
+  await page.getByRole("button", { name: /^Action/ }).click();
   await page.getByLabel("Step name").fill("Confirm the order");
   await page.getByRole("button", { name: "Insert step", exact: true }).click();
   await expect(page.getByText("Unsaved changes")).toBeVisible();
@@ -75,6 +76,54 @@ test("creates, saves, refreshes, finishes, selects, and reopens a local workflow
   await page.getByRole("link", { name: "Edit workflow Durable checkout" }).click();
   await expect(page.getByRole("textbox", { name: /workflow name/i })).toHaveValue("Durable checkout");
   await expect(page.getByRole("button", { name: "Finish recording" })).toHaveCount(0);
+});
+
+test("loads, edits, saves, and reloads both assertion kinds", async ({ page, request }) => {
+  const workflow = await createDraft(request, "Assertion checks");
+  const recordedAt = new Date().toISOString();
+  workflow.steps = [
+    {
+      id: crypto.randomUUID(),
+      order: 0,
+      name: "Checkout is visible",
+      enabled: true,
+      page: { id: "page", url: "https://example.com/checkout" },
+      target: { candidates: [{ kind: "testId", value: "checkout", exact: true }] },
+      expectation: { kind: "visible" },
+      metadata: { recordedAt, origin: "manual", sensitive: false },
+      type: "assertion",
+    },
+    {
+      id: crypto.randomUUID(),
+      order: 1,
+      name: "Order status contains text",
+      enabled: true,
+      page: { id: "page", url: "https://example.com/checkout" },
+      target: { candidates: [{ kind: "role", value: "status", name: "Ready", exact: true }] },
+      expectation: { kind: "text_contains", expected: "Ready" },
+      metadata: { recordedAt, origin: "manual", sensitive: false },
+      type: "assertion",
+    },
+  ];
+  const saved = await request.put(`/api/workflows/${workflow.id}`, {
+    data: { workflow, expectedRevision: workflow.revision },
+  });
+  expect(saved.status()).toBe(200);
+
+  await page.goto(`/workflows/${workflow.id}/edit`);
+  await page.getByRole("button", { name: /Checkout is visible 1 · assertion/ }).click();
+  await expect(page.getByLabel("Expectation")).toHaveValue("visible");
+  await expect(page.getByText("Replay wait", { exact: true })).toHaveCount(0);
+
+  await page.getByRole("button", { name: /Order status contains text 2 · assertion/ }).click();
+  await expect(page.getByLabel("Expected text")).toHaveValue("Ready");
+  await page.getByLabel("Expected text").fill("Approved");
+  await page.getByRole("button", { name: "Save workflow" }).click();
+  await expect(page.getByText("Saved", { exact: true })).toBeVisible();
+
+  await page.reload();
+  await page.getByRole("button", { name: /Order status contains text 2 · assertion/ }).click();
+  await expect(page.getByLabel("Expected text")).toHaveValue("Approved");
 });
 
 test("back to Library discards changes since the last save", async ({ page, request }) => {

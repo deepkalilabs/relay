@@ -1,7 +1,9 @@
 import { expect, test } from "@playwright/test";
 import { RECORDER_SCRIPT } from "../../src/server/recording/injected";
-import { applyPositionBefore } from "../../src/server/replay/engine";
+import { applyPositionBefore, preflightReplay, ReplayEngine } from "../../src/server/replay/engine";
+import type { ServerMessage } from "../../src/shared/contracts/protocol";
 import type { WorkflowStep } from "../../src/shared/contracts/workflow/domain";
+import { createWorkflow } from "../../src/shared/contracts/workflow/schema";
 
 test("records Enter after a completed fill without recording its synthetic submit click", async ({ page }) => {
   const actions: Array<Record<string, unknown>> = [];
@@ -28,6 +30,159 @@ test("records Enter after a completed fill without recording its synthetic submi
   });
   expect((actions[1].target as { candidates: Array<{ kind: string }> }).candidates[0].kind).toBe("testId");
   expect(actions.some((action) => action.type === "click")).toBe(false);
+});
+
+test("assertion picking captures target evidence without activating or recording the click", async ({ page }) => {
+  const events: Array<Record<string, unknown>> = [];
+  await page.exposeFunction("__browserMemoryEmit", (event: Record<string, unknown>) => { events.push(event); });
+  await page.addInitScript({ content: RECORDER_SCRIPT });
+  await page.goto("/fixture");
+
+  const requestId = "c7daf0b9-d92a-44db-9967-db33d1516976";
+  await page.evaluate((id) => {
+    (window as Window & { __browserMemorySetAssertionPicker?: (requestId: string | null) => void })
+      .__browserMemorySetAssertionPicker?.(id);
+  }, requestId);
+  const button = page.getByRole("button", { name: "Open details" });
+  await button.evaluate((element) => {
+    const label = element.textContent ?? "";
+    const nested = document.createElement("span");
+    nested.textContent = label;
+    element.replaceChildren(nested);
+  });
+  await button.hover();
+  await expect(button).toHaveCSS("outline-style", "solid");
+  await button.click();
+
+  await expect(page).not.toHaveURL(/view=details/);
+  await expect.poll(() => events).toHaveLength(1);
+  expect(events[0]).toMatchObject({
+    type: "assertion-picker.selected",
+    requestId,
+    name: "Open details",
+    text: "Open details",
+    position: { x: 0, y: 0 },
+    target: { candidates: expect.arrayContaining([expect.objectContaining({ kind: "role", value: "button", name: "Open details" })]) },
+  });
+  expect(events.some((event) => event.type === "click")).toBe(false);
+});
+
+test("assertion picking captures visible text only", async ({ page }) => {
+  const events: Array<Record<string, unknown>> = [];
+  await page.exposeFunction("__browserMemoryEmit", (event: Record<string, unknown>) => { events.push(event); });
+  await page.addInitScript({ content: RECORDER_SCRIPT });
+  await page.goto("/fixture");
+  await page.evaluate(() => {
+    const button = document.createElement("button");
+    const hidden = document.createElement("span");
+    button.type = "button";
+    button.setAttribute("aria-label", "Empty status");
+    button.dataset.testid = "empty-status";
+    button.style.width = "40px";
+    button.style.height = "40px";
+    hidden.hidden = true;
+    hidden.textContent = "Hidden secret";
+    button.append(hidden);
+    document.body.append(button);
+  });
+
+  const requestId = "c7daf0b9-d92a-44db-9967-db33d1516976";
+  await page.evaluate((id) => {
+    (window as Window & { __browserMemorySetAssertionPicker?: (requestId: string | null) => void })
+      .__browserMemorySetAssertionPicker?.(id);
+  }, requestId);
+  await page.getByTestId("empty-status").click();
+
+  await expect.poll(() => events).toHaveLength(1);
+  expect(events[0]).toMatchObject({ type: "assertion-picker.selected", requestId, name: "Empty status", text: "" });
+});
+
+test("assertion picking cancels with Escape and restores the hovered element", async ({ page }) => {
+  const events: Array<Record<string, unknown>> = [];
+  await page.exposeFunction("__browserMemoryEmit", (event: Record<string, unknown>) => { events.push(event); });
+  await page.addInitScript({ content: RECORDER_SCRIPT });
+  await page.goto("/fixture");
+
+  const requestId = "c7daf0b9-d92a-44db-9967-db33d1516976";
+  await page.evaluate((id) => {
+    (window as Window & { __browserMemorySetAssertionPicker?: (requestId: string | null) => void })
+      .__browserMemorySetAssertionPicker?.(id);
+  }, requestId);
+  const button = page.getByRole("button", { name: "Open details" });
+  await button.hover();
+  await page.keyboard.press("Escape");
+
+  await expect.poll(() => events).toEqual([{ type: "assertion-picker.cancelled", requestId }]);
+  await expect(button).not.toHaveCSS("outline-style", "solid");
+});
+
+test("assertion picking captures child-frame target and viewport context", async ({ page }) => {
+  const events: Array<Record<string, unknown>> = [];
+  await page.exposeFunction("__browserMemoryEmit", (event: Record<string, unknown>) => { events.push(event); });
+  await page.addInitScript({ content: RECORDER_SCRIPT });
+  await page.goto("/fixture");
+
+  const requestId = "c7daf0b9-d92a-44db-9967-db33d1516976";
+  await Promise.all(page.frames().map((frame) => frame.evaluate((id) => {
+    (window as Window & { __browserMemorySetAssertionPicker?: (requestId: string | null) => void })
+      .__browserMemorySetAssertionPicker?.(id);
+  }, requestId)));
+  await page.frameLocator('iframe[title="Payment frame"]').getByRole("button", { name: "Pay" }).click();
+
+  await expect.poll(() => events).toHaveLength(1);
+  expect(events[0]).toMatchObject({
+    type: "assertion-picker.selected",
+    requestId,
+    name: "Pay",
+    target: { frameUrl: expect.stringContaining("/fixture/frame") },
+    position: { frameUrl: expect.stringContaining("/fixture/frame") },
+  });
+});
+
+test("assertion replay passes both checks and exposes mismatch recovery", async ({ page }) => {
+  await page.goto("/fixture");
+  const recordedAt = new Date().toISOString();
+  const assertion = (expectation: Extract<WorkflowStep, { type: "assertion" }>["expectation"]): Extract<WorkflowStep, { type: "assertion" }> => ({
+    id: crypto.randomUUID(),
+    order: 0,
+    name: "Open details assertion",
+    enabled: true,
+    page: { id: "page", url: page.url() },
+    target: { candidates: [{ kind: "role", value: "button", name: "Open details", exact: true }] },
+    expectation,
+    metadata: { recordedAt, origin: "manual", sensitive: false },
+    type: "assertion",
+  });
+  const workflow = createWorkflow();
+  workflow.source.startUrl = page.url();
+  workflow.steps = [
+    assertion({ kind: "visible" }),
+    { ...assertion({ kind: "text_contains", expected: "OPEN details" }), order: 1 },
+  ];
+  const successMessages: ServerMessage[] = [];
+  const successEngine = new ReplayEngine(crypto.randomUUID(), page, preflightReplay(workflow), (message) => successMessages.push(message));
+
+  await successEngine.run();
+  expect(successMessages.filter((message) => message.type === "replay.step" && message.status === "passed")).toHaveLength(2);
+
+  const mismatchWorkflow = createWorkflow();
+  mismatchWorkflow.source.startUrl = page.url();
+  mismatchWorkflow.steps = [assertion({ kind: "text_contains", expected: "Unavailable" })];
+  const mismatchMessages: ServerMessage[] = [];
+  const mismatchEngine = new ReplayEngine(crypto.randomUUID(), page, preflightReplay(mismatchWorkflow), (message) => mismatchMessages.push(message));
+  const mismatchRun = mismatchEngine.run();
+  await expect.poll(() => mismatchMessages.some((message) => message.type === "replay.step" && message.status === "failed")).toBe(true);
+  mismatchEngine.skip();
+  await mismatchRun;
+
+  expect(mismatchMessages).toContainEqual(expect.objectContaining({
+    type: "replay.step",
+    status: "failed",
+    phase: "asserting",
+    diagnostic: expect.objectContaining({
+      message: 'Expected text to contain "unavailable", but observed "open details".',
+    }),
+  }));
 });
 
 test("records Enter on semantic controls while preserving their activation", async ({ page }) => {

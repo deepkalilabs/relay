@@ -1,7 +1,14 @@
 "use client";
 
 import { CircleStop, Hand, LoaderCircle, Pause, Play, RotateCcw, SkipForward } from "lucide-react";
-import type { ReplayStatus } from "@/shared/contracts/protocol";
+import type { ReplayPhase, ReplayStatus } from "@/shared/contracts/protocol";
+
+const replayPhaseLabels: Record<ReplayPhase, string> = {
+  acting: "",
+  asserting: " · checking assertion",
+  settling: " · settling UI",
+  waiting: " · waiting for UI",
+};
 
 interface ReplayControlsProps {
   status: ReplayStatus;
@@ -14,12 +21,12 @@ interface ReplayControlsProps {
   onTakeControl: () => void;
   onStop: () => void;
   failed?: boolean;
-  phase?: "acting" | "settling" | "waiting";
+  phase?: ReplayPhase;
 }
 
 export function ReplayControls({ status, currentIndex, totalSteps, onPause, onResume, onRetry, onSkip, onTakeControl, onStop, failed = false, phase }: ReplayControlsProps) {
   const busy = status === "preparing" || status === "pausing" || status === "stopping";
-  const phaseLabel = phase === "settling" ? " · settling UI" : phase === "waiting" ? " · waiting for UI" : "";
+  const phaseLabel = phase ? replayPhaseLabels[phase] : "";
   const progress = totalSteps ? `Step ${Math.min(currentIndex + 1, totalSteps)} of ${totalSteps}${phaseLabel}` : "Preparing replay";
   return (
     <div className="replay-controls" aria-live="polite">

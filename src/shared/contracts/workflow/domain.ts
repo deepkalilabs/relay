@@ -8,6 +8,7 @@
 import type { ProfileFieldId } from "@/shared/contracts/profile/field";
 
 export const MAX_PARAMETER_VALUE_LENGTH = 10_000;
+export const MAX_ASSERTION_TEXT_LENGTH = 1_000;
 
 export type ParameterBinding =
   | { source: "recorded" }
@@ -115,11 +116,14 @@ export type WorkflowStepBase = {
   enabled: boolean;
   page: PageDescriptor;
   position?: ViewportPosition;
-  waitAfter?: ReplayWait;
   metadata: StepMetadata;
 };
 
-export type NavigateStep = WorkflowStepBase & {
+export type WorkflowActionStepBase = WorkflowStepBase & {
+  waitAfter?: ReplayWait;
+};
+
+export type NavigateStep = WorkflowActionStepBase & {
   type: "navigate";
   target?: ElementTarget;
   payload: {
@@ -131,12 +135,16 @@ export type ElementWorkflowStepBase = WorkflowStepBase & {
   target: ElementTarget;
 };
 
-export type ClickStep = ElementWorkflowStepBase & {
+export type ElementActionStepBase = ElementWorkflowStepBase & {
+  waitAfter?: ReplayWait;
+};
+
+export type ClickStep = ElementActionStepBase & {
   type: "click";
   payload?: Record<string, never>;
 };
 
-export type FillStep = ElementWorkflowStepBase & {
+export type FillStep = ElementActionStepBase & {
   type: "fill";
   payload: {
     value: string;
@@ -144,7 +152,7 @@ export type FillStep = ElementWorkflowStepBase & {
   parameterBinding: ParameterBinding;
 };
 
-export type SelectStep = ElementWorkflowStepBase & {
+export type SelectStep = ElementActionStepBase & {
   type: "select";
   payload: {
     value: string;
@@ -152,24 +160,24 @@ export type SelectStep = ElementWorkflowStepBase & {
   };
 };
 
-export type SetDateStep = ElementWorkflowStepBase & {
+export type SetDateStep = ElementActionStepBase & {
   type: "set_date";
   payload: {
     value: string;
   };
 };
 
-export type CheckStep = ElementWorkflowStepBase & {
+export type CheckStep = ElementActionStepBase & {
   type: "check";
   payload?: Record<string, never>;
 };
 
-export type UncheckStep = ElementWorkflowStepBase & {
+export type UncheckStep = ElementActionStepBase & {
   type: "uncheck";
   payload?: Record<string, never>;
 };
 
-export type KeypressStep = ElementWorkflowStepBase & {
+export type KeypressStep = ElementActionStepBase & {
   type: "keypress";
   payload: {
     key: string;
@@ -177,12 +185,22 @@ export type KeypressStep = ElementWorkflowStepBase & {
   };
 };
 
-export type SubmitStep = ElementWorkflowStepBase & {
+export type SubmitStep = ElementActionStepBase & {
   type: "submit";
   payload?: Record<string, never>;
 };
 
-export type WorkflowStep =
+export type AssertionExpectation =
+  | { kind: "visible" }
+  | { kind: "text_contains"; expected: string };
+
+export type AssertionStep = ElementWorkflowStepBase & {
+  type: "assertion";
+  expectation: AssertionExpectation;
+  waitAfter?: never;
+};
+
+export type ActionStep =
   | NavigateStep
   | ClickStep
   | FillStep
@@ -193,12 +211,14 @@ export type WorkflowStep =
   | KeypressStep
   | SubmitStep;
 
-export type WorkflowActionType = WorkflowStep["type"];
+export type WorkflowStep = ActionStep | AssertionStep;
+
+export type WorkflowActionType = ActionStep["type"];
 
 export type WorkflowStatus = "draft" | "complete";
 
 export type Workflow = {
-  schemaVersion: "1.2";
+  schemaVersion: "1.3";
   id: string;
   name: string;
   status: WorkflowStatus;

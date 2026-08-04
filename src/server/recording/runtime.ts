@@ -8,6 +8,7 @@ import { RECORDER_BINDING, RECORDER_SCRIPT } from "./injected";
 import { ActionDeduplicator } from "./deduplicate";
 import {
   locatorCandidatesForTarget,
+  MAX_ASSERTION_TEXT_LENGTH,
   type ElementTarget,
   type ViewportPosition,
   type Workflow,
@@ -80,6 +81,18 @@ const SelectPickerBrowserEventSchema = z.discriminatedUnion("type", [
     rect: z.object({ x: z.number(), y: z.number(), width: z.number(), height: z.number() }),
   }),
   z.object({ type: z.literal("select-picker.dismiss") }),
+]);
+
+const AssertionPickerBrowserEventSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("assertion-picker.selected"),
+    requestId: z.string().uuid(),
+    name: z.string().min(1),
+    text: z.string().max(MAX_ASSERTION_TEXT_LENGTH),
+    target: ElementTargetSchema,
+    position: ViewportPositionSchema,
+  }),
+  z.object({ type: z.literal("assertion-picker.cancelled"), requestId: z.string().uuid() }),
 ]);
 
 interface PendingDatePicker {
@@ -159,6 +172,7 @@ export class RecordingRuntime {
   private readonly deduplicator = new ActionDeduplicator();
   private pendingDatePicker: PendingDatePicker | null = null;
   private pendingSelectPicker: PendingSelectPicker | null = null;
+  private pendingAssertionPick: { requestId: string; pageState: PageState } | null = null;
   private nativeSelects = false;
   private mode: "recording" | "replay" | null = null;
   private recordingReady = false;
@@ -222,6 +236,11 @@ export class RecordingRuntime {
         await this.handleSelectPickerBrowserEvent(state, frame, selectEvent.data);
         return;
       }
+      const assertionEvent = AssertionPickerBrowserEventSchema.safeParse(raw);
+      if (assertionEvent.success) {
+        await this.handleAssertionPickerBrowserEvent(state, assertionEvent.data);
+        return;
+      }
       const parsed = RecordedActionSchema.omit({ page: true, recordedAt: true }).safeParse(raw);
       if (!parsed.success) return;
       await this.forwardAction({
@@ -267,6 +286,20 @@ export class RecordingRuntime {
 
   private applyCaptchaLockToPage(state: PageState, locked: boolean): void {
     void Promise.all(this.pageFrames(state.page).map((frame) => this.applyCaptchaLockToFrame(frame, locked)));
+  }
+
+  private async applyAssertionPickerToFrame(frame: Frame, requestId: string | null): Promise<void> {
+    if (typeof frame.evaluate !== "function") return;
+    await frame.evaluate((nextRequestId) => {
+      const recorderWindow = window as Window & {
+        __browserMemorySetAssertionPicker?: (requestId: string | null) => void;
+      };
+      recorderWindow.__browserMemorySetAssertionPicker?.(nextRequestId);
+    }, requestId).catch(() => undefined);
+  }
+
+  private applyAssertionPickerToPage(state: PageState, requestId: string | null): void {
+    void Promise.all(this.pageFrames(state.page).map((frame) => this.applyAssertionPickerToFrame(frame, requestId)));
   }
 
   private pageFrames(page: Page): Frame[] {
@@ -352,6 +385,7 @@ export class RecordingRuntime {
       void this.applyNativeSelectsToFrame(frame);
       void this.applyCaptchaLockToFrame(frame, this.isCaptchaLocked(state));
       if (frame !== page.mainFrame() || state.id !== this.activePageId) return;
+      this.cancelAssertionPickForPage(state);
       void this.emitPageState(state);
       this.dismissDatePickersForPage(state);
       this.dismissSelectPickersForPage(state);
@@ -364,6 +398,7 @@ export class RecordingRuntime {
     page.on("close", () => {
       this.dismissDatePickersForPage(state);
       this.dismissSelectPickersForPage(state);
+      this.cancelAssertionPickForPage(state);
       this.clearCaptchaLock(state, "cancelled", "page_closed");
       this.logIncompleteCaptchaObservation(state, "page_closed");
       this.pages.delete(page);
@@ -432,6 +467,7 @@ export class RecordingRuntime {
     const generation = ++state.captchaLockGeneration;
     this.dismissDatePickersForPage(state);
     this.dismissSelectPickersForPage(state);
+    this.cancelAssertionPickForPage(state);
     this.applyCaptchaLockToPage(state, true);
     state.captchaLockTimer = setTimeout(() => {
       if (!state.captchaLockActive || state.captchaLockGeneration !== generation) return;
@@ -529,6 +565,67 @@ export class RecordingRuntime {
     const { requestId } = this.pendingSelectPicker;
     this.pendingSelectPicker = null;
     this.emit({ type: "select.picker.closed", requestId });
+  }
+
+  async startAssertionPick(requestId: string): Promise<void> {
+    if (this.mode !== "recording" || !this.recordingReady) {
+      this.emit({ type: "assertion.pick.cancelled", requestId });
+      return;
+    }
+    const pageState = this.activePage();
+    if (this.isCaptchaLocked(pageState)) {
+      this.emit({ type: "assertion.pick.cancelled", requestId });
+      return;
+    }
+    if (this.pendingAssertionPick) this.cancelAssertionPick(this.pendingAssertionPick.requestId);
+    this.dismissDatePickersForPage(pageState);
+    this.dismissSelectPickersForPage(pageState);
+    this.pendingAssertionPick = { requestId, pageState };
+    this.applyAssertionPickerToPage(pageState, requestId);
+  }
+
+  cancelAssertionPick(requestId: string): void {
+    const pending = this.pendingAssertionPick;
+    if (!pending || pending.requestId !== requestId) return;
+    this.pendingAssertionPick = null;
+    this.applyAssertionPickerToPage(pending.pageState, null);
+    this.emit({ type: "assertion.pick.cancelled", requestId });
+  }
+
+  private cancelAssertionPickForPage(pageState: PageState): void {
+    if (this.pendingAssertionPick?.pageState === pageState) {
+      this.cancelAssertionPick(this.pendingAssertionPick.requestId);
+    }
+  }
+
+  private async handleAssertionPickerBrowserEvent(
+    state: PageState,
+    event: z.infer<typeof AssertionPickerBrowserEventSchema>,
+  ): Promise<void> {
+    const pending = this.pendingAssertionPick;
+    if (!pending || pending.requestId !== event.requestId || pending.pageState !== state) return;
+    if (event.type === "assertion-picker.cancelled") {
+      this.cancelAssertionPick(event.requestId);
+      return;
+    }
+    this.pendingAssertionPick = null;
+    this.applyAssertionPickerToPage(state, null);
+    this.emit({
+      type: "assertion.pick.selected",
+      requestId: event.requestId,
+      name: event.name,
+      text: event.text,
+      target: {
+        ...event.target,
+        candidates: orderLocatorCandidates(locatorCandidatesForTarget(event.target)),
+      },
+      position: event.position,
+      page: {
+        id: state.id,
+        url: state.page.url(),
+        title: await state.page.title().catch(() => undefined),
+      },
+    });
   }
 
   private async handleDatePickerBrowserEvent(
@@ -815,6 +912,7 @@ export class RecordingRuntime {
     if (previous) {
       this.dismissDatePickersForPage(previous);
       this.dismissSelectPickersForPage(previous);
+      this.cancelAssertionPickForPage(previous);
     }
     this.activePageId = pageId;
     const liveView = await this.provider.getLiveView(this.sessionId, state.index);
@@ -829,6 +927,7 @@ export class RecordingRuntime {
   ): Promise<void> {
     if (this.activePageCaptchaLocked()) return;
     if (this.replayEngine || this.mode === "replay") throw new Error("A replay is already running.");
+    if (this.pendingAssertionPick) this.cancelAssertionPick(this.pendingAssertionPick.requestId);
     const preflight = preflightReplay(workflow, startStepId);
     const runId = crypto.randomUUID();
     const existingSessionId = this.sessionId;
@@ -848,6 +947,7 @@ export class RecordingRuntime {
       this.activePageId = null;
       this.pendingDatePicker = null;
       this.pendingSelectPicker = null;
+      this.pendingAssertionPick = null;
       this.startUrlSource = null;
       this.hasRecordedAction = false;
       if (existingSessionId) await this.provider.releaseSession(existingSessionId);
@@ -905,6 +1005,7 @@ export class RecordingRuntime {
       this.activePageId = null;
       this.pendingDatePicker = null;
       this.pendingSelectPicker = null;
+      this.pendingAssertionPick = null;
       this.mode = null;
       this.startUrlSource = null;
       this.hasRecordedAction = false;
@@ -960,6 +1061,7 @@ export class RecordingRuntime {
     const sessionId = this.sessionId;
     this.pendingDatePicker = null;
     this.pendingSelectPicker = null;
+    if (this.pendingAssertionPick) this.cancelAssertionPick(this.pendingAssertionPick.requestId);
     this.clearCaptchaLocks("session_released");
     this.logIncompleteCaptchaObservations("session_released");
     this.sessionId = null;

@@ -1,7 +1,7 @@
 import type { RecordedAction } from "@/shared/contracts/recording/recorded-action";
-import type { WorkflowStep } from "@/shared/contracts/workflow/domain";
+import type { ActionStep } from "@/shared/contracts/workflow/domain";
 
-export function stepFromRecordedAction(action: RecordedAction, order: number): WorkflowStep {
+export function stepFromRecordedAction(action: RecordedAction, order: number): ActionStep {
   const common = {
     id: crypto.randomUUID(),
     order,
@@ -56,6 +56,6 @@ export function stepFromRecordedAction(action: RecordedAction, order: number): W
     case "check":
     case "uncheck":
     case "submit":
-      return { ...common, type: action.type, target: action.target! } as WorkflowStep;
+      return { ...common, type: action.type, target: action.target! } as ActionStep;
   }
 }

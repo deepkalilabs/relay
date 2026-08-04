@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Browser Memory Recorder Cloud Workflow API
-  version: 1.1.0
+  version: 1.2.0
   summary: Cloud persistence contract for canonical browser workflows.
   description: |
     This contract is the handoff boundary between Browser Memory Recorder's
@@ -23,7 +23,7 @@ tags:
 security:
   - BearerAuth: []
 x-contract-semantics:
-  canonicalSchemaVersion: "1.2"
+  canonicalSchemaVersion: "1.3"
   maximumRequestBytes: 1048576
   listOrdering: updatedAt descending
   authentication: Server-held HTTP bearer token.
@@ -73,7 +73,7 @@ paths:
 
         The backend generates the UUID and timestamps and returns:
 
-        - `schemaVersion: "1.2"`
+        - `schemaVersion: "1.3"`
         - `name: "Untitled recording"`
         - `status: "draft"`
         - `revision: 1`
@@ -475,7 +475,7 @@ components:
       properties:
         schemaVersion:
           type: string
-          const: "1.2"
+          const: "1.3"
         id:
           type: string
           format: uuid
@@ -537,6 +537,7 @@ components:
         - $ref: "#/components/schemas/UncheckStep"
         - $ref: "#/components/schemas/KeypressStep"
         - $ref: "#/components/schemas/SubmitStep"
+        - $ref: "#/components/schemas/AssertionStep"
       discriminator:
         propertyName: type
         mapping:
@@ -549,8 +550,9 @@ components:
           uncheck: "#/components/schemas/UncheckStep"
           keypress: "#/components/schemas/KeypressStep"
           submit: "#/components/schemas/SubmitStep"
+          assertion: "#/components/schemas/AssertionStep"
 
-    StepBase:
+    WorkflowStepBase:
       type: object
       required:
         - id
@@ -574,18 +576,24 @@ components:
           type: boolean
         page:
           $ref: "#/components/schemas/PageDescriptor"
-        target:
-          $ref: "#/components/schemas/ElementTarget"
         position:
           $ref: "#/components/schemas/ViewportPosition"
-        waitAfter:
-          $ref: "#/components/schemas/ReplayWait"
         metadata:
           $ref: "#/components/schemas/StepMetadata"
 
-    ElementStepBase:
+    ActionStepBase:
       allOf:
-        - $ref: "#/components/schemas/StepBase"
+        - $ref: "#/components/schemas/WorkflowStepBase"
+        - type: object
+          properties:
+            target:
+              $ref: "#/components/schemas/ElementTarget"
+            waitAfter:
+              $ref: "#/components/schemas/ReplayWait"
+
+    ElementActionStepBase:
+      allOf:
+        - $ref: "#/components/schemas/ActionStepBase"
         - type: object
           required:
             - target
@@ -595,7 +603,7 @@ components:
 
     NavigateStep:
       allOf:
-        - $ref: "#/components/schemas/StepBase"
+        - $ref: "#/components/schemas/ActionStepBase"
         - type: object
           required:
             - type
@@ -617,7 +625,7 @@ components:
 
     ClickStep:
       allOf:
-        - $ref: "#/components/schemas/ElementStepBase"
+        - $ref: "#/components/schemas/ElementActionStepBase"
         - type: object
           required:
             - type
@@ -631,7 +639,7 @@ components:
 
     FillStep:
       allOf:
-        - $ref: "#/components/schemas/ElementStepBase"
+        - $ref: "#/components/schemas/ElementActionStepBase"
         - type: object
           required:
             - type
@@ -655,7 +663,7 @@ components:
 
     SetDateStep:
       allOf:
-        - $ref: "#/components/schemas/ElementStepBase"
+        - $ref: "#/components/schemas/ElementActionStepBase"
         - type: object
           required:
             - type
@@ -678,7 +686,7 @@ components:
 
     SelectStep:
       allOf:
-        - $ref: "#/components/schemas/ElementStepBase"
+        - $ref: "#/components/schemas/ElementActionStepBase"
         - type: object
           required:
             - type
@@ -701,7 +709,7 @@ components:
 
     CheckStep:
       allOf:
-        - $ref: "#/components/schemas/ElementStepBase"
+        - $ref: "#/components/schemas/ElementActionStepBase"
         - type: object
           required:
             - type
@@ -715,7 +723,7 @@ components:
 
     UncheckStep:
       allOf:
-        - $ref: "#/components/schemas/ElementStepBase"
+        - $ref: "#/components/schemas/ElementActionStepBase"
         - type: object
           required:
             - type
@@ -729,7 +737,7 @@ components:
 
     KeypressStep:
       allOf:
-        - $ref: "#/components/schemas/ElementStepBase"
+        - $ref: "#/components/schemas/ElementActionStepBase"
         - type: object
           required:
             - type
@@ -761,7 +769,7 @@ components:
 
     SubmitStep:
       allOf:
-        - $ref: "#/components/schemas/ElementStepBase"
+        - $ref: "#/components/schemas/ElementActionStepBase"
         - type: object
           required:
             - type
@@ -772,6 +780,61 @@ components:
             payload:
               $ref: "#/components/schemas/EmptyPayload"
       unevaluatedProperties: false
+
+    AssertionStep:
+      allOf:
+        - $ref: "#/components/schemas/WorkflowStepBase"
+        - type: object
+          required:
+            - type
+            - target
+            - expectation
+          properties:
+            type:
+              type: string
+              const: assertion
+            target:
+              $ref: "#/components/schemas/ReplayableElementTarget"
+            expectation:
+              $ref: "#/components/schemas/AssertionExpectation"
+      unevaluatedProperties: false
+
+    AssertionExpectation:
+      oneOf:
+        - $ref: "#/components/schemas/VisibleAssertionExpectation"
+        - $ref: "#/components/schemas/TextContainsAssertionExpectation"
+      discriminator:
+        propertyName: kind
+        mapping:
+          visible: "#/components/schemas/VisibleAssertionExpectation"
+          text_contains: "#/components/schemas/TextContainsAssertionExpectation"
+
+    VisibleAssertionExpectation:
+      type: object
+      additionalProperties: false
+      required:
+        - kind
+      properties:
+        kind:
+          type: string
+          const: visible
+
+    TextContainsAssertionExpectation:
+      type: object
+      additionalProperties: false
+      required:
+        - kind
+        - expected
+      properties:
+        kind:
+          type: string
+          const: text_contains
+        expected:
+          type: string
+          minLength: 1
+          maxLength: 1000
+          pattern: '\S'
+          description: Must contain at least one non-whitespace character.
 
     EmptyPayload:
       type: object

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { ElementTarget, PageDescriptor, ViewportPosition } from "@/shared/contracts/workflow/domain";
 
 export const PickerRequestIdSchema = z.string().uuid();
 
@@ -22,6 +23,13 @@ export const ReplayStepStatusSchema = z.enum([
   "skipped",
 ]);
 
+export const ReplayPhaseSchema = z.enum([
+  "acting",
+  "asserting",
+  "settling",
+  "waiting",
+]);
+
 export const CaptchaStatusSchema = z.enum([
   "solving",
   "solved",
@@ -37,12 +45,13 @@ export const ReplayDiagnosticSchema = z.object({
 
 export type ReplayStatus = z.infer<typeof ReplayStatusSchema>;
 export type ReplayStepStatus = z.infer<typeof ReplayStepStatusSchema>;
+export type ReplayPhase = z.infer<typeof ReplayPhaseSchema>;
 export type ReplayDiagnostic = z.infer<typeof ReplayDiagnosticSchema>;
 export type CaptchaStatus = z.infer<typeof CaptchaStatusSchema>;
 
 export interface ReplayStepResultState {
   status: ReplayStepStatus;
-  phase?: "acting" | "settling" | "waiting";
+  phase?: ReplayPhase;
   durationMs?: number;
   locatorKind?: string;
   diagnostic?: ReplayDiagnostic;
@@ -77,3 +86,15 @@ export interface SelectPickerState {
   rect: { x: number; y: number; width: number; height: number };
   viewport: { width: number; height: number };
 }
+
+export type AssertionPickState =
+  | { status: "picking"; requestId: string }
+  | {
+      status: "selected";
+      requestId: string;
+      name: string;
+      text: string;
+      target: ElementTarget;
+      position: ViewportPosition;
+      page: PageDescriptor;
+    };

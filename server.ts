@@ -130,6 +130,10 @@ webSockets.on("connection", (socket: WebSocket) => {
         runtime.dismissSelectPicker(message.requestId);
       } else if (message.type === "select.native.set") {
         await runtime.setNativeSelects(message.enabled);
+      } else if (message.type === "assertion.pick.start") {
+        await runtime.startAssertionPick(message.requestId);
+      } else if (message.type === "assertion.pick.cancel") {
+        runtime.cancelAssertionPick(message.requestId);
       } else if (message.type === "captcha.continue") {
         runtime.continueAfterCaptcha(message.pageId);
       } else if (message.type === "replay.start") {
