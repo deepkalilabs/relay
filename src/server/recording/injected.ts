@@ -1,3 +1,5 @@
+import { MAX_ASSERTION_TEXT_LENGTH } from "@/shared/contracts/workflow/domain";
+
 export const RECORDER_BINDING = "__browserMemoryEmit";
 
 export const RECORDER_SCRIPT = String.raw`(() => {
@@ -10,12 +12,40 @@ export const RECORDER_SCRIPT = String.raw`(() => {
   let pendingOptionClick = null;
   let suppressKeyboardClick = false;
   let suppressKeyboardClickTimer = null;
+  let assertionPickerRequestId = null;
+  let assertionPickerHighlight = null;
   window.__browserMemorySuppressSelectChange = false;
   window.__browserMemoryNativeSelects = window.__browserMemoryNativeSelects === true;
   window.__browserMemoryCaptchaLocked = window.__browserMemoryCaptchaLocked === true;
   const normalize = (value) => String(value ?? "").replace(/\s+/g, " ").trim();
   const clip = (value, size = 180) => normalize(value).slice(0, size);
   const escapeCss = (value) => window.CSS?.escape ? CSS.escape(value) : value.replace(/[^a-zA-Z0-9_-]/g, "\\$&");
+
+  const clearAssertionHighlight = () => {
+    if (!assertionPickerHighlight) return;
+    const { element, styles } = assertionPickerHighlight;
+    for (const [property, value, priority] of styles) {
+      if (value) element.style.setProperty(property, value, priority);
+      else element.style.removeProperty(property);
+    }
+    assertionPickerHighlight = null;
+  };
+
+  const highlightAssertionTarget = (element) => {
+    if (assertionPickerHighlight?.element === element) return;
+    clearAssertionHighlight();
+    assertionPickerHighlight = {
+      element,
+      styles: ["outline", "outline-offset", "cursor"].map((property) => [
+        property,
+        element.style.getPropertyValue(property),
+        element.style.getPropertyPriority(property),
+      ]),
+    };
+    element.style.setProperty("outline", "2px solid #2f6feb", "important");
+    element.style.setProperty("outline-offset", "2px", "important");
+    element.style.setProperty("cursor", "crosshair", "important");
+  };
 
   const emit = (payload) => {
     if (window.__browserMemoryCaptchaLocked) return;
@@ -28,6 +58,10 @@ export const RECORDER_SCRIPT = String.raw`(() => {
     window.__browserMemoryNativeSelects = enabled === true;
     if (window.__browserMemoryNativeSelects) selectPickerOpen = false;
   };
+  window.__browserMemorySetAssertionPicker = (requestId) => {
+    clearAssertionHighlight();
+    assertionPickerRequestId = typeof requestId === "string" && requestId ? requestId : null;
+  };
   window.__browserMemorySetCaptchaLocked = (locked) => {
     window.__browserMemoryCaptchaLocked = locked === true;
     if (!window.__browserMemoryCaptchaLocked) return;
@@ -39,6 +73,7 @@ export const RECORDER_SCRIPT = String.raw`(() => {
     if (suppressKeyboardClickTimer) clearTimeout(suppressKeyboardClickTimer);
     suppressKeyboardClick = false;
     suppressKeyboardClickTimer = null;
+    window.__browserMemorySetAssertionPicker(null);
   };
 
   const viewportPosition = () => ({
@@ -55,6 +90,16 @@ export const RECORDER_SCRIPT = String.raw`(() => {
       : event.target instanceof Element
         ? event.target
         : null;
+  };
+
+  const assertionEventElement = (event) => {
+    const origin = event.composedPath?.().find((item) => item instanceof HTMLElement);
+    const element = origin instanceof HTMLElement
+      ? origin
+      : event.target instanceof HTMLElement
+        ? event.target
+        : null;
+    return element?.closest("[data-testid],button,a[href],input,select,textarea,[role]") || element;
   };
 
   const implicitRole = (element) => {
@@ -474,6 +519,48 @@ export const RECORDER_SCRIPT = String.raw`(() => {
     if (window.__browserMemoryCaptchaLocked) return;
     const element = eventElement(event);
     if (element instanceof HTMLElement) recordControlChange(element);
+  }, true);
+
+  window.addEventListener("pointerover", (event) => {
+    if (!assertionPickerRequestId) return;
+    const element = assertionEventElement(event);
+    if (element instanceof HTMLElement) highlightAssertionTarget(element);
+  }, true);
+
+  window.addEventListener("pointerout", (event) => {
+    if (!assertionPickerRequestId || assertionPickerHighlight?.element !== assertionEventElement(event)) return;
+    const next = event.relatedTarget;
+    if (next instanceof Node && assertionPickerHighlight.element.contains(next)) return;
+    clearAssertionHighlight();
+  }, true);
+
+  window.addEventListener("click", (event) => {
+    if (!assertionPickerRequestId) return;
+    const element = assertionEventElement(event);
+    if (!(element instanceof HTMLElement)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+    const requestId = assertionPickerRequestId;
+    window.__browserMemorySetAssertionPicker(null);
+    emit({
+      type: "assertion-picker.selected",
+      requestId,
+      name: targetName(element),
+      text: clip(element.innerText || "", ${MAX_ASSERTION_TEXT_LENGTH}),
+      target: describe(element),
+      position: viewportPosition(),
+    });
+  }, true);
+
+  window.addEventListener("keydown", (event) => {
+    if (!assertionPickerRequestId || event.key !== "Escape") return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+    const requestId = assertionPickerRequestId;
+    window.__browserMemorySetAssertionPicker(null);
+    emit({ type: "assertion-picker.cancelled", requestId });
   }, true);
 
   window.addEventListener("click", (event) => {

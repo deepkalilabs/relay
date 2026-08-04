@@ -1,7 +1,8 @@
 import type { Frame, Locator, Page, Request } from "playwright-core";
-import type { ReplayDiagnostic, ReplayStatus, ServerMessage } from "@/shared/contracts/protocol";
+import type { ReplayDiagnostic, ReplayPhase, ReplayStatus, ServerMessage } from "@/shared/contracts/protocol";
 import {
   locatorCandidatesForTarget,
+  type AssertionStep,
   type ElementTarget,
   type LocatorCandidate,
   type Workflow,
@@ -69,6 +70,56 @@ interface ResolvedTarget {
   attempts: ReplayDiagnostic["attemptedLocators"];
 }
 
+type ElementFingerprint = { tagName: string; inputType?: string };
+
+async function fingerprintMismatch(locator: Locator, target: ElementTarget): Promise<string | null> {
+  const expectedTagName = target.tagName?.toLowerCase();
+  const expectedInputType = target.inputType?.toLowerCase();
+  if (!expectedTagName && !expectedInputType) return null;
+  const observed = await locator.evaluate((element): ElementFingerprint => {
+    const tagName = element.tagName.toLowerCase();
+    return {
+      tagName,
+      ...(tagName === "input" ? { inputType: (element as HTMLInputElement).type.toLowerCase() } : {}),
+    };
+  });
+  if (expectedTagName && observed.tagName !== expectedTagName) {
+    return `Expected ${expectedTagName}, matched ${observed.tagName}.`;
+  }
+  if (expectedInputType && observed.inputType !== expectedInputType) {
+    const observedType = observed.inputType ? `input type ${observed.inputType}` : observed.tagName;
+    return `Expected input type ${expectedInputType}, matched ${observedType}.`;
+  }
+  return null;
+}
+
+async function resolveTargetPass(frame: Frame, target: ElementTarget, candidates: LocatorCandidate[]): Promise<ResolvedTarget> {
+  const attempts: ReplayDiagnostic["attemptedLocators"] = [];
+  for (const candidate of candidates) {
+    try {
+      const locator = locatorFor(frame, candidate);
+      const count = await locator.count();
+      if (count !== 1) {
+        attempts.push({ kind: candidate.kind, reason: count ? `Matched ${count} elements.` : "No match." });
+        continue;
+      }
+      if (!await locator.isVisible()) {
+        attempts.push({ kind: candidate.kind, reason: "The only match is not visible." });
+        continue;
+      }
+      const mismatch = await fingerprintMismatch(locator, target);
+      if (mismatch) {
+        attempts.push({ kind: candidate.kind, reason: mismatch });
+        continue;
+      }
+      return { locator, kind: candidate.kind, attempts };
+    } catch (error) {
+      attempts.push({ kind: candidate.kind, reason: errorMessage(error) });
+    }
+  }
+  throw Object.assign(new Error("No locator resolved to one visible element."), { attempts });
+}
+
 function locatorFor(frame: Frame, candidate: LocatorCandidate): Locator {
   switch (candidate.kind) {
     case "testId":
@@ -92,6 +143,12 @@ function errorMessage(error: unknown): string {
   return error.message.split("\n")[0] || "The replay action could not be completed.";
 }
 
+function attemptedLocators(error: unknown): ReplayDiagnostic["attemptedLocators"] {
+  return "attempts" in Object(error) && Array.isArray((error as { attempts?: unknown }).attempts)
+    ? (error as { attempts: ReplayDiagnostic["attemptedLocators"] }).attempts
+    : [];
+}
+
 function normalizedFrameUrl(value: string): string | null {
   try {
     const url = new URL(value);
@@ -104,32 +161,25 @@ function normalizedFrameUrl(value: string): string | null {
 
 export async function resolveTarget(page: Page, target: ElementTarget, recordedPageUrl?: string): Promise<ResolvedTarget> {
   const frame = resolveFrame(page, target.frameUrl, recordedPageUrl);
-  const attempts: ReplayDiagnostic["attemptedLocators"] = [];
   const candidates = orderLocatorCandidates(locatorCandidatesForTarget(target));
   const deadline = Date.now() + REPLAY_STEP_TIMEOUT_MS;
+  let attempts: ReplayDiagnostic["attemptedLocators"] = [];
   do {
-    attempts.splice(0);
-    for (const candidate of candidates) {
-      try {
-        const locator = locatorFor(frame, candidate);
-        const count = await locator.count();
-        if (count !== 1) {
-          attempts.push({ kind: candidate.kind, reason: count ? `Matched ${count} elements.` : "No match." });
-          continue;
-        }
-        if (!await locator.isVisible()) {
-          attempts.push({ kind: candidate.kind, reason: "The only match is not visible." });
-          continue;
-        }
-        return { locator, kind: candidate.kind, attempts: [...attempts] };
-      } catch (error) {
-        attempts.push({ kind: candidate.kind, reason: errorMessage(error) });
-      }
+    try {
+      return await resolveTargetPass(frame, target, candidates);
+    } catch (error) {
+      attempts = attemptedLocators(error);
     }
     await new Promise((resolve) => setTimeout(resolve, 250));
   } while (Date.now() < deadline);
 
   throw Object.assign(new Error("No locator resolved to one visible element within 15 seconds."), { attempts });
+}
+
+export async function resolveTargetOnce(page: Page, target: ElementTarget, recordedPageUrl?: string): Promise<ResolvedTarget> {
+  const frame = resolveFrame(page, target.frameUrl, recordedPageUrl);
+  const candidates = orderLocatorCandidates(locatorCandidatesForTarget(target));
+  return resolveTargetPass(frame, target, candidates);
 }
 
 function resolveFrame(page: Page, frameUrl?: string, recordedPageUrl?: string): Frame {
@@ -191,11 +241,38 @@ export async function applyPositionBefore(page: Page, step: WorkflowStep): Promi
   }, { x: position.x, y: position.y });
 }
 
-async function executeStep(page: Page, step: WorkflowStep): Promise<{ locatorKind?: string; attempts: ReplayDiagnostic["attemptedLocators"] }> {
+function normalizeAssertionText(value: string): string {
+  return value.replace(/\s+/gu, " ").trim().toLowerCase();
+}
+
+interface StepExecutionResult {
+  locatorKind?: string;
+}
+
+async function evaluateAssertion(page: Page, step: AssertionStep): Promise<StepExecutionResult> {
+  const resolved = await resolveTargetOnce(page, step.target, step.page.url);
+  if (step.expectation.kind === "text_contains") {
+    const expected = normalizeAssertionText(step.expectation.expected);
+    const observed = normalizeAssertionText(await resolved.locator.innerText());
+    if (!observed.includes(expected)) {
+      throw Object.assign(
+        new Error(`Expected text to contain "${expected}", but observed "${observed}".`),
+        { attempts: resolved.attempts },
+      );
+    }
+  }
+  return { locatorKind: resolved.kind };
+}
+
+async function executeStep(page: Page, step: WorkflowStep): Promise<StepExecutionResult> {
   await applyPositionBefore(page, step);
   if (step.type === "navigate") {
     await page.goto(step.payload.url, { waitUntil: "domcontentloaded", timeout: REPLAY_STEP_TIMEOUT_MS });
-    return { attempts: [] };
+    return {};
+  }
+
+  if (step.type === "assertion") {
+    return evaluateAssertion(page, step);
   }
 
   const resolved = await resolveTarget(page, step.target, step.page.url);
@@ -252,11 +329,10 @@ async function executeStep(page: Page, step: WorkflowStep): Promise<{ locatorKin
       break;
     }
   }
-  return { locatorKind: resolved.kind, attempts: resolved.attempts };
+  return { locatorKind: resolved.kind };
 }
 
 type RecoveryDecision = "resume" | "retry" | "skip" | "stop";
-type ReplayPhase = "acting" | "settling" | "waiting";
 
 class ReplayStoppedError extends Error {
   constructor() {
@@ -559,10 +635,10 @@ export class ReplayEngine {
         }
 
         const startedAt = Date.now();
-        let phase: ReplayPhase = "acting";
-        let actionResult: Awaited<ReturnType<typeof executeStep>> | null = null;
-        let actionCompleted = false;
-        let settleCompleted = false;
+        let phase: ReplayPhase = step.type === "assertion" ? "asserting" : "acting";
+        let executionResult: Awaited<ReturnType<typeof executeStep>> | null = null;
+        let stepExecuted = false;
+        let settleCompleted = step.type === "assertion";
         let delayCompleted = false;
         let stepFinished = false;
         while (!stepFinished && !this.stopped) {
@@ -570,11 +646,11 @@ export class ReplayEngine {
           this.emit({ type: "replay.step", runId: this.runId, stepId: step.id, status: "running", phase });
           this.status("running");
           try {
-            if (!actionCompleted) {
-              phase = "acting";
+            if (!stepExecuted) {
+              phase = step.type === "assertion" ? "asserting" : "acting";
               this.lastNetworkActivity = Date.now();
-              actionResult = await executeStep(this.page, step);
-              actionCompleted = true;
+              executionResult = await executeStep(this.page, step);
+              stepExecuted = true;
             }
             if (!settleCompleted) {
               phase = "settling";
@@ -582,16 +658,18 @@ export class ReplayEngine {
               await this.waitForAutomaticSettle(networkTracked);
               settleCompleted = true;
             }
-            if (step.waitAfter && !delayCompleted) {
-              phase = "waiting";
-              this.emit({ type: "replay.step", runId: this.runId, stepId: step.id, status: "running", phase });
-              await this.sleep(step.waitAfter.delayMs ?? 0);
-              delayCompleted = true;
-            }
-            if (step.waitAfter?.condition) {
-              phase = "waiting";
-              this.emit({ type: "replay.step", runId: this.runId, stepId: step.id, status: "running", phase });
-              await this.waitConditionState(step.waitAfter.condition.target, step.waitAfter.condition.state, step.page.url);
+            if (step.type !== "assertion") {
+              if (step.waitAfter && !delayCompleted) {
+                phase = "waiting";
+                this.emit({ type: "replay.step", runId: this.runId, stepId: step.id, status: "running", phase });
+                await this.sleep(step.waitAfter.delayMs ?? 0);
+                delayCompleted = true;
+              }
+              if (step.waitAfter?.condition) {
+                phase = "waiting";
+                this.emit({ type: "replay.step", runId: this.runId, stepId: step.id, status: "running", phase });
+                await this.waitConditionState(step.waitAfter.condition.target, step.waitAfter.condition.state, step.page.url);
+              }
             }
             if (this.stopped) break;
             this.emit({
@@ -600,15 +678,13 @@ export class ReplayEngine {
               stepId: step.id,
               status: "passed",
               durationMs: Date.now() - startedAt,
-              locatorKind: actionResult?.locatorKind,
+              locatorKind: executionResult?.locatorKind,
             });
             stepFinished = true;
           } catch (error) {
             if (this.stopped || error instanceof ReplayStoppedError) break;
             this.failed = true;
-            const attempts = "attempts" in Object(error) && Array.isArray((error as { attempts?: unknown }).attempts)
-              ? (error as { attempts: ReplayDiagnostic["attemptedLocators"] }).attempts
-              : [];
+            const attempts = attemptedLocators(error);
             this.emit({
               type: "replay.step",
               runId: this.runId,

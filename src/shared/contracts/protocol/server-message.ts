@@ -1,9 +1,12 @@
 import { z } from "zod";
 import { RecordedActionSchema } from "@/shared/contracts/recording/recorded-action";
+import { MAX_ASSERTION_TEXT_LENGTH } from "@/shared/contracts/workflow/domain";
+import { ElementTargetSchema, ViewportPositionSchema } from "@/shared/contracts/workflow/schema";
 import {
   CaptchaStatusSchema,
   PickerRequestIdSchema,
   ReplayDiagnosticSchema,
+  ReplayPhaseSchema,
   ReplayStatusSchema,
   ReplayStepStatusSchema,
 } from "./protocol.types";
@@ -83,6 +86,16 @@ export const SequencedServerMessageSchema = z.object({
     }),
     z.object({ type: z.literal("select.picker.closed"), requestId: PickerRequestIdSchema }),
     z.object({
+      type: z.literal("assertion.pick.selected"),
+      requestId: PickerRequestIdSchema,
+      name: z.string().min(1),
+      text: z.string().max(MAX_ASSERTION_TEXT_LENGTH),
+      target: ElementTargetSchema,
+      position: ViewportPositionSchema,
+      page: z.object({ id: z.string().min(1), url: z.string(), title: z.string().optional() }),
+    }),
+    z.object({ type: z.literal("assertion.pick.cancelled"), requestId: PickerRequestIdSchema }),
+    z.object({
       type: z.literal("captcha.status"),
       pageId: z.string(),
       status: CaptchaStatusSchema,
@@ -108,7 +121,7 @@ export const SequencedServerMessageSchema = z.object({
       runId: z.string().uuid(),
       stepId: z.string(),
       status: ReplayStepStatusSchema,
-      phase: z.enum(["acting", "settling", "waiting"]).optional(),
+      phase: ReplayPhaseSchema.optional(),
       durationMs: z.number().nonnegative().optional(),
       locatorKind: z.string().optional(),
       diagnostic: ReplayDiagnosticSchema.optional(),

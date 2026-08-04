@@ -32,6 +32,8 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   }),
   z.object({ type: z.literal("select.picker.dismiss"), requestId: PickerRequestIdSchema }),
   z.object({ type: z.literal("select.native.set"), enabled: z.boolean() }),
+  z.object({ type: z.literal("assertion.pick.start"), requestId: PickerRequestIdSchema }),
+  z.object({ type: z.literal("assertion.pick.cancel"), requestId: PickerRequestIdSchema }),
   z.object({ type: z.literal("captcha.continue"), pageId: z.string().min(1) }),
   z.object({
     type: z.literal("replay.start"),

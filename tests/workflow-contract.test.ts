@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { Workflow } from "@/shared/contracts/workflow/domain";
+import { RecordedActionSchema } from "@/shared/contracts/recording/recorded-action";
+import type { AssertionStep, Workflow } from "@/shared/contracts/workflow/domain";
 import {
   CompatibleWorkflowSchema,
   WorkflowSchema,
@@ -29,7 +30,24 @@ function fillStep(parameterBinding: unknown = { source: "recorded" }) {
   };
 }
 
-function workflow(schemaVersion: "1.0" | "1.1" | "1.2", step: unknown = fillStep()) {
+function navigateStep() {
+  return {
+    id: "navigate-home",
+    order: 0,
+    name: "Open home",
+    enabled: true,
+    page: { id: "page-1", url: "https://example.com" },
+    payload: { url: "https://example.com" },
+    metadata: {
+      recordedAt: timestamp,
+      origin: "recorded",
+      sensitive: false,
+    },
+    type: "navigate",
+  };
+}
+
+function workflow(schemaVersion: "1.0" | "1.1" | "1.2" | "1.3", step: unknown = fillStep()) {
   return {
     schemaVersion,
     id: "workflow-1",
@@ -49,10 +67,10 @@ function workflow(schemaVersion: "1.0" | "1.1" | "1.2", step: unknown = fillStep
 }
 
 describe("workflow parameter binding contract", () => {
-  it("creates canonical workflow schema 1.2 documents", () => {
+  it("creates canonical workflow schema 1.3 documents", () => {
     const created = createWorkflow();
 
-    expect(created.schemaVersion).toBe("1.2");
+    expect(created.schemaVersion).toBe("1.3");
     expect(WorkflowSchema.parse(created)).toEqual(created);
   });
 
@@ -60,22 +78,15 @@ describe("workflow parameter binding contract", () => {
     const step = fillStep();
     delete (step as Partial<typeof step>).parameterBinding;
 
-    expect(WorkflowSchema.safeParse(workflow("1.2", step)).success).toBe(false);
+    expect(WorkflowSchema.safeParse(workflow("1.3", step)).success).toBe(false);
   });
 
-  it("normalizes legacy workflows to recorded bindings without changing payloads", () => {
+  it("rejects fill steps from legacy schema 1.0 and 1.1 workflows", () => {
     for (const schemaVersion of ["1.0", "1.1"] as const) {
-      const legacyStep = fillStep();
-      delete (legacyStep as Partial<typeof legacyStep>).parameterBinding;
-
-      const parsed = CompatibleWorkflowSchema.parse(workflow(schemaVersion, legacyStep));
-
-      expect(parsed.schemaVersion).toBe("1.2");
-      expect(parsed.steps[0]).toMatchObject({
-        type: "fill",
-        payload: { value: "Recorded Person" },
-        parameterBinding: { source: "recorded" },
-      });
+      const fillWithoutBinding = fillStep();
+      delete (fillWithoutBinding as Partial<typeof fillWithoutBinding>).parameterBinding;
+      expect(CompatibleWorkflowSchema.safeParse(workflow(schemaVersion, fillWithoutBinding)).success).toBe(false);
+      expect(CompatibleWorkflowSchema.safeParse(workflow(schemaVersion, fillStep())).success).toBe(false);
     }
   });
 
@@ -88,17 +99,17 @@ describe("workflow parameter binding contract", () => {
     ];
 
     for (const parameterBinding of bindings) {
-      expect(WorkflowSchema.safeParse(workflow("1.2", fillStep(parameterBinding))).success).toBe(true);
+      expect(WorkflowSchema.safeParse(workflow("1.3", fillStep(parameterBinding))).success).toBe(true);
     }
   });
 
   it("caps fixed literals at 10,000 characters", () => {
     expect(WorkflowSchema.safeParse(workflow(
-      "1.2",
+      "1.3",
       fillStep({ source: "fixed", value: "a".repeat(10_000) }),
     )).success).toBe(true);
     expect(WorkflowSchema.safeParse(workflow(
-      "1.2",
+      "1.3",
       fillStep({ source: "fixed", value: "a".repeat(10_001) }),
     )).success).toBe(false);
   });
@@ -110,21 +121,70 @@ describe("workflow parameter binding contract", () => {
       payload: {},
       parameterBinding: { source: "recorded" },
     };
-    expect(WorkflowSchema.safeParse(workflow("1.2", click)).success).toBe(false);
+    expect(WorkflowSchema.safeParse(workflow("1.3", click)).success).toBe(false);
     expect(WorkflowSchema.safeParse(workflow(
-      "1.2",
+      "1.3",
       fillStep({ source: "profile", field: "identity.fullName", value: "Leaked Person" }),
     )).success).toBe(false);
     expect(WorkflowSchema.safeParse(workflow(
-      "1.2",
+      "1.3",
       fillStep({ source: "runtime", value: "Leaked runtime value" }),
     )).success).toBe(false);
   });
 
   it("exposes the canonical binding type on fill steps", () => {
-    const parsed: Workflow = WorkflowSchema.parse(workflow("1.2"));
+    const parsed: Workflow = WorkflowSchema.parse(workflow("1.3"));
     const step = parsed.steps[0];
 
     expect(step?.type === "fill" ? step.parameterBinding.source : null).toBe("recorded");
+  });
+});
+
+describe("workflow assertion contract", () => {
+  const assertion = (expectation: AssertionStep["expectation"]): AssertionStep => ({
+    id: "assertion-status",
+    order: 0,
+    name: "Status is ready",
+    enabled: true,
+    page: { id: "page-1", url: "https://example.com" },
+    target: { candidates: [{ kind: "role", value: "status", name: "Ready", exact: true }] },
+    expectation,
+    metadata: { recordedAt: timestamp, origin: "manual", sensitive: false },
+    type: "assertion",
+  });
+
+  it("accepts visible and bounded text-containment assertions in schema 1.3", () => {
+    for (const step of [
+      assertion({ kind: "visible" }),
+      assertion({ kind: "text_contains", expected: "ready for review" }),
+    ]) {
+      expect(WorkflowSchema.safeParse(workflow("1.3", step)).success).toBe(true);
+    }
+  });
+
+  it("rejects blank, oversized, and wait-after assertion expectations", () => {
+    const canonical = (step: unknown) => workflow("1.3", step);
+    expect(WorkflowSchema.safeParse(canonical(assertion({ kind: "text_contains", expected: "   " }))).success).toBe(false);
+    expect(WorkflowSchema.safeParse(canonical(assertion({ kind: "text_contains", expected: "a".repeat(1_001) }))).success).toBe(false);
+    expect(WorkflowSchema.safeParse(canonical({ ...assertion({ kind: "visible" }), waitAfter: { delayMs: 100 } })).success).toBe(false);
+  });
+
+  it("normalizes non-fill legacy workflows and schema 1.2 fills to canonical schema 1.3", () => {
+    for (const schemaVersion of ["1.0", "1.1"] as const) {
+      expect(CompatibleWorkflowSchema.parse(workflow(schemaVersion, navigateStep())).schemaVersion).toBe("1.3");
+    }
+    expect(CompatibleWorkflowSchema.parse(workflow("1.2")).schemaVersion).toBe("1.3");
+  });
+
+  it("keeps assertions outside the recorded-action boundary", () => {
+    expect(RecordedActionSchema.safeParse({
+      type: "assertion",
+      name: "Status is ready",
+      target: { candidates: [{ kind: "role", value: "status", name: "Ready", exact: true }] },
+      expectation: { kind: "visible" },
+      sensitive: false,
+      page: { id: "page-1", url: "https://example.com" },
+      recordedAt: timestamp,
+    }).success).toBe(false);
   });
 });

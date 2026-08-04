@@ -80,6 +80,73 @@ describe("browser navigation", () => {
     expect(currentUrl).toBe("https://resolved.example.net/");
   });
 
+  it("correlates assertion picker requests and cancels the active picker when CAPTCHA begins", async () => {
+    const currentUrl = "https://example.com/status";
+    let binding: ((source: { page: Page; frame: unknown }, raw: unknown) => Promise<void>) | undefined;
+    const handlers = new Map<string, (...args: unknown[]) => void>();
+    const mainFrame = {
+      evaluate: vi.fn(async () => undefined),
+      url: vi.fn(() => currentUrl),
+    };
+    const page = {
+      evaluate: vi.fn(async () => ({ width: 1280, height: 720 })),
+      frames: vi.fn(() => [mainFrame]),
+      mainFrame: vi.fn(() => mainFrame),
+      on: vi.fn((name: string, handler: (...args: unknown[]) => void) => { handlers.set(name, handler); }),
+      title: vi.fn(async () => "Status"),
+      url: vi.fn(() => currentUrl),
+    } as unknown as Page;
+    const context = {
+      addInitScript: vi.fn(async () => undefined),
+      exposeBinding: vi.fn(async (_name: string, callback: typeof binding) => { binding = callback; }),
+      on: vi.fn(),
+      pages: vi.fn(() => [page]),
+    } as unknown as BrowserContext;
+    const provider: BrowserProvider = {
+      connect: vi.fn(async () => ({ browser: { close: vi.fn(async () => undefined) } as unknown as Browser, context })),
+      createSession: vi.fn(async () => ({ id: "session", connectUrl: "ws://example.com" })),
+      getLiveView: vi.fn(async () => ({ id: "page", title: "Status", url: currentUrl, liveViewUrl: "https://example.com/live" })),
+      releaseSession: vi.fn(async () => undefined),
+    };
+    const runtime = new RecordingRuntime(crypto.randomUUID(), provider, vi.fn());
+    const inactiveRequestId = crypto.randomUUID();
+    await expect(runtime.startAssertionPick(inactiveRequestId)).resolves.toBeUndefined();
+    expect(runtime.buffer.at(-1)?.message).toEqual({ type: "assertion.pick.cancelled", requestId: inactiveRequestId });
+    await runtime.start({ timeoutSeconds: 120, region: "us-west-2" });
+    runtime.buffer.splice(0);
+
+    const staleRequestId = crypto.randomUUID();
+    const requestId = crypto.randomUUID();
+    await runtime.startAssertionPick(staleRequestId);
+    await runtime.startAssertionPick(requestId);
+    expect(runtime.buffer.some((item) => item.message.type === "assertion.pick.cancelled" && item.message.requestId === staleRequestId)).toBe(true);
+
+    const selected = {
+      type: "assertion-picker.selected",
+      name: "Ready status",
+      text: "Ready for review",
+      target: { candidates: [{ kind: "role", value: "status", name: "Ready for review", exact: true }] },
+      position: { x: 10, y: 320 },
+    };
+    await binding?.({ page, frame: mainFrame }, { ...selected, requestId: staleRequestId });
+    expect(runtime.buffer.some((item) => item.message.type === "assertion.pick.selected")).toBe(false);
+
+    await binding?.({ page, frame: mainFrame }, { ...selected, requestId });
+    expect(runtime.buffer.findLast((item) => item.message.type === "assertion.pick.selected")?.message).toMatchObject({
+      type: "assertion.pick.selected",
+      requestId,
+      name: "Ready status",
+      text: "Ready for review",
+      page: { url: currentUrl, title: "Status" },
+    });
+
+    const captchaRequestId = crypto.randomUUID();
+    await runtime.startAssertionPick(captchaRequestId);
+    handlers.get("console")?.({ text: () => "browserbase-solving-started" });
+    expect(runtime.buffer.some((item) => item.message.type === "assertion.pick.cancelled" && item.message.requestId === captchaRequestId)).toBe(true);
+    expect(mainFrame.evaluate).toHaveBeenCalledWith(expect.any(Function), null);
+  });
+
   it("locks recording input while preserving passive Browserbase CAPTCHA diagnostics", async () => {
     vi.useFakeTimers();
     try {

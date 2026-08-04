@@ -27,6 +27,7 @@ export function useWorkspaceController(workflowId: string, profileId = "", autoR
   const [workflowState, dispatch] = useReducer(workflowReducer, undefined, initialWorkflowState);
   const workflowStateRef = useRef(workflowState);
   const [manualOpen, setManualOpen] = useState(false);
+  const [addStepOpen, setAddStepOpen] = useState(false);
   const [runDialogOpen, setRunDialogOpen] = useState(false);
   const [confirmation, setConfirmation] = useState<Confirmation>(null);
   const [announcement, setAnnouncement] = useState("");
@@ -78,11 +79,20 @@ export function useWorkspaceController(workflowId: string, profileId = "", autoR
     session.replayStatus,
   );
   const captchaLocked = session.captchaStatus === "solving";
+  const assertionPicking = session.assertionPick?.status === "picking";
+  const assertionSelection = session.assertionPick?.status === "selected" ? session.assertionPick : null;
+  const assertionAvailable = Boolean(
+    session.liveViewUrl
+    && session.transportStatus === "connected"
+    && ["recording", "reconnecting"].includes(session.displayStatus)
+    && !captchaLocked
+    && !replayLocked,
+  );
   const persistenceLocked = persistenceStatus === "loading" || persistenceStatus === "saving";
-  const workflowLocked = replayLocked || captchaLocked || persistenceLocked;
+  const workflowLocked = replayLocked || captchaLocked || persistenceLocked || assertionPicking;
   const panels = useWorkspacePanels({
     selectedStepId: workflowState.selectedStepId,
-    overlayOpen: Boolean(confirmation || manualOpen || runDialogOpen),
+    overlayOpen: Boolean(confirmation || addStepOpen || manualOpen || runDialogOpen || assertionSelection),
   });
 
   const loadSavedWorkflow = useCallback(async () => {
@@ -133,6 +143,7 @@ export function useWorkspaceController(workflowId: string, profileId = "", autoR
     if (!captchaLocked) return;
     const timeout = window.setTimeout(() => {
       setManualOpen(false);
+      setAddStepOpen(false);
       setRunDialogOpen(false);
       setConfirmation(null);
       setPendingReplayStartId(undefined);
@@ -146,6 +157,20 @@ export function useWorkspaceController(workflowId: string, profileId = "", autoR
   }, [captchaLocked]);
 
   const beginRecording = () => session.startRecording();
+
+  const beginAssertionPick = () => {
+    if (!assertionAvailable) return;
+    setAddStepOpen(false);
+    const requestId = crypto.randomUUID();
+    if (!session.startAssertionPick(requestId)) {
+      setAnnouncement("The assertion picker could not start.");
+    }
+  };
+
+  const closeAssertionPick = () => {
+    const current = session.assertionPick;
+    if (current) session.cancelAssertionPick(current.requestId);
+  };
 
   const closeRunDialog = () => {
     setRunDialogOpen(false);
@@ -358,6 +383,7 @@ export function useWorkspaceController(workflowId: string, profileId = "", autoR
     nativeSelects: session.nativeSelects,
     nativeSelectsEnabled: Boolean(
       !captchaLocked
+      && !assertionPicking
       && session.liveViewUrl
       && session.transportStatus === "connected"
       && !["preparing", "running", "pausing", "paused", "stopping"].includes(session.replayStatus),
@@ -367,7 +393,8 @@ export function useWorkspaceController(workflowId: string, profileId = "", autoR
     restoreFocusAfterCaptcha: ["recording", "reconnecting"].includes(session.displayStatus),
     navigation: {
       enabled: Boolean(
-        !captchaLocked
+      !captchaLocked
+        && !assertionPicking
         && session.liveViewUrl
         && !session.navigationPending
         && (
@@ -503,7 +530,9 @@ export function useWorkspaceController(workflowId: string, profileId = "", autoR
         resizePanelWithKeyboard: panels.resizePanelWithKeyboard,
       },
       model: {
-        announcement,
+        announcement: assertionSelection
+          ? `${assertionSelection.name} selected for an assertion.`
+          : announcement,
         inspectorCollapsed: panels.inspectorCollapsed,
         inspectorWidth: panels.inspectorWidth,
         panelLimits: panels.panelLimits,
@@ -513,17 +542,32 @@ export function useWorkspaceController(workflowId: string, profileId = "", autoR
     },
     dialogs: {
       actions: {
+        chooseAction: () => {
+          setAddStepOpen(false);
+          setManualOpen(true);
+        },
+        chooseAssertion: beginAssertionPick,
+        closeAddStep: () => setAddStepOpen(false),
+        closeAssertion: closeAssertionPick,
         closeConfirmation: () => setConfirmation(null),
         closeManual: () => setManualOpen(false),
         closeRun: closeRunDialog,
         confirmSensitiveExport: exportNow,
-        openManual: () => setManualOpen(true),
+        openAddStep: () => setAddStepOpen(true),
+        startRecordingForAssertion: () => {
+          setAddStepOpen(false);
+          beginRecording();
+        },
         retryRunProfile: () => void loadRunProfile(),
         updateRuntimeValue: (stepId: string, value: string) => {
           setRuntimeValues((current) => ({ ...current, [stepId]: value }));
         },
       },
       model: {
+        addStepOpen,
+        assertionAvailable,
+        assertionPicking,
+        assertionSelection,
         blockedReason: replayBlockedReason,
         canRun: replayParameterResult.ready && !replayBlockedReason,
         confirmation,

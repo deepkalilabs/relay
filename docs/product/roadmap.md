@@ -1,7 +1,7 @@
 # Browser Memory Recorder Product Roadmap
 
 - Status: Active
-- Last updated: 2026-07-29
+- Last updated: 2026-08-03
 - Planning style: Outcome-based; phases are sequenced but not date-bound
 
 ## Purpose
@@ -32,6 +32,7 @@ The following capabilities are already shipped:
 - A local workflow Library and workflow editor.
 - Full or selected-step interactive replay.
 - Replay settling, element waits, and Retry, Skip, Take Control, and Stop recovery.
+- Manually authored element-visibility and text-containment assertions selected in the live browser.
 - Local profile creation, editing, readiness status, and deletion.
 - Versioned workflow and profile contracts with compatibility handling.
 
@@ -41,7 +42,8 @@ Current constraints remain:
 - Desktop-first, linear, single-tab workflows.
 - Explicit saving rather than autosave.
 - Profile values and sensitive workflow values are stored locally in plain text.
-- No assertions, run history, scheduling, remote execution, or collaboration.
+- Assertions are currently limited to immediate element visibility and normalized text containment.
+- No run history, scheduling, remote execution, or collaboration.
 
 ## Roadmap Overview
 
@@ -85,7 +87,7 @@ The detailed feature specification is [Profile-Parameterized Workflow Runs](./fe
 - A saved parameter mapping survives reload.
 - The same workflow runs successfully with at least two profiles while retaining its saved fallback values.
 - Missing mapped values prevent browser-session creation.
-- Existing workflows without parameter mappings remain compatible.
+- Schema `1.2` workflows remain compatible; schema `1.0`/`1.1` workflows remain readable only when they contain no fill steps.
 - A user can manage the common workflow lifecycle without reopening the recording workspace unnecessarily.
 
 ## Next: Reliability and Trust
@@ -96,13 +98,11 @@ Replay becomes measurable and failures become actionable instead of opaque.
 
 ### Planned Deliverables
 
-#### Assertions
+#### Expand assertions
 
-Support initial assertions for:
+Extend the initial element assertions with:
 
 - Current URL.
-- Visible text.
-- Element visibility.
 - Page title.
 
 #### Run records and failure evidence

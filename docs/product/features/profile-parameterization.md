@@ -125,14 +125,15 @@ type FillStep = ElementWorkflowStepBase & {
 
 Rules:
 
-- schema `1.0` and `1.1` workflows normalize missing bindings to `{ source: "recorded" }`;
+- schema `1.0` and `1.1` workflows containing `fill` steps are rejected instead of receiving an implicit binding;
+- non-fill schema `1.0` and `1.1` workflows continue to normalize at read boundaries;
 - canonical schema `1.2` workflows require `parameterBinding` on every `fill` step;
 - bindings are permitted only on `fill` steps in version one;
 - the recorded payload remains canonical and immutable from the parameter workspace;
 - fixed literals are bounded to 10,000 characters and validated at the workflow schema boundary;
 - profile values and runtime values never appear in `ParameterBinding`.
 
-ADR 0006 records this schema, compatibility behavior, and trust boundary.
+ADR 0006 records the binding schema and trust boundary. ADR 0013 supersedes its legacy-fill migration decision.
 
 ## Architecture and Data Flow
 
@@ -263,7 +264,7 @@ docs/decisions/
 - Missing required data blocks Browserbase session creation and identifies the affected row.
 - A completed preflight produces an ephemeral workflow with resolved payloads.
 - Profile and runtime values are absent from workflow files, URLs, and replay diagnostics.
-- Existing schema `1.0`/`1.1` workflows load with recorded-value behavior.
+- Existing schema `1.0`/`1.1` workflows load only when they contain no fill steps; legacy fills require conversion to schema `1.2` or newer.
 - Fixed and runtime inputs enforce the 10,000-character interaction bound.
 - Sensitive resolved previews mask their values without hiding resolution status.
 - The layout has no horizontal overflow at 1024×768 and passes axe/keyboard checks.

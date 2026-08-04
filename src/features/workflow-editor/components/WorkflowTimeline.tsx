@@ -31,6 +31,7 @@ import {
   MousePointer2,
   Plus,
   Send,
+  ShieldCheck,
   SkipForward,
   TextCursorInput,
   Trash2,
@@ -48,6 +49,7 @@ const icons = {
   uncheck: CheckSquare,
   keypress: Keyboard,
   submit: Send,
+  assertion: ShieldCheck,
 };
 
 interface TimelineProps {
@@ -121,7 +123,7 @@ export function WorkflowTimeline({ steps, selectedId, onSelect, onToggle, onDele
       <div className="panel-heading">
         <div>
           <span className="eyebrow">Workflow</span>
-          <h2 id="timeline-title">Recorded steps <span>{steps.length}</span></h2>
+          <h2 id="timeline-title">Workflow steps <span>{steps.length}</span></h2>
         </div>
         <div className="panel-heading-actions">
           <button className="icon-button" type="button" disabled={locked} onClick={onInsert} aria-label="Insert a workflow step" title="Insert step">

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRecorderSocket } from "../transport/useRecorderSocket";
 import type {
+  AssertionPickState,
   BrowserPageState,
   CaptchaStatus,
   ClientMessage,
@@ -37,6 +38,7 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
   const [popup, setPopup] = useState<PopupState | null>(null);
   const [datePicker, setDatePicker] = useState<DatePickerState | null>(null);
   const [selectPicker, setSelectPicker] = useState<SelectPickerState | null>(null);
+  const [assertionPick, setAssertionPick] = useState<AssertionPickState | null>(null);
   const [nativeSelects, setNativeSelectsState] = useState(false);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [replayStatus, setReplayStatus] = useState<ReplayStatus>("idle");
@@ -91,6 +93,7 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
         setNavigationPending(false);
         setDatePicker(null);
         setSelectPicker(null);
+        setAssertionPick(null);
         setStartedAt(Date.now());
         setError(null);
         setErrorContext("recording");
@@ -107,6 +110,7 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
           setLiveViewUrl(null);
           setDatePicker(null);
           setSelectPicker(null);
+          setAssertionPick(null);
         }
         break;
       case "recording.startUrl":
@@ -125,6 +129,7 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
         setPopup(null);
         setDatePicker(null);
         setSelectPicker(null);
+        setAssertionPick(null);
         break;
       case "browser.page":
         setActivePageId(message.pageId);
@@ -164,6 +169,22 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
       case "select.picker.closed":
         setSelectPicker((current) => current?.requestId === message.requestId ? null : current);
         break;
+      case "assertion.pick.selected":
+        setAssertionPick((current) => current?.requestId === message.requestId
+          ? {
+              status: "selected",
+              requestId: message.requestId,
+              name: message.name,
+              text: message.text,
+              target: message.target,
+              position: message.position,
+              page: message.page,
+            }
+          : current);
+        break;
+      case "assertion.pick.cancelled":
+        setAssertionPick((current) => current?.requestId === message.requestId ? null : current);
+        break;
       case "captcha.status": {
         const existingTimer = captchaNoticeTimers.current.get(message.pageId);
         if (existingTimer) {
@@ -182,6 +203,7 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
         if (message.status === "solving") {
           setDatePicker(null);
           setSelectPicker(null);
+          setAssertionPick(null);
           break;
         }
         const timer = setTimeout(() => {
@@ -213,6 +235,7 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
         setPopup(null);
         setDatePicker(null);
         setSelectPicker(null);
+        setAssertionPick(null);
         break;
       case "replay.status":
         setReplayRunId(message.runId);
@@ -289,6 +312,7 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
     setLiveViewUrl(null);
     setDatePicker(null);
     setSelectPicker(null);
+    setAssertionPick(null);
   };
 
   const sessionStartCommand = (): ClientMessage => ({
@@ -382,8 +406,19 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
     if (enabled) setSelectPicker(null);
     send({ type: "select.native.set", enabled });
   }, [send]);
+  const startAssertionPick = useCallback((requestId: string) => {
+    setAssertionPick({ status: "picking", requestId });
+    if (send({ type: "assertion.pick.start", requestId })) return true;
+    setAssertionPick(null);
+    return false;
+  }, [send]);
+  const cancelAssertionPick = useCallback((requestId: string) => {
+    setAssertionPick((current) => current?.requestId === requestId ? null : current);
+    return send({ type: "assertion.pick.cancel", requestId });
+  }, [send]);
 
   return {
+    assertionPick,
     browserPage,
     captchaPageId: activePageId,
     captchaStatus,
@@ -413,6 +448,8 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
     selectPickerOption,
     dismissSelectPicker,
     setNativeSelects,
+    startAssertionPick,
+    cancelAssertionPick,
     startReplay,
     startRecording,
     stopRecording,

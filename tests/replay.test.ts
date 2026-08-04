@@ -3,7 +3,7 @@ import type { Frame, Locator, Page, Request } from "playwright-core";
 import type { ServerMessage } from "@/shared/contracts/protocol";
 import type { Workflow, WorkflowStep } from "@/shared/contracts/workflow/domain";
 import { createWorkflow } from "@/shared/contracts/workflow/schema";
-import { applyPositionBefore, preflightReplay, ReplayEngine, resolveTarget } from "@/server/replay/engine";
+import { applyPositionBefore, preflightReplay, ReplayEngine, resolveTarget, resolveTargetOnce } from "@/server/replay/engine";
 import { isRedundantOptionClickBeforeSelect } from "@/server/replay/redundant-option-click";
 
 const recordedAt = new Date().toISOString();
@@ -38,6 +38,7 @@ function replayPage(click = vi.fn(async () => undefined)) {
     fill: vi.fn(async () => undefined),
     focus: vi.fn(async () => undefined),
     isVisible: vi.fn(async () => true),
+    innerText: vi.fn(async () => "  READY\n for   Review "),
     press: vi.fn(async () => undefined),
     pressSequentially: vi.fn(async () => undefined),
     selectOption: vi.fn(async () => ["value"]),
@@ -121,10 +122,199 @@ describe("redundant native select clicks", () => {
 });
 
 describe("replay engine", () => {
+  it("evaluates assertions immediately with normalized case-insensitive text", async () => {
+    const steps: WorkflowStep[] = [
+      { ...baseStep("assertion", 0), type: "assertion", expectation: { kind: "visible" } },
+      { ...baseStep("assertion", 1), type: "assertion", expectation: { kind: "text_contains", expected: "ready FOR review" } },
+    ];
+    const messages: ServerMessage[] = [];
+    const { page } = replayPage();
+    const engine = new ReplayEngine(crypto.randomUUID(), page, preflightReplay(workflowWith(steps)), (message) => messages.push(message));
+
+    await engine.run();
+
+    expect(messages.filter((message) => message.type === "replay.step" && message.status === "passed")).toHaveLength(2);
+    expect(messages).toContainEqual(expect.objectContaining({
+      type: "replay.step",
+      stepId: "step-1",
+      status: "running",
+      phase: "asserting",
+    }));
+    expect(messages.some((message) => message.type === "replay.step" && message.phase === "settling")).toBe(false);
+  });
+
+  it("fails missing, ambiguous, and hidden assertion targets in one resolution pass", async () => {
+    const cases = [
+      { count: 0, visible: true, reason: "No match." },
+      { count: 2, visible: true, reason: "Matched 2 elements." },
+      { count: 1, visible: false, reason: "The only match is not visible." },
+    ];
+
+    for (const scenario of cases) {
+      const { page, locator } = replayPage();
+      vi.mocked(locator.count).mockResolvedValue(scenario.count);
+      vi.mocked(locator.isVisible).mockResolvedValue(scenario.visible);
+
+      await expect(resolveTargetOnce(page, target)).rejects.toMatchObject({
+        attempts: [{ kind: "testId", reason: scenario.reason }],
+      });
+      expect(locator.count).toHaveBeenCalledOnce();
+    }
+  });
+
+  it("falls through locator matches that conflict with the recorded element tag", async () => {
+    const ambiguousRole = {
+      count: vi.fn(async () => 2),
+      isVisible: vi.fn(async () => true),
+    } as unknown as Locator;
+    const labelledTextboxClick = vi.fn(async () => undefined);
+    const labelledTextbox = {
+      click: labelledTextboxClick,
+      count: vi.fn(async () => 1),
+      evaluate: vi.fn(async () => ({ tagName: "input", inputType: "text" })),
+      isVisible: vi.fn(async () => true),
+    } as unknown as Locator;
+    const searchButtonClick = vi.fn(async () => undefined);
+    const searchButton = {
+      click: searchButtonClick,
+      count: vi.fn(async () => 1),
+      evaluate: vi.fn(async () => ({ tagName: "button" })),
+      isVisible: vi.fn(async () => true),
+    } as unknown as Locator;
+    const frame = {
+      getByLabel: vi.fn(() => labelledTextbox),
+      getByRole: vi.fn(() => ambiguousRole),
+      locator: vi.fn(() => searchButton),
+      url: vi.fn(() => "https://www.courtlistener.com/opinion/"),
+    } as unknown as Frame;
+    const page = {
+      frames: vi.fn(() => [frame]),
+      goto: vi.fn(async () => null),
+      mainFrame: vi.fn(() => frame),
+    } as unknown as Page;
+    const step: WorkflowStep = {
+      ...baseStep("click", 0),
+      type: "click",
+      page: { id: "page", url: "https://www.courtlistener.com/opinion/" },
+      target: {
+        tagName: "button",
+        candidates: [
+          { kind: "role", value: "button", name: "Search", exact: true },
+          { kind: "accessibleName", value: "Search", exact: true },
+          { kind: "css", value: "#search-button", exact: true, unique: true },
+        ],
+      },
+    };
+    const messages: ServerMessage[] = [];
+    const workflow = workflowWith([step]);
+    workflow.source.startUrl = step.page.url;
+    const engine = new ReplayEngine(crypto.randomUUID(), page, preflightReplay(workflow), (message) => messages.push(message));
+
+    const resolved = await resolveTargetOnce(page, step.target, step.page.url);
+    expect(resolved.attempts).toContainEqual({
+      kind: "accessibleName",
+      reason: "Expected button, matched input.",
+    });
+
+    await engine.run();
+
+    expect(labelledTextboxClick).not.toHaveBeenCalled();
+    expect(searchButtonClick).toHaveBeenCalledOnce();
+    expect(messages).toContainEqual(expect.objectContaining({
+      type: "replay.step",
+      stepId: step.id,
+      status: "passed",
+      locatorKind: "css",
+    }));
+  });
+
+  it("falls through locator matches with the wrong recorded input type", async () => {
+    const textInput = {
+      count: vi.fn(async () => 1),
+      evaluate: vi.fn(async () => ({ tagName: "input", inputType: "text" })),
+      isVisible: vi.fn(async () => true),
+    } as unknown as Locator;
+    const checkbox = {
+      count: vi.fn(async () => 1),
+      evaluate: vi.fn(async () => ({ tagName: "input", inputType: "checkbox" })),
+      isVisible: vi.fn(async () => true),
+    } as unknown as Locator;
+    const frame = {
+      getByLabel: vi.fn(() => textInput),
+      locator: vi.fn(() => checkbox),
+    } as unknown as Frame;
+    const page = {
+      frames: vi.fn(() => [frame]),
+      mainFrame: vi.fn(() => frame),
+    } as unknown as Page;
+
+    const resolved = await resolveTargetOnce(page, {
+      tagName: "input",
+      inputType: "checkbox",
+      candidates: [
+        { kind: "label", value: "Accept terms", exact: true },
+        { kind: "css", value: "#accept-terms", exact: true, unique: true },
+      ],
+    });
+
+    expect(resolved.kind).toBe("css");
+    expect(resolved.attempts).toContainEqual({
+      kind: "label",
+      reason: "Expected input type checkbox, matched input type text.",
+    });
+  });
+
+  it("fails text assertions once with expected and observed diagnostics", async () => {
+    const step: WorkflowStep = {
+      ...baseStep("assertion", 0),
+      type: "assertion",
+      expectation: { kind: "text_contains", expected: "completed" },
+    };
+    const messages: ServerMessage[] = [];
+    const { page, locator } = replayPage();
+    const engine = new ReplayEngine(crypto.randomUUID(), page, preflightReplay(workflowWith([step])), (message) => messages.push(message));
+
+    const running = engine.run();
+    await vi.waitFor(() => expect(messages.some((message) => message.type === "replay.step" && message.status === "failed")).toBe(true));
+    engine.skip();
+    await running;
+
+    expect(locator.count).toHaveBeenCalledOnce();
+    expect(messages).toContainEqual(expect.objectContaining({
+      type: "replay.step",
+      status: "failed",
+      phase: "asserting",
+      diagnostic: expect.objectContaining({ message: 'Expected text to contain "completed", but observed "ready for review".' }),
+    }));
+  });
+
+  it("retries assertions with a fresh immediate evaluation", async () => {
+    const step: WorkflowStep = {
+      ...baseStep("assertion", 0),
+      type: "assertion",
+      expectation: { kind: "text_contains", expected: "ready" },
+    };
+    const messages: ServerMessage[] = [];
+    const { page, locator } = replayPage();
+    vi.mocked(locator.innerText)
+      .mockResolvedValueOnce("Waiting")
+      .mockResolvedValueOnce("Ready");
+    const engine = new ReplayEngine(crypto.randomUUID(), page, preflightReplay(workflowWith([step])), (message) => messages.push(message));
+
+    const running = engine.run();
+    await vi.waitFor(() => expect(messages.some((message) => message.type === "replay.step" && message.status === "failed")).toBe(true));
+    engine.retry();
+    await running;
+
+    expect(locator.count).toHaveBeenCalledTimes(2);
+    expect(locator.innerText).toHaveBeenCalledTimes(2);
+    expect(messages).toContainEqual(expect.objectContaining({ type: "replay.step", stepId: step.id, status: "passed" }));
+  });
   it("skips a legacy option click and replays the following semantic select", async () => {
     const [click, select] = nativeSelectPair();
     const messages: ServerMessage[] = [];
     const { page, locator } = replayPage();
+    vi.mocked(locator.evaluate).mockResolvedValue({ tagName: "select" } as never);
     const engine = new ReplayEngine(
       crypto.randomUUID(),
       page,
@@ -159,6 +349,9 @@ describe("replay engine", () => {
       },
     };
     const { page, locator } = replayPage();
+    vi.mocked(locator.evaluate)
+      .mockResolvedValueOnce({ tagName: "option" } as never)
+      .mockResolvedValueOnce({ tagName: "select" } as never);
     const engine = new ReplayEngine(
       crypto.randomUUID(),
       page,

@@ -1,12 +1,15 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { BrowserPanel, type BrowserActions } from "@/features/browser";
 import { RecorderControls, stepFromRecordedAction } from "@/features/recorder";
 import { ReplayControls, ReplayFailurePanel } from "@/features/replay";
 import { WorkspaceNavbar } from "@/app/(product)/workflows/[workflowId]/edit/_components/WorkspaceNavbar";
-import { ManualStepDialog, StepEditor, WorkflowTimeline } from "@/features/workflow-editor";
+import { AddStepDialog, AssertionStepDialog, ManualStepDialog, StepEditor, WorkflowTimeline } from "@/features/workflow-editor";
+import type { WorkflowStep } from "@/shared/contracts/workflow/domain";
 import { TestBrowserPanel } from "./helpers/TestBrowserPanel";
+
+afterEach(cleanup);
 
 describe("WorkflowTimeline", () => {
   it("shows a target-focused title while retaining action and replay metadata", () => {
@@ -72,6 +75,91 @@ describe("ManualStepDialog", () => {
     expect(screen.getByLabelText("Step name")).toHaveValue("Element");
     expect(screen.getByLabelText("Action type")).toHaveValue("click");
     rendered.unmount();
+  });
+});
+
+describe("Assertion step creation", () => {
+  it("keeps assertions unavailable until a live recording session exists", async () => {
+    const user = userEvent.setup();
+    const onAction = vi.fn();
+    const onStartRecording = vi.fn();
+    render(
+      <AddStepDialog
+        open
+        assertionAvailable={false}
+        onAction={onAction}
+        onAssertion={vi.fn()}
+        onStartRecording={onStartRecording}
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: /assertion/i })).toBeDisabled();
+    expect(screen.getByText(/start a live recording session/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /^Action/ }));
+    await user.click(screen.getByRole("button", { name: "Start recording" }));
+    expect(onAction).toHaveBeenCalledOnce();
+    expect(onStartRecording).toHaveBeenCalledOnce();
+  });
+
+  it("infers a text-containment assertion from captured visible text", async () => {
+    const user = userEvent.setup();
+    const onInsert = vi.fn();
+    render(
+      <AssertionStepDialog
+        open
+        order={2}
+        selection={{
+          status: "selected",
+          requestId: "c7daf0b9-d92a-44db-9967-db33d1516976",
+          name: "Ready status",
+          text: "Ready for review",
+          target: { candidates: [{ kind: "role", value: "status", name: "Ready for review", exact: true }] },
+          position: { x: 0, y: 320 },
+          page: { id: "page-1", url: "https://example.com" },
+        }}
+        onClose={vi.fn()}
+        onInsert={onInsert}
+      />,
+    );
+
+    expect(screen.getByLabelText("Expectation")).toHaveValue("text_contains");
+    expect(screen.getByLabelText("Expected text")).toHaveValue("Ready for review");
+    await user.click(screen.getByRole("button", { name: "Add assertion" }));
+    expect(onInsert).toHaveBeenCalledWith(expect.objectContaining({
+      type: "assertion",
+      expectation: { kind: "text_contains", expected: "Ready for review" },
+      metadata: expect.objectContaining({ origin: "manual" }),
+    }));
+  });
+
+  it("infers visibility without captured text and validates text containment", async () => {
+    const user = userEvent.setup();
+    const onInsert = vi.fn();
+    render(
+      <AssertionStepDialog
+        open
+        order={0}
+        selection={{
+          status: "selected",
+          requestId: "c7daf0b9-d92a-44db-9967-db33d1516976",
+          name: "Empty status",
+          text: "",
+          target: { candidates: [{ kind: "testId", value: "empty-status", exact: true }] },
+          position: { x: 0, y: 0 },
+          page: { id: "page-1", url: "https://example.com" },
+        }}
+        onClose={vi.fn()}
+        onInsert={onInsert}
+      />,
+    );
+
+    expect(screen.getByLabelText("Expectation")).toHaveValue("visible");
+    expect(screen.queryByLabelText("Expected text")).not.toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText("Expectation"), "text_contains");
+    await user.click(screen.getByRole("button", { name: "Add assertion" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("Enter text to match");
+    expect(onInsert).not.toHaveBeenCalled();
   });
 });
 
@@ -276,9 +364,36 @@ describe("ReplayControls", () => {
 });
 
 describe("StepEditor", () => {
+  it("edits assertion expectations and locators without action-only wait controls", () => {
+    let step: WorkflowStep = {
+      id: "assertion-ready",
+      order: 1,
+      name: "Ready status contains text",
+      enabled: true,
+      page: { id: "page", url: "https://example.com" },
+      target: { candidates: [{ kind: "role", value: "status", name: "Ready for review", exact: true }] },
+      expectation: { kind: "text_contains", expected: "Ready for review" },
+      metadata: { recordedAt: new Date().toISOString(), origin: "manual", sensitive: false },
+      type: "assertion",
+    };
+    const onUpdate = vi.fn((updated: WorkflowStep) => { step = updated; });
+    const rendered = render(<StepEditor step={step} onUpdate={onUpdate} />);
+
+    expect(screen.getByLabelText("Expectation")).toHaveValue("text_contains");
+    expect(screen.getByLabelText("Expected text")).toHaveValue("Ready for review");
+    expect(screen.getByLabelText("Accessible name")).toHaveValue("Ready for review");
+    expect(screen.queryByText("Replay wait")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Additional delay (ms)")).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Expected text"), { target: { value: "Approved" } });
+    expect(onUpdate).toHaveBeenCalled();
+    expect(step).toMatchObject({ expectation: { kind: "text_contains", expected: "Approved" } });
+    rendered.unmount();
+  });
+
   it("shows inline validation when a required name is removed", async () => {
     const user = userEvent.setup();
-    let step = stepFromRecordedAction({
+    let step: WorkflowStep = stepFromRecordedAction({
       type: "click", name: "Click Continue", sensitive: false,
       target: { candidates: [{ kind: "role", value: "button", name: "Continue", exact: true }] },
       page: { id: "page", url: "https://example.com" }, recordedAt: new Date().toISOString(),
@@ -290,12 +405,12 @@ describe("StepEditor", () => {
 
   it("edits a post-action delay and element wait condition", async () => {
     const user = userEvent.setup();
-    let step = stepFromRecordedAction({
+    let step: WorkflowStep = stepFromRecordedAction({
       type: "click", name: "Open quotes", sensitive: false,
       target: { candidates: [{ kind: "testId", value: "open-quotes", exact: true }] },
       page: { id: "page", url: "https://example.com" }, recordedAt: new Date().toISOString(),
     }, 0);
-    const onUpdate = vi.fn((updated: typeof step) => {
+    const onUpdate = vi.fn((updated: WorkflowStep) => {
       step = updated;
     });
     const rendered = render(<StepEditor step={step} onUpdate={onUpdate} />);
@@ -325,13 +440,13 @@ describe("StepEditor", () => {
 
   it("edits and removes the position attached to an action", async () => {
     const user = userEvent.setup();
-    let step = stepFromRecordedAction({
+    let step: WorkflowStep = stepFromRecordedAction({
       type: "click", name: "Continue", sensitive: false,
       target: { candidates: [{ kind: "testId", value: "continue", exact: true }] },
       position: { x: 10, y: 80, frameUrl: "https://widgets.example.com/frame" },
       page: { id: "page", url: "https://example.com" }, recordedAt: new Date().toISOString(),
     }, 0);
-    const onUpdate = vi.fn((updated: typeof step) => { step = updated; });
+    const onUpdate = vi.fn((updated: WorkflowStep) => { step = updated; });
     const rendered = render(<StepEditor step={step} onUpdate={onUpdate} />);
     onUpdate.mockImplementation((updated) => {
       step = updated;
@@ -343,7 +458,7 @@ describe("StepEditor", () => {
     await user.type(positionEditor.getByLabelText(/vertical position/i), "720");
     expect(step.position).toEqual({ x: 10, y: 720, frameUrl: "https://widgets.example.com/frame" });
 
-    await user.click(positionEditor.getByRole("button", { name: /remove action position/i }));
+    await user.click(positionEditor.getByRole("button", { name: /remove step position/i }));
     expect(step.position).toBeUndefined();
     expect(rendered.container.querySelector(".position-before-editor")).not.toBeInTheDocument();
   });

@@ -115,6 +115,30 @@ describe("useRecorderSession", () => {
     expect(socket.send).toHaveBeenCalledWith({ type: "select.picker.dismiss", requestId });
   });
 
+  it("starts, receives, and cancels a request-correlated assertion picker", () => {
+    const { result } = renderHook(() => useRecorderSession({ onSessionStarted: vi.fn(), onReplaySessionStarted: vi.fn(), onStartUrl: vi.fn(), onStepRecorded: vi.fn() }));
+    const requestId = "c7daf0b9-d92a-44db-9967-db33d1516976";
+
+    act(() => result.current.startAssertionPick(requestId));
+    expect(result.current.assertionPick).toEqual({ status: "picking", requestId });
+    expect(socket.send).toHaveBeenCalledWith({ type: "assertion.pick.start", requestId });
+
+    act(() => socket.onMessage?.({
+      type: "assertion.pick.selected",
+      requestId,
+      name: "Ready status",
+      text: "Ready for review",
+      target: { candidates: [{ kind: "role", value: "status", name: "Ready for review", exact: true }] },
+      position: { x: 0, y: 320 },
+      page: { id: "page-1", url: "https://example.com", title: "Example" },
+    }));
+    expect(result.current.assertionPick).toMatchObject({ status: "selected", requestId, name: "Ready status" });
+
+    act(() => result.current.cancelAssertionPick(requestId));
+    expect(result.current.assertionPick).toBeNull();
+    expect(socket.send).toHaveBeenCalledWith({ type: "assertion.pick.cancel", requestId });
+  });
+
   it("keeps native dropdown mode for the task and includes it in new sessions", () => {
     const { result } = renderHook(() => useRecorderSession({ onSessionStarted: vi.fn(), onReplaySessionStarted: vi.fn(), onStartUrl: vi.fn(), onStepRecorded: vi.fn() }));
     const requestId = "c7daf0b9-d92a-44db-9967-db33d1516976";
