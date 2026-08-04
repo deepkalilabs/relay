@@ -169,11 +169,6 @@ const AssertionStepSchema = ElementStepBase.extend({
   ]),
 }).strict();
 
-const LegacyFillStepSchema = ElementActionStepBase.extend({
-  type: z.literal("fill"),
-  payload: z.object({ value: z.string() }),
-}).strict();
-
 export const WorkflowStepSchema = z.discriminatedUnion("type", [
   NavigateStepSchema,
   ClickStepSchema,
@@ -190,7 +185,6 @@ export const WorkflowStepSchema = z.discriminatedUnion("type", [
 const LegacyWorkflowStepSchema = z.discriminatedUnion("type", [
   NavigateStepSchema,
   ClickStepSchema,
-  LegacyFillStepSchema,
   SetDateStepSchema,
   SelectStepSchema,
   CheckStepSchema,
@@ -255,14 +249,8 @@ export const CompatibleWorkflowSchema = z.discriminatedUnion(
 ).transform(
   (workflow): Workflow => {
     if (workflow.schemaVersion === "1.3") return workflow;
-    if (workflow.schemaVersion === "1.2") {
+    if (workflow.schemaVersion === "1.2" || workflow.schemaVersion === "1.1") {
       return { ...workflow, schemaVersion: "1.3" };
-    }
-    const steps: WorkflowStep[] = workflow.steps.map((step) => step.type === "fill"
-      ? { ...step, parameterBinding: { source: "recorded" as const } }
-      : step);
-    if (workflow.schemaVersion === "1.1") {
-      return { ...workflow, schemaVersion: "1.3", steps };
     }
     return {
       ...workflow,
@@ -270,7 +258,6 @@ export const CompatibleWorkflowSchema = z.discriminatedUnion(
       status: "complete",
       revision: 1,
       finishedAt: workflow.updatedAt,
-      steps,
     };
   },
 );

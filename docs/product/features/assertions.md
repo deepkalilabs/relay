@@ -67,4 +67,4 @@ Expected and observed text remain plain in workflow storage, exports, UI, and re
 - Secret redaction or a secret-management system.
 - Branching, conditional execution, or assertion-driven page mutation.
 
-ADR 0012 records the step-family, schema, picker-protocol, and evaluation decisions.
+ADR 0012 records the step-family, schema, picker-protocol, and evaluation decisions. ADR 0013 records the breaking legacy-fill compatibility boundary.

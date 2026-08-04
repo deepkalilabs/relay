@@ -81,19 +81,12 @@ describe("workflow parameter binding contract", () => {
     expect(WorkflowSchema.safeParse(workflow("1.3", step)).success).toBe(false);
   });
 
-  it("normalizes legacy workflows to recorded bindings without changing payloads", () => {
+  it("rejects fill steps from legacy schema 1.0 and 1.1 workflows", () => {
     for (const schemaVersion of ["1.0", "1.1"] as const) {
-      const legacyStep = fillStep();
-      delete (legacyStep as Partial<typeof legacyStep>).parameterBinding;
-
-      const parsed = CompatibleWorkflowSchema.parse(workflow(schemaVersion, legacyStep));
-
-      expect(parsed.schemaVersion).toBe("1.3");
-      expect(parsed.steps[0]).toMatchObject({
-        type: "fill",
-        payload: { value: "Recorded Person" },
-        parameterBinding: { source: "recorded" },
-      });
+      const fillWithoutBinding = fillStep();
+      delete (fillWithoutBinding as Partial<typeof fillWithoutBinding>).parameterBinding;
+      expect(CompatibleWorkflowSchema.safeParse(workflow(schemaVersion, fillWithoutBinding)).success).toBe(false);
+      expect(CompatibleWorkflowSchema.safeParse(workflow(schemaVersion, fillStep())).success).toBe(false);
     }
   });
 

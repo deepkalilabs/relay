@@ -87,7 +87,7 @@ The detailed feature specification is [Profile-Parameterized Workflow Runs](./fe
 - A saved parameter mapping survives reload.
 - The same workflow runs successfully with at least two profiles while retaining its saved fallback values.
 - Missing mapped values prevent browser-session creation.
-- Existing workflows without parameter mappings remain compatible.
+- Schema `1.2` workflows remain compatible; schema `1.0`/`1.1` workflows remain readable only when they contain no fill steps.
 - A user can manage the common workflow lifecycle without reopening the recording workspace unnecessarily.
 
 ## Next: Reliability and Trust
