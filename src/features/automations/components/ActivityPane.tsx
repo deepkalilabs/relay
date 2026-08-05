@@ -5,15 +5,19 @@ import styles from "../AutomationsScreen.module.css";
 
 interface RunCardProps {
   run: AutomationRun;
-  onViewDetails: (runId: string) => void;
+  onViewDetails: (runKey: string) => void;
 }
 
 function RunCard({ run, onViewDetails }: RunCardProps) {
   const progress = run.totalSteps ? Math.round((run.currentStep / run.totalSteps) * 100) : 0;
   const status = run.state === "running"
-    ? `Running · Step ${run.currentStep} of ${run.totalSteps}`
+    ? run.totalSteps
+      ? `Running · Step ${run.currentStep} of ${run.totalSteps}`
+      : "Running"
     : run.state === "failed"
-      ? `Failed at step ${run.failedStep}`
+      ? run.failedStep
+        ? `Failed at step ${run.failedStep}`
+        : "Failed"
       : run.state === "completed"
         ? `Completed · ${run.totalSteps} steps`
         : "Queued";
@@ -63,7 +67,7 @@ interface RunSectionProps {
   title: string;
   runs: AutomationRun[];
   className?: string;
-  onViewDetails: (runId: string) => void;
+  onViewDetails: (runKey: string) => void;
 }
 
 function RunSection({ id, title, runs, className, onViewDetails }: RunSectionProps) {
@@ -83,7 +87,7 @@ function RunSection({ id, title, runs, className, onViewDetails }: RunSectionPro
 
 interface ActivityPaneProps {
   runs: AutomationRun[];
-  onViewDetails: (runId: string) => void;
+  onViewDetails: (runKey: string) => void;
 }
 
 export function ActivityPane({ runs, onViewDetails }: ActivityPaneProps) {

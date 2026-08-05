@@ -16,10 +16,9 @@ export function RunDetailsDialog({ run, onClose }: RunDetailsDialogProps) {
       onClose={onClose}
     >
       <dl className={styles.runDetails}>
-        <div><dt>Status</dt><dd>Failed at step {run.failedStep}</dd></div>
-        <div><dt>Failure</dt><dd>{run.detail}</dd></div>
+        <div><dt>Status</dt><dd>{run.failedStep ? `Failed at step ${run.failedStep}` : "Failed"}</dd></div>
+        <div><dt>Failure</dt><dd>{run.detail ?? "The workflow did not complete."}</dd></div>
       </dl>
-      <p className={styles.demoNotice}>Mock run—no workflow was executed.</p>
       <div className="modal-actions">
         <button className="button button-primary" type="button" onClick={onClose}>Close</button>
       </div>

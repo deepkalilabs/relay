@@ -6,6 +6,10 @@ import { WebSocketServer, type WebSocket } from "ws";
 import { ClientMessageSchema } from "./src/shared/contracts/protocol";
 import { BrowserbaseProvider } from "./src/server/infrastructure/browser/browserbase";
 import { createRepositories } from "./src/server/infrastructure/storage/repository-factory";
+import {
+  createAutomationBatchService,
+  handleAutomationBatchApi,
+} from "./src/server/automation/http-router";
 import { RecordingRuntime } from "./src/server/recording/runtime";
 import { handleProfileApi } from "./src/server/profiles/http-router";
 import { handleWorkflowApi } from "./src/server/workflows/http-router";
@@ -18,8 +22,10 @@ const hostname = "127.0.0.1";
 const port = Number(process.env.PORT || 3000);
 let requestHandler: ((req: Parameters<typeof createServer>[0] extends never ? never : never) => void) | null = null;
 const { profileRepository, workflowRepository } = createRepositories();
+const automationBatchClient = createAutomationBatchService();
 
 const server = createServer(async (req, res) => {
+  if (await handleAutomationBatchApi(req, res, workflowRepository, automationBatchClient)) return;
   if (await handleProfileApi(req, res, profileRepository)) return;
   if (await handleWorkflowApi(req, res, workflowRepository)) return;
   if (!requestHandler) {

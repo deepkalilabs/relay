@@ -1,5 +1,26 @@
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test } from "@playwright/test";
+import { expect, test, type APIRequestContext } from "@playwright/test";
+
+async function createCompleteWorkflow(request: APIRequestContext, name: string) {
+  const created = await request.post("/api/workflows").then((response) => response.json());
+  created.name = name;
+  created.steps = [{
+    id: crypto.randomUUID(),
+    order: 0,
+    name: "Open page",
+    enabled: true,
+    page: { id: "manual", url: "" },
+    metadata: { recordedAt: new Date().toISOString(), origin: "manual", sensitive: false },
+    type: "navigate",
+    payload: { url: "https://example.com" },
+  }];
+  const saved = await request.put(`/api/workflows/${created.id}`, {
+    data: { workflow: created, expectedRevision: created.revision },
+  }).then((response) => response.json());
+  return request.post(`/api/workflows/${created.id}/finish`, {
+    data: { workflow: saved, expectedRevision: saved.revision },
+  }).then((response) => response.json());
+}
 
 test("mirrors saved Library workflows in a read-only All workflows folder", async ({ page, request }) => {
   const consoleProblems: string[] = [];
@@ -50,6 +71,71 @@ test("mirrors saved Library workflows in a read-only All workflows folder", asyn
 
   const accessibility = await new AxeBuilder({ page }).analyze();
   expect(accessibility.violations).toEqual([]);
+  expect(failedResources).toEqual([]);
+  expect(consoleProblems).toEqual([]);
+});
+
+test("runs two folder workflows through one stubbed background batch", async ({ page, request }) => {
+  const consoleProblems: string[] = [];
+  const failedResources: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error" || message.type() === "warning") {
+      if (message.location().url.endsWith("/favicon.ico")) return;
+      consoleProblems.push(`${message.text()} (${message.location().url})`);
+    }
+  });
+  page.on("pageerror", (error) => consoleProblems.push(error.message));
+  page.on("response", (response) => {
+    if (response.status() >= 400) failedResources.push(`${response.status()} ${response.url()}`);
+  });
+  const first = await createCompleteWorkflow(request, `POC first ${crypto.randomUUID().slice(0, 8)}`);
+  const second = await createCompleteWorkflow(request, `POC second ${crypto.randomUUID().slice(0, 8)}`);
+  const batchId = crypto.randomUUID();
+  let createCount = 0;
+  let pollCount = 0;
+
+  await page.route("**/api/run-batches**", async (route) => {
+    if (route.request().method() === "POST") {
+      createCount += 1;
+      await route.fulfill({ status: 202, json: { batchId, runCount: 2 } });
+      return;
+    }
+    pollCount += 1;
+    const terminal = pollCount > 1;
+    await route.fulfill({
+      status: 200,
+      json: {
+        batchId,
+        runs: [first, second].map((workflow: { id: string }, index: number) => ({
+          workflowId: workflow.id,
+          status: terminal ? "completed" : index === 0 ? "running" : "queued",
+          currentStep: terminal ? 1 : index === 0 ? 1 : 0,
+          totalSteps: 1,
+        })),
+      },
+    });
+  });
+
+  await page.goto("/automations");
+  await expect(page.getByText(first.name)).toBeVisible();
+  await page.getByRole("button", { name: "New folder" }).click();
+  await page.getByRole("textbox", { name: "Folder name" }).fill("POC batch");
+  await page.getByRole("button", { name: "Create folder" }).click();
+
+  for (const workflow of [first, second]) {
+    await page.getByRole("button", { name: "Add task" }).click();
+    await page.getByRole("combobox", { name: "Inbox task" }).selectOption(workflow.id);
+    await page.getByRole("button", { name: "Add task to POC batch" }).click();
+  }
+
+  await page.getByRole("button", { name: "Run folder" }).click();
+  await expect(page.getByText("Running · Step 1 of 1")).toBeVisible();
+  await expect(page.getByText("Queued")).toBeVisible();
+  const completedRuns = page.getByRole("region", { name: "Completed runs" });
+  await expect(completedRuns.getByRole("article")).toHaveCount(2, { timeout: 3_000 });
+  await expect(completedRuns).toContainText(first.name);
+  await expect(completedRuns).toContainText(second.name);
+  expect(createCount).toBe(1);
   expect(failedResources).toEqual([]);
   expect(consoleProblems).toEqual([]);
 });
