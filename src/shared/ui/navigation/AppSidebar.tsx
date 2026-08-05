@@ -17,7 +17,12 @@ const destinations = [
 export function AppSidebar({ activeDestination }: AppSidebarProps) {
   return (
     <aside className={styles.sidebar} aria-label="Primary navigation">
-      <Link className={styles.brand} href="/library" aria-label="Memory Recorder home">
+      <Link
+        className={styles.brand}
+        href="/library"
+        aria-label="Memory Recorder home"
+        title="Memory Recorder home"
+      >
         <span className={styles.brandMark}>
           <Radio size={17} aria-hidden="true" />
         </span>
@@ -30,6 +35,7 @@ export function AppSidebar({ activeDestination }: AppSidebarProps) {
             <Link
               className={`${styles.navItem} ${active ? styles.navItemActive : ""}`}
               href={href}
+              title={label}
               aria-current={active ? "page" : undefined}
               key={id}
             >

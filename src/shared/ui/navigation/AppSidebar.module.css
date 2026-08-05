@@ -86,3 +86,79 @@
   box-shadow: var(--shadow-sm);
   font-size: 13px;
 }
+
+@media (min-width: 1024px) {
+  .sidebar {
+    position: relative;
+    z-index: 10;
+    width: var(--app-sidebar-rail-width);
+    min-width: var(--app-sidebar-rail-width);
+    padding-inline: 8px;
+    overflow: hidden;
+    box-shadow: none;
+    transition: width .18s ease, box-shadow .18s ease;
+  }
+
+  .sidebar:hover,
+  .sidebar:focus-within {
+    width: var(--app-sidebar-expanded-width);
+    box-shadow: var(--shadow-md);
+  }
+
+  .brand,
+  .navigation,
+  .navItem {
+    width: 44px;
+    flex: 0 0 auto;
+    transition: width .18s ease;
+  }
+
+  .brand {
+    padding-inline: 7px;
+    white-space: nowrap;
+  }
+
+  .brandMark {
+    flex: 0 0 auto;
+  }
+
+  .navItem {
+    padding-inline: 13px;
+    white-space: nowrap;
+  }
+
+  .navItem > svg {
+    flex: 0 0 auto;
+  }
+
+  .brand > span:last-child,
+  .navItem > span {
+    opacity: 0;
+    transition: opacity .12s ease;
+  }
+
+  .sidebar:hover .brand,
+  .sidebar:hover .navigation,
+  .sidebar:hover .navItem,
+  .sidebar:focus-within .brand,
+  .sidebar:focus-within .navigation,
+  .sidebar:focus-within .navItem {
+    width: calc(var(--app-sidebar-expanded-width) - 16px);
+  }
+
+  .sidebar:hover .brand > span:last-child,
+  .sidebar:hover .navItem > span,
+  .sidebar:focus-within .brand > span:last-child,
+  .sidebar:focus-within .navItem > span {
+    opacity: 1;
+    transition-delay: .05s;
+  }
+
+  .navItemActive::before {
+    display: none;
+  }
+
+  .avatar {
+    margin-left: 4px;
+  }
+}

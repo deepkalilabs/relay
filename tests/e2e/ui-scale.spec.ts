@@ -43,6 +43,50 @@ for (const viewport of [
   });
 }
 
+test("expands the desktop product rail without moving page content", async ({ page }) => {
+  for (const viewport of [
+    { width: 1024, height: 768 },
+    { width: 1440, height: 960 },
+  ]) {
+    await page.setViewportSize(viewport);
+
+    for (const route of productRoutes) {
+      await page.goto(route.path);
+      await expect(page.getByRole("heading", { name: route.heading, level: 1 })).toBeVisible();
+
+      const sidebar = page.getByRole("complementary", { name: "Primary navigation" });
+      const content = page.getByRole("main");
+      const homeLink = sidebar.getByRole("link", { name: "Memory Recorder home" });
+      const libraryLink = sidebar.getByRole("link", { name: "Library" });
+      const collapsedSidebar = await sidebar.boundingBox();
+      const initialContent = await content.boundingBox();
+
+      expect(collapsedSidebar?.width).toBeCloseTo(60 * 0.8, 0);
+      await expect(homeLink).toHaveAttribute("title", "Memory Recorder home");
+      await expect(libraryLink).toHaveAttribute("title", "Library");
+      expect((await libraryLink.locator("svg").boundingBox())?.width).toBeCloseTo(17 * 0.8, 0);
+
+      await sidebar.hover();
+      await expect.poll(async () => (await sidebar.boundingBox())?.width).toBeCloseTo(216 * 0.8, 0);
+      const hoveredContent = await content.boundingBox();
+      expect(hoveredContent?.x).toBeCloseTo(initialContent?.x ?? 0, 0);
+
+      await page.mouse.move(600, 10);
+      await expect.poll(async () => (await sidebar.boundingBox())?.width).toBeCloseTo(60 * 0.8, 0);
+
+      await libraryLink.focus();
+      await expect.poll(async () => (await sidebar.boundingBox())?.width).toBeCloseTo(216 * 0.8, 0);
+      const focusedContent = await content.boundingBox();
+      expect(focusedContent?.x).toBeCloseTo(initialContent?.x ?? 0, 0);
+
+      await page.keyboard.press("Tab");
+      await page.keyboard.press("Tab");
+      await page.keyboard.press("Tab");
+      await expect.poll(async () => (await sidebar.boundingBox())?.width).toBeCloseTo(60 * 0.8, 0);
+    }
+  }
+});
+
 test("keeps automation dialogs inside the scaled viewport", async ({ page }) => {
   const viewport = { width: 1024, height: 768 };
   await page.setViewportSize(viewport);
