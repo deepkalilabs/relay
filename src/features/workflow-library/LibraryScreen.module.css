@@ -27,7 +27,7 @@
 .shell {
   min-height: var(--app-viewport-height);
   display: grid;
-  grid-template-columns: 216px minmax(0, 1fr);
+  grid-template-columns: var(--app-sidebar-rail-width) minmax(0, 1fr);
   background: var(--surface);
 }
 
@@ -643,7 +643,7 @@
 
 @media (min-width: 1024px) and (max-width: 1199px) {
   .shell {
-    grid-template-columns: 184px minmax(0, 1fr);
+    grid-template-columns: var(--app-sidebar-rail-width) minmax(0, 1fr);
   }
 
   .content {

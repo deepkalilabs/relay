@@ -6,8 +6,9 @@ import styles from "../AutomationsScreen.module.css";
 interface TaskPaneProps {
   folder: AutomationFolder;
   tasks: AutomationTask[];
+  runnableCount: number;
   includesNestedFolders: boolean;
-  simulationActive: boolean;
+  runActive: boolean;
   loading?: boolean;
   error?: string | null;
   invalidFileCount?: number;
@@ -19,8 +20,9 @@ interface TaskPaneProps {
 export function TaskPane({
   folder,
   tasks,
+  runnableCount,
   includesNestedFolders,
-  simulationActive,
+  runActive,
   loading = false,
   error = null,
   invalidFileCount = 0,
@@ -47,11 +49,11 @@ export function TaskPane({
           <button
             className={styles.primaryAction}
             type="button"
-            disabled={readOnly || loading || Boolean(error) || !tasks.length || simulationActive}
+            disabled={readOnly || loading || Boolean(error) || !runnableCount || runActive}
             onClick={onRun}
           >
             <Play size={14} fill="currentColor" aria-hidden="true" />
-            {simulationActive ? "Running folder…" : "Run folder"}
+            {runActive ? "Running folder…" : "Run folder"}
           </button>
           <button
             className={styles.secondaryAction}
@@ -101,7 +103,7 @@ export function TaskPane({
                     </span>
                   </th>
                   <td>{task.steps} {task.steps === 1 ? "step" : "steps"}</td>
-                  <td>{task.updated}</td>
+                  <td>{task.status === "draft" ? "Draft · " : ""}{task.updated}</td>
                   <td>
                     {!inboxSelected && !readOnly ? (
                       <button

@@ -4,6 +4,8 @@
   --app-ui-scale: 0.8;
   --app-ui-scale-inverse: 1.25;
   --app-viewport-height: 125dvh;
+  --app-sidebar-rail-width: 60px;
+  --app-sidebar-expanded-width: 216px;
   --ink: #152033;
   --muted: #64748b;
   --subtle: #8a98ab;

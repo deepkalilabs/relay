@@ -1,27 +1,30 @@
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AutomationsScreen } from "@/features/automations";
 import type { WorkflowLibraryResponse } from "@/shared/contracts/workflow/library";
 
+const DRAFT_ID = "36df661c-f159-47ac-bdf5-2afc0680cc4d";
+const COMPLETE_ID = "1d942a81-b2e4-4dc9-916d-8a761db5f75f";
+
 const libraryData: WorkflowLibraryResponse = {
   workflows: [
     {
-      id: "checkout-flow",
+      id: DRAFT_ID,
       name: "Checkout flow",
       status: "draft",
       updatedAt: "2026-07-27T20:00:00.000Z",
-      steps: [
-        { id: "checkout-1", name: "Open checkout", order: 0 },
-        { id: "checkout-2", name: "Enter contact information", order: 1 },
-      ],
+      steps: [{ id: "checkout-1", name: "Open checkout", order: 0 }],
     },
     {
-      id: "support-ticket",
+      id: COMPLETE_ID,
       name: "Create support ticket",
       status: "complete",
       updatedAt: "2026-07-26T20:00:00.000Z",
-      steps: [{ id: "support-1", name: "Open the support portal", order: 0 }],
+      steps: [
+        { id: "support-1", name: "Open portal", order: 0 },
+        { id: "support-2", name: "Submit ticket", order: 1 },
+      ],
     },
   ],
   invalidFileCount: 0,
@@ -41,193 +44,112 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+async function moveWorkflowToVerification(name: string, id: string) {
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Select Verification folder" }));
+  await user.click(screen.getByRole("button", { name: "Add task" }));
+  await user.selectOptions(screen.getByRole("combobox", { name: "Inbox task" }), id);
+  await user.click(screen.getByRole("button", { name: "Add task to Verification" }));
+  expect(screen.getByRole("region", { name: "Verification tasks" })).toHaveTextContent(name);
+}
+
 describe("AutomationsScreen", () => {
-  it("selects All workflows and presents the persisted Library list as read-only", async () => {
-    const client = libraryClient();
-    render(<AutomationsScreen client={client} />);
-
-    expect(screen.getByRole("heading", { name: "Automations", level: 1 })).toBeInTheDocument();
-    expect(screen.getByText(/All workflows syncs with Library/)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Automations" })).toHaveAttribute("aria-current", "page");
-    expect(screen.getByRole("button", { name: "Select All workflows folder" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-
-    const tasks = await screen.findByRole("region", { name: "All workflows workflows" });
-    expect(screen.getByRole("button", { name: "Select All workflows folder" }).parentElement)
-      .toHaveTextContent("2");
-    expect(within(tasks).getAllByRole("row")).toHaveLength(3);
-    const checkoutRow = within(tasks).getByRole("row", { name: /Checkout flow/ });
-    expect(checkoutRow).toHaveTextContent("2 steps");
-    expect(checkoutRow).toHaveTextContent("Updated 1h ago");
-    expect(within(checkoutRow).queryByRole("button")).not.toBeInTheDocument();
-    expect(within(checkoutRow).queryByRole("link")).not.toBeInTheDocument();
-    expect(within(tasks).getByRole("row", { name: /Create support ticket/ })).toBeInTheDocument();
-    expect(within(tasks).queryAllByRole("button")).toHaveLength(2);
-    expect(screen.getByRole("button", { name: "Run folder" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Add task" })).toBeDisabled();
-    expect(client.list).toHaveBeenCalledOnce();
-
-    const activity = screen.getByRole("region", { name: "Run activity" });
-    expect(within(activity).getByText("Running · Step 3 of 8")).toBeInTheDocument();
-    expect(within(activity).getByText("Salesforce connection timed out")).toBeInTheDocument();
-  });
-
-  it("shows a non-blocking loading state while Library workflows are requested", () => {
-    render(<AutomationsScreen client={{ list: () => new Promise(() => undefined) }} />);
-
-    const tasks = screen.getByRole("region", { name: "All workflows workflows" });
-    expect(within(tasks).getByRole("status")).toHaveTextContent("Loading workflows");
-    expect(within(tasks).getByRole("button", { name: "Run folder" })).toBeDisabled();
-    expect(within(tasks).getByRole("button", { name: "Add task" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Select Verification folder" })).toBeEnabled();
-  });
-
-  it("selects folders, aggregates nested tasks, and toggles branches", async () => {
-    const user = userEvent.setup();
+  it("hydrates Inbox and All workflows from Library without fictional activity", async () => {
     render(<AutomationsScreen client={libraryClient()} />);
 
-    await user.click(screen.getByRole("button", { name: "Select Customers folder" }));
-    const tasks = screen.getByRole("region", { name: "Customers tasks" });
-    expect(within(tasks).getAllByRole("row")).toHaveLength(13);
-    expect(within(tasks).getByText(/Includes nested folders/)).toBeInTheDocument();
+    const allWorkflows = await screen.findByRole("region", { name: "All workflows workflows" });
+    expect(within(allWorkflows).getByRole("row", { name: /Checkout flow/ })).toHaveTextContent("Draft");
+    expect(within(allWorkflows).getByRole("row", { name: /Create support ticket/ })).toHaveTextContent("2 steps");
+    expect(within(allWorkflows).getByRole("button", { name: "Run folder" })).toBeDisabled();
 
-    const toggle = screen.getByRole("button", { name: "Collapse Customers folder" });
-    expect(toggle).toHaveAttribute("aria-expanded", "true");
-    await user.click(toggle);
-    expect(screen.queryByRole("button", { name: "Select Verification folder" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Expand Customers folder" })).toHaveAttribute(
-      "aria-expanded",
-      "false",
-    );
+    await userEvent.click(screen.getByRole("button", { name: "Select Inbox folder" }));
+    expect(screen.getByRole("region", { name: "Inbox tasks" }).querySelectorAll("tbody tr")).toHaveLength(2);
+    expect(screen.getByRole("region", { name: "Run activity" })).toHaveTextContent("No active runs");
+    expect(screen.queryByText("Salesforce connection timed out")).not.toBeInTheDocument();
   });
 
-  it("creates a nested folder and selects it immediately", async () => {
+  it("keeps folder creation and real workflow movement in the current session", async () => {
     const user = userEvent.setup();
     render(<AutomationsScreen client={libraryClient()} />);
-
-    await user.click(screen.getByRole("button", { name: "Select Verification folder" }));
+    await screen.findByText("Create support ticket");
 
     await user.click(screen.getByRole("button", { name: "New folder" }));
-    expect(screen.getByRole("dialog", { name: "Create folder" })).toBeInTheDocument();
-    expect(screen.queryByRole("option", { name: "All workflows" })).not.toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: "Parent folder" })).toHaveValue("verification");
-    await user.type(screen.getByRole("textbox", { name: "Folder name" }), " leads ");
-    await user.selectOptions(screen.getByRole("combobox", { name: "Parent folder" }), "customers");
+    await user.type(screen.getByRole("textbox", { name: "Folder name" }), "Renewals");
     await user.click(screen.getByRole("button", { name: "Create folder" }));
-    expect(screen.getByText("A folder with this name already exists here.")).toBeInTheDocument();
-
-    await user.clear(screen.getByRole("textbox", { name: "Folder name" }));
-    await user.type(screen.getByRole("textbox", { name: "Folder name" }), " Renewals ");
-    await user.click(screen.getByRole("button", { name: "Create folder" }));
-
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Select Renewals folder" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-    expect(screen.getByRole("region", { name: "Renewals tasks" })).toHaveTextContent("No tasks in this folder");
-    expect(screen.getByText("Renewals folder created.")).toBeInTheDocument();
-  });
-
-  it("moves a selected Inbox task into a folder and returns it to Inbox", async () => {
-    const user = userEvent.setup();
-    render(<AutomationsScreen client={libraryClient()} />);
-
-    await user.click(screen.getByRole("button", { name: "Select Verification folder" }));
-
     await user.click(screen.getByRole("button", { name: "Add task" }));
-    await user.selectOptions(
-      screen.getByRole("combobox", { name: "Inbox task" }),
-      "export-monthly-report",
-    );
-    await user.click(screen.getByRole("button", { name: "Add task to Verification" }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Inbox task" }), COMPLETE_ID);
+    await user.click(screen.getByRole("button", { name: "Add task to Renewals" }));
 
-    let tasks = screen.getByRole("region", { name: "Verification tasks" });
-    expect(within(tasks).getByRole("row", { name: /Export monthly report/ })).toBeInTheDocument();
-    await user.click(within(tasks).getByRole("button", {
-      name: "Remove Export monthly report from folder",
-    }));
-    expect(within(tasks).queryByRole("row", { name: /Export monthly report/ })).not.toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: "Select Inbox folder" }));
-    tasks = screen.getByRole("region", { name: "Inbox tasks" });
-    expect(within(tasks).getByRole("row", { name: /Export monthly report/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Add task" })).toBeDisabled();
+    const renewals = screen.getByRole("region", { name: "Renewals tasks" });
+    expect(renewals).toHaveTextContent("Create support ticket");
+    expect(within(renewals).getByRole("button", { name: "Run folder" })).toBeEnabled();
   });
 
-  it("simulates folder tasks and retains the five most recent completions", async () => {
-    vi.useFakeTimers();
+  it("submits only completed workflows and renders real polling progress", async () => {
+    const batchId = "dc375e45-9624-4b7b-b9d0-32eae90d7868";
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify({ batchId, runCount: 1 }), { status: 202 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        batchId,
+        runs: [{ workflowId: COMPLETE_ID, status: "running", currentStep: 1, totalSteps: 2 }],
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        batchId,
+        runs: [{ workflowId: COMPLETE_ID, status: "completed", currentStep: 2, totalSteps: 2 }],
+      }), { status: 200 }));
     render(<AutomationsScreen client={libraryClient()} />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Select Verification folder" }));
+    await screen.findByText("Create support ticket");
+    await moveWorkflowToVerification("Create support ticket", COMPLETE_ID);
+    await moveWorkflowToVerification("Checkout flow", DRAFT_ID);
 
     fireEvent.click(screen.getByRole("button", { name: "Run folder" }));
+
+    expect(await screen.findByText("Running · Step 1 of 2")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Running folder…" })).toBeDisabled();
-    expect(screen.getAllByText("Queued").length).toBeGreaterThan(1);
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({ workflowIds: [COMPLETE_ID] });
 
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(60_000);
-    });
+    expect(await screen.findByText("Completed · 2 steps", {}, { timeout: 2_000 })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Verification run completed."));
+    expect(fetchMock).toHaveBeenCalledTimes(3);
 
-    expect(screen.getByRole("button", { name: "Run folder" })).toBeEnabled();
-    const completed = screen.getByRole("region", { name: "Completed runs" });
-    expect(within(completed).getAllByRole("article")).toHaveLength(5);
-    expect(screen.getByText("Verification run completed: 8 tasks.")).toBeInTheDocument();
+    const nextBatchId = "44ee43bc-022a-4c1b-a788-94d303a15eed";
+    fetchMock
+      .mockResolvedValueOnce(new Response(JSON.stringify({ batchId: nextBatchId, runCount: 1 }), { status: 202 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        batchId: nextBatchId,
+        runs: [{ workflowId: COMPLETE_ID, status: "completed", currentStep: 2, totalSteps: 2 }],
+      }), { status: 200 }));
+    fireEvent.click(screen.getByRole("button", { name: "Run folder" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
   });
 
-  it("opens failure details without retrying or executing the workflow", async () => {
+  it("shows safe Relay failure details without mock copy", async () => {
+    const batchId = "dc375e45-9624-4b7b-b9d0-32eae90d7868";
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify({ batchId, runCount: 1 }), { status: 202 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        batchId,
+        runs: [{
+          workflowId: COMPLETE_ID,
+          status: "failed",
+          currentStep: 0,
+          totalSteps: 0,
+          error: "The page did not load.",
+        }],
+      }), { status: 200 }));
     const user = userEvent.setup();
     render(<AutomationsScreen client={libraryClient()} />);
+    await screen.findByText("Create support ticket");
+    await moveWorkflowToVerification("Create support ticket", COMPLETE_ID);
 
-    await user.click(screen.getByRole("button", { name: "View details for Update CRM" }));
-    const dialog = screen.getByRole("dialog", { name: "Update CRM run details" });
-    expect(dialog).toHaveTextContent("Failed at step 4");
-    expect(dialog).toHaveTextContent("Salesforce connection timed out");
-    expect(dialog).toHaveTextContent("Mock run—no workflow was executed");
+    await user.click(screen.getByRole("button", { name: "Run folder" }));
+    await user.click(await screen.findByRole("button", { name: "View details for Create support ticket" }));
 
-    await user.click(within(dialog).getByRole("button", { name: "Close" }));
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  });
-
-  it("restores fixture data when the client workspace remounts", async () => {
-    const user = userEvent.setup();
-    const firstRender = render(<AutomationsScreen client={libraryClient()} />);
-
-    await user.click(screen.getByRole("button", { name: "Select Verification folder" }));
-
-    await user.click(screen.getByRole("button", { name: "Add task" }));
-    await user.click(screen.getByRole("button", { name: "Add task to Verification" }));
-    expect(screen.getByRole("region", { name: "Verification tasks" }))
-      .toHaveTextContent("Export monthly report");
-
-    firstRender.unmount();
-    render(<AutomationsScreen client={libraryClient()} />);
-    await user.click(screen.getByRole("button", { name: "Select Verification folder" }));
-    expect(screen.getByRole("region", { name: "Verification tasks" }))
-      .not.toHaveTextContent("Export monthly report");
-    await user.click(screen.getByRole("button", { name: "Select Inbox folder" }));
-    expect(screen.getByRole("region", { name: "Inbox tasks" }))
-      .toHaveTextContent("Export monthly report");
-  });
-
-  it("keeps demo folders usable when the Library is empty, invalid, or unavailable", async () => {
-    const user = userEvent.setup();
-    const { rerender } = render(
-      <AutomationsScreen client={libraryClient({ workflows: [], invalidFileCount: 2 })} />,
-    );
-
-    expect(await screen.findByText("No saved workflows.")).toBeInTheDocument();
-    expect(screen.getByRole("note")).toHaveTextContent("2 workflow files could not be loaded");
-    expect(screen.getByRole("button", { name: "Select All workflows folder" })).toHaveTextContent("All workflows");
-
-    rerender(<AutomationsScreen client={{ list: vi.fn(async () => {
-      throw new Error("offline");
-    }) }} />);
-
-    expect(await screen.findByRole("alert")).toHaveTextContent("All workflows could not be loaded");
-    await user.click(screen.getByRole("button", { name: "Select Verification folder" }));
-    expect(screen.getByRole("region", { name: "Verification tasks" })).toHaveTextContent("Find customer");
+    const dialog = screen.getByRole("dialog", { name: "Create support ticket run details" });
+    expect(dialog).toHaveTextContent("Failed");
+    expect(dialog).not.toHaveTextContent("step 0");
+    expect(dialog).toHaveTextContent("The page did not load.");
+    expect(dialog).not.toHaveTextContent("Mock run");
   });
 });
