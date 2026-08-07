@@ -106,6 +106,9 @@ export function AutomationsScreen({ client = workflowListClient }: AutomationsSc
       thumbnail: task?.thumbnail,
       detail: run.error,
       failedStep: run.status === "failed" && run.currentStep > 0 ? run.currentStep : undefined,
+      screenshot: run.status === "failed" || run.status === "completed"
+        ? run.screenshot
+        : undefined,
     };
   }), [batch.runs, state.tasks]);
   const detailRun = runs.find((run) => run.id === detailRunKey);

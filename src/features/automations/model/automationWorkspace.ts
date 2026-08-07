@@ -20,6 +20,12 @@ export interface AutomationTask {
   folderId: string;
 }
 
+export interface AutomationRunScreenshot {
+  url: string;
+  width: number;
+  height: number;
+}
+
 export interface AutomationRun {
   id: string;
   taskId: string;
@@ -31,6 +37,7 @@ export interface AutomationRun {
   thumbnail?: AutomationThumbnailVariant;
   detail?: string;
   failedStep?: number;
+  screenshot?: AutomationRunScreenshot;
 }
 
 export interface AutomationWorkspaceState {

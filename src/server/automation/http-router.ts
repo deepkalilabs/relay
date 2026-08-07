@@ -18,17 +18,31 @@ const CreateResponse = z.object({
   batchId: z.uuid(),
   runCount: z.number().int().min(1).max(10),
 }).strict();
+const RelayArtifactUrl = z.string().regex(/^\/v1\/artifacts\/[0-9a-fA-F-]{36}$/).refine(
+  (url) => z.uuid().safeParse(url.slice("/v1/artifacts/".length)).success,
+  "Artifact URL must contain a UUID.",
+);
+const RelayThumbnail = z.object({
+  url: RelayArtifactUrl,
+  mediaType: z.literal("image/webp"),
+  width: z.number().int().min(1).max(480),
+  height: z.number().int().min(1).max(300),
+  expiresAt: z.iso.datetime(),
+}).strict();
 const RelayRunSnapshot = z.object({
   workflowId: z.uuid(),
   status: z.enum(["queued", "running", "completed", "failed"]),
   currentStep: z.number().int().nonnegative().optional(),
   totalSteps: z.number().int().nonnegative().optional(),
+  thumbnail: RelayThumbnail.optional(),
 }).refine((run) => {
   if (run.currentStep === undefined || run.totalSteps === undefined) {
     return run.currentStep === run.totalSteps;
   }
   return run.currentStep <= run.totalSteps;
-});
+}).refine((run) => (
+  !run.thumbnail || run.status === "completed" || run.status === "failed"
+), "Only terminal runs may include thumbnails.");
 const RelayPollResponse = z.object({
   batchId: z.uuid(),
   runs: z.array(RelayRunSnapshot).min(1).max(10),
@@ -39,15 +53,27 @@ const RelayPollResponse = z.object({
     status: run.status,
     currentStep: run.currentStep ?? 0,
     totalSteps: run.totalSteps ?? 0,
+    ...(run.thumbnail ? {
+      screenshot: {
+        url: `/api/run-artifacts/${run.thumbnail.url.slice("/v1/artifacts/".length)}`,
+        width: run.thumbnail.width,
+        height: run.thumbnail.height,
+      },
+    } : {}),
   })),
 }));
 
 type CreateResult = z.infer<typeof CreateResponse>;
 type PollResult = z.infer<typeof RelayPollResponse>;
+export interface RunArtifact {
+  bytes: Buffer;
+  mediaType: "image/webp";
+}
 
 export interface AutomationBatchService {
   create(workflows: Workflow[]): Promise<CreateResult>;
   get(batchId: string): Promise<PollResult>;
+  getArtifact(artifactId: string): Promise<RunArtifact>;
 }
 
 class SafeBatchError extends Error {
@@ -79,8 +105,15 @@ export function createAutomationBatchService(
   const token = environment.AUTOMATION_SERVICE_TOKEN?.trim();
   if (!baseUrlValue || !token) return null;
   const baseUrl = parseBaseUrl(baseUrlValue);
+  const maxArtifactBytes = 100 * 1024;
 
-  const request = async <T>(pathname: string, init: RequestInit, status: number, schema: z.ZodType<T>) => {
+  const request = async <T>(
+    pathname: string,
+    init: RequestInit,
+    status: number,
+    schema: z.ZodType<T>,
+    notFoundMessage?: string,
+  ) => {
     let response: Response;
     try {
       response = await fetchRelay(new URL(pathname, baseUrl), {
@@ -95,11 +128,58 @@ export function createAutomationBatchService(
     } catch {
       throw new SafeBatchError(503, "The automation service is unavailable.");
     }
-    if (response.status === 404) throw new SafeBatchError(404, "The background run was not found.");
+    if (response.status === 404 && notFoundMessage) throw new SafeBatchError(404, notFoundMessage);
     if (response.status !== status) throw new SafeBatchError(503, "The automation service is unavailable.");
     const parsed = schema.safeParse(await response.json().catch(() => undefined));
     if (!parsed.success) throw new SafeBatchError(502, "The automation service returned an invalid response.");
     return parsed.data;
+  };
+
+  const getArtifact = async (artifactId: string): Promise<RunArtifact> => {
+    let response: Response;
+    try {
+      response = await fetchRelay(new URL(`v1/artifacts/${encodeURIComponent(artifactId)}`, baseUrl), {
+        method: "GET",
+        headers: {
+          accept: "image/webp",
+          authorization: `Bearer ${token}`,
+        },
+        signal: AbortSignal.timeout(10_000),
+      });
+    } catch {
+      throw new SafeBatchError(503, "The run screenshot is temporarily unavailable.");
+    }
+    if (response.status === 404) throw new SafeBatchError(404, "The run screenshot was not found.");
+    if (response.status !== 200) throw new SafeBatchError(503, "The run screenshot is temporarily unavailable.");
+
+    const mediaType = response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
+    const declaredSize = Number(response.headers.get("content-length"));
+    if (mediaType !== "image/webp"
+      || (Number.isFinite(declaredSize) && declaredSize > maxArtifactBytes)
+      || !response.body) {
+      throw new SafeBatchError(502, "The automation service returned an invalid screenshot.");
+    }
+
+    const reader = response.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        size += value.byteLength;
+        if (size > maxArtifactBytes) {
+          await reader.cancel();
+          throw new SafeBatchError(502, "The automation service returned an invalid screenshot.");
+        }
+        chunks.push(value);
+      }
+    } catch (error) {
+      if (error instanceof SafeBatchError) throw error;
+      throw new SafeBatchError(503, "The run screenshot is temporarily unavailable.");
+    }
+    if (size === 0) throw new SafeBatchError(502, "The automation service returned an invalid screenshot.");
+    return { bytes: Buffer.concat(chunks.map((chunk) => Buffer.from(chunk))), mediaType: "image/webp" };
   };
 
   return {
@@ -113,7 +193,9 @@ export function createAutomationBatchService(
       { method: "GET" },
       200,
       RelayPollResponse,
+      "The background run was not found.",
     ),
+    getArtifact,
   };
 }
 
@@ -121,7 +203,17 @@ function sendJson(response: ServerResponse, status: number, value: unknown): voi
   response.statusCode = status;
   response.setHeader("content-type", "application/json; charset=utf-8");
   response.setHeader("cache-control", "no-store");
+  response.setHeader("x-content-type-options", "nosniff");
   response.end(JSON.stringify(value));
+}
+
+function sendArtifact(response: ServerResponse, artifact: RunArtifact): void {
+  response.statusCode = 200;
+  response.setHeader("content-type", artifact.mediaType);
+  response.setHeader("content-length", artifact.bytes.length);
+  response.setHeader("cache-control", "no-store");
+  response.setHeader("x-content-type-options", "nosniff");
+  response.end(artifact.bytes);
 }
 
 async function readJson(request: IncomingMessage): Promise<unknown> {
@@ -169,12 +261,24 @@ export async function handleAutomationBatchApi(
   service: AutomationBatchService | null,
 ): Promise<boolean> {
   const segments = new URL(request.url ?? "/", "http://localhost").pathname.split("/").filter(Boolean);
-  if (segments[0] !== "api" || segments[1] !== "run-batches") return false;
+  const isBatchRoute = segments[0] === "api" && segments[1] === "run-batches";
+  const isArtifactRoute = segments[0] === "api" && segments[1] === "run-artifacts";
+  if (!isBatchRoute && !isArtifactRoute) return false;
   if (!service) {
     sendJson(response, 503, { error: "Background runs are not configured." });
     return true;
   }
   try {
+    if (isArtifactRoute && segments.length === 3 && request.method === "GET") {
+      const artifactId = z.uuid().safeParse(segments[2]);
+      if (!artifactId.success) throw new SafeBatchError(400, "The run screenshot request is invalid.");
+      sendArtifact(response, await service.getArtifact(artifactId.data));
+      return true;
+    }
+    if (isArtifactRoute) {
+      sendJson(response, 405, { error: "Method not allowed." });
+      return true;
+    }
     if (segments.length === 2 && request.method === "POST") {
       const { workflowIds } = CreateRequest.parse(await readJson(request));
       const workflows = await Promise.all(workflowIds.map((id) => repository.get(id)));
