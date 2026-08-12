@@ -19,10 +19,15 @@ interface AssertionStepDialogProps {
 
 export function AssertionStepDialog({ open, order, selection, onClose, onInsert }: AssertionStepDialogProps) {
   if (!selection) return null;
-  return <AssertionStepDialogForm key={selection.requestId} open={open} order={order} selection={selection} onClose={onClose} onInsert={onInsert} />;
+  return selection.kind === "group"
+    ? <GroupAssertionStepDialogForm key={selection.requestId} open={open} order={order} selection={selection} onClose={onClose} onInsert={onInsert} />
+    : <ElementAssertionStepDialogForm key={selection.requestId} open={open} order={order} selection={selection} onClose={onClose} onInsert={onInsert} />;
 }
 
-function AssertionStepDialogForm({ open, order, selection, onClose, onInsert }: Omit<AssertionStepDialogProps, "selection"> & { selection: SelectedAssertionTarget }) {
+type ElementAssertionSelection = Extract<SelectedAssertionTarget, { kind: "element" }>;
+type GroupAssertionSelection = Extract<SelectedAssertionTarget, { kind: "group" }>;
+
+function ElementAssertionStepDialogForm({ open, order, selection, onClose, onInsert }: Omit<AssertionStepDialogProps, "selection"> & { selection: ElementAssertionSelection }) {
   const hasText = Boolean(selection.text.trim());
   const [name, setName] = useState(() => hasText ? `${selection.name} contains text` : `${selection.name} is visible`);
   const [kind, setKind] = useState<"visible" | "text_contains">(() => hasText ? "text_contains" : "visible");
@@ -73,6 +78,59 @@ function AssertionStepDialogForm({ open, order, selection, onClose, onInsert }: 
           </div>
         ) : null}
         <p className="assertion-target-summary"><ShieldCheck size={15} aria-hidden="true" /> {selection.target.candidates?.length ?? 0} locator candidates captured</p>
+        {error ? <p className="field-error" role="alert">{error}</p> : null}
+      </div>
+      <div className="modal-actions">
+        <button className="button button-ghost" type="button" onClick={onClose}>Cancel</button>
+        <button className="button button-primary" type="button" onClick={submit}><ShieldCheck size={16} /> Add assertion</button>
+      </div>
+    </Modal>
+  );
+}
+
+function GroupAssertionStepDialogForm({ open, order, selection, onClose, onInsert }: Omit<AssertionStepDialogProps, "selection"> & { selection: GroupAssertionSelection }) {
+  const [name, setName] = useState(() => `${selection.name} exists`);
+  const [error, setError] = useState("");
+
+  const submit = () => {
+    const candidate = {
+      id: crypto.randomUUID(),
+      order,
+      name,
+      enabled: true,
+      page: selection.page,
+      groupTarget: selection.groupTarget,
+      position: selection.position,
+      expectation: { kind: "group_exists" as const },
+      metadata: { recordedAt: new Date().toISOString(), origin: "manual" as const, sensitive: false },
+      type: "assertion" as const,
+    };
+    const parsed = WorkflowStepSchema.safeParse(candidate);
+    if (!parsed.success || parsed.data.type !== "assertion") {
+      setError(parsed.success ? "The assertion is invalid." : parsed.error.issues[0]?.message ?? "Check the assertion details.");
+      return;
+    }
+    onInsert(parsed.data);
+    onClose();
+  };
+
+  const rootSummary = [selection.groupTarget.root.tagName, selection.groupTarget.root.role]
+    .filter(Boolean)
+    .join(" · ");
+
+  return (
+    <Modal open={open} title="Add group assertion" description="Replay will pass when at least one visible container matches this structural template." onClose={onClose}>
+      <div className="modal-form">
+        <div className="field">
+          <label htmlFor="group-assertion-step-name">Step name</label>
+          <input id="group-assertion-step-name" value={name} onChange={(event) => setName(event.target.value)} autoFocus />
+        </div>
+        <div className="field">
+          <label htmlFor="group-assertion-expectation">Expectation</label>
+          <input id="group-assertion-expectation" value="Group exists" readOnly aria-readonly="true" />
+        </div>
+        <p className="assertion-target-summary"><ShieldCheck size={15} aria-hidden="true" /> {selection.groupTarget.capturedMatchCount} matches captured</p>
+        <p className="assertion-target-summary">{rootSummary} · {selection.groupTarget.structureTokens.length} structural tokens · {selection.groupTarget.algorithm}</p>
         {error ? <p className="field-error" role="alert">{error}</p> : null}
       </div>
       <div className="modal-actions">

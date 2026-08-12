@@ -6,6 +6,7 @@ import type { ReplayStepResultState } from "@/shared/contracts/protocol";
 import {
   locatorKinds,
   MAX_ASSERTION_TEXT_LENGTH,
+  isGroupExistsAssertion,
   type LocatorCandidate,
   type ViewportPosition,
   type WorkflowStep,
@@ -116,7 +117,14 @@ export function StepEditor({ step, onUpdate, onCollapse, locked = false, reviewL
                 <label className="field"><span>Key</span><input value={step.payload.key} onChange={(event) => updatePayload("key", event.target.value)} /></label>
                 <div className="key-preview"><KeyRound size={14} />{[...step.payload.modifiers, step.payload.key].join(" + ")}</div>
               </> : null}
-              {step.type === "assertion" ? <>
+              {step.type === "assertion" && isGroupExistsAssertion(step) ? <>
+                <label className="field field-wide"><span>Expectation</span><input value="Group exists" readOnly aria-readonly="true" /></label>
+                <label className="field"><span>Root element</span><input value={step.groupTarget.root.tagName} readOnly aria-readonly="true" /></label>
+                <label className="field"><span>Root role</span><input value={step.groupTarget.root.role ?? "None"} readOnly aria-readonly="true" /></label>
+                <label className="field"><span>Captured matches</span><input value={step.groupTarget.capturedMatchCount} readOnly aria-readonly="true" /></label>
+                <label className="field"><span>Matcher</span><input value={step.groupTarget.algorithm} readOnly aria-readonly="true" /></label>
+                <label className="field field-wide"><span>Structural tokens</span><textarea value={step.groupTarget.structureTokens.join("\n")} readOnly aria-readonly="true" rows={Math.min(8, step.groupTarget.structureTokens.length)} /></label>
+              </> : step.type === "assertion" ? <>
                 <label className="field field-wide">
                   <span>Expectation</span>
                   <select
@@ -168,7 +176,9 @@ export function StepEditor({ step, onUpdate, onCollapse, locked = false, reviewL
           <div className="editor-divider" />
           <section className="editor-section locator-editor" aria-labelledby="locator-details-title">
             <div id="locator-details-title" className="editor-section-title"><Crosshair size={15} /><span>Locator candidates</span><small>{candidates.length}</small></div>
-            {step.target ? (
+            {step.type === "assertion" && isGroupExistsAssertion(step) ? (
+              <p className="muted-copy">This assertion uses a read-only structural group template instead of element locators.</p>
+            ) : step.target ? (
               <div className="locator-list">
                 {candidates.map((candidate, index) => (
                   <div className="locator-card" key={`${candidate.kind}-${index}`}>

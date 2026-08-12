@@ -16,6 +16,7 @@ import {
 import {
   ElementTargetSchema,
   orderLocatorCandidates,
+  RepeatedGroupTemplateSchema,
   ViewportPositionSchema,
 } from "@/shared/contracts/workflow/schema";
 import { preflightReplay, ReplayEngine } from "@/server/replay/engine";
@@ -90,6 +91,13 @@ const AssertionPickerBrowserEventSchema = z.discriminatedUnion("type", [
     name: z.string().min(1),
     text: z.string().max(MAX_ASSERTION_TEXT_LENGTH),
     target: ElementTargetSchema,
+    position: ViewportPositionSchema,
+  }),
+  z.object({
+    type: z.literal("assertion-picker.group-selected"),
+    requestId: z.string().uuid(),
+    name: z.string().min(1),
+    groupTarget: RepeatedGroupTemplateSchema,
     position: ViewportPositionSchema,
   }),
   z.object({ type: z.literal("assertion-picker.cancelled"), requestId: z.string().uuid() }),
@@ -610,6 +618,21 @@ export class RecordingRuntime {
     }
     this.pendingAssertionPick = null;
     this.applyAssertionPickerToPage(state, null);
+    if (event.type === "assertion-picker.group-selected") {
+      this.emit({
+        type: "assertion.pick.groupSelected",
+        requestId: event.requestId,
+        name: event.name,
+        groupTarget: event.groupTarget,
+        position: event.position,
+        page: {
+          id: state.id,
+          url: state.page.url(),
+          title: await state.page.title().catch(() => undefined),
+        },
+      });
+      return;
+    }
     this.emit({
       type: "assertion.pick.selected",
       requestId: event.requestId,

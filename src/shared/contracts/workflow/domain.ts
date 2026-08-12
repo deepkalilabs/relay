@@ -194,11 +194,38 @@ export type AssertionExpectation =
   | { kind: "visible" }
   | { kind: "text_contains"; expected: string };
 
-export type AssertionStep = ElementWorkflowStepBase & {
+export type RepeatedGroupTemplate = {
+  version: 1;
+  algorithm: "structural-token-v1";
+  frameUrl?: string;
+  root: {
+    tagName: string;
+    role?: string;
+    sharedClasses: string[];
+  };
+  structureTokens: string[];
+  capturedMatchCount: number;
+};
+
+export type ElementAssertionStep = ElementWorkflowStepBase & {
   type: "assertion";
   expectation: AssertionExpectation;
   waitAfter?: never;
 };
+
+export type GroupExistsAssertionStep = WorkflowStepBase & {
+  type: "assertion";
+  groupTarget: RepeatedGroupTemplate;
+  expectation: { kind: "group_exists" };
+  target?: never;
+  waitAfter?: never;
+};
+
+export type AssertionStep = ElementAssertionStep | GroupExistsAssertionStep;
+
+export function isGroupExistsAssertion(step: WorkflowStep): step is GroupExistsAssertionStep {
+  return step.type === "assertion" && step.expectation.kind === "group_exists";
+}
 
 export type ActionStep =
   | NavigateStep
@@ -218,7 +245,7 @@ export type WorkflowActionType = ActionStep["type"];
 export type WorkflowStatus = "draft" | "complete";
 
 export type Workflow = {
-  schemaVersion: "1.3";
+  schemaVersion: "1.4";
   id: string;
   name: string;
   status: WorkflowStatus;

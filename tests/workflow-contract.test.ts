@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { RecordedActionSchema } from "@/shared/contracts/recording/recorded-action";
-import type { AssertionStep, Workflow } from "@/shared/contracts/workflow/domain";
+import type { ElementAssertionStep, GroupExistsAssertionStep, RepeatedGroupTemplate, Workflow } from "@/shared/contracts/workflow/domain";
+import { repeatedGroupSimilarity } from "@/shared/contracts/workflow/repeated-group";
 import {
   CompatibleWorkflowSchema,
   WorkflowSchema,
@@ -47,7 +48,7 @@ function navigateStep() {
   };
 }
 
-function workflow(schemaVersion: "1.0" | "1.1" | "1.2" | "1.3", step: unknown = fillStep()) {
+function workflow(schemaVersion: "1.0" | "1.1" | "1.2" | "1.3" | "1.4", step: unknown = fillStep()) {
   return {
     schemaVersion,
     id: "workflow-1",
@@ -67,10 +68,10 @@ function workflow(schemaVersion: "1.0" | "1.1" | "1.2" | "1.3", step: unknown = 
 }
 
 describe("workflow parameter binding contract", () => {
-  it("creates canonical workflow schema 1.3 documents", () => {
+  it("creates canonical workflow schema 1.4 documents", () => {
     const created = createWorkflow();
 
-    expect(created.schemaVersion).toBe("1.3");
+    expect(created.schemaVersion).toBe("1.4");
     expect(WorkflowSchema.parse(created)).toEqual(created);
   });
 
@@ -78,7 +79,7 @@ describe("workflow parameter binding contract", () => {
     const step = fillStep();
     delete (step as Partial<typeof step>).parameterBinding;
 
-    expect(WorkflowSchema.safeParse(workflow("1.3", step)).success).toBe(false);
+    expect(WorkflowSchema.safeParse(workflow("1.4", step)).success).toBe(false);
   });
 
   it("rejects fill steps from legacy schema 1.0 and 1.1 workflows", () => {
@@ -99,17 +100,17 @@ describe("workflow parameter binding contract", () => {
     ];
 
     for (const parameterBinding of bindings) {
-      expect(WorkflowSchema.safeParse(workflow("1.3", fillStep(parameterBinding))).success).toBe(true);
+      expect(WorkflowSchema.safeParse(workflow("1.4", fillStep(parameterBinding))).success).toBe(true);
     }
   });
 
   it("caps fixed literals at 10,000 characters", () => {
     expect(WorkflowSchema.safeParse(workflow(
-      "1.3",
+      "1.4",
       fillStep({ source: "fixed", value: "a".repeat(10_000) }),
     )).success).toBe(true);
     expect(WorkflowSchema.safeParse(workflow(
-      "1.3",
+      "1.4",
       fillStep({ source: "fixed", value: "a".repeat(10_001) }),
     )).success).toBe(false);
   });
@@ -121,19 +122,19 @@ describe("workflow parameter binding contract", () => {
       payload: {},
       parameterBinding: { source: "recorded" },
     };
-    expect(WorkflowSchema.safeParse(workflow("1.3", click)).success).toBe(false);
+    expect(WorkflowSchema.safeParse(workflow("1.4", click)).success).toBe(false);
     expect(WorkflowSchema.safeParse(workflow(
-      "1.3",
+      "1.4",
       fillStep({ source: "profile", field: "identity.fullName", value: "Leaked Person" }),
     )).success).toBe(false);
     expect(WorkflowSchema.safeParse(workflow(
-      "1.3",
+      "1.4",
       fillStep({ source: "runtime", value: "Leaked runtime value" }),
     )).success).toBe(false);
   });
 
   it("exposes the canonical binding type on fill steps", () => {
-    const parsed: Workflow = WorkflowSchema.parse(workflow("1.3"));
+    const parsed: Workflow = WorkflowSchema.parse(workflow("1.4"));
     const step = parsed.steps[0];
 
     expect(step?.type === "fill" ? step.parameterBinding.source : null).toBe("recorded");
@@ -141,7 +142,7 @@ describe("workflow parameter binding contract", () => {
 });
 
 describe("workflow assertion contract", () => {
-  const assertion = (expectation: AssertionStep["expectation"]): AssertionStep => ({
+  const assertion = (expectation: ElementAssertionStep["expectation"]): ElementAssertionStep => ({
     id: "assertion-status",
     order: 0,
     name: "Status is ready",
@@ -153,27 +154,65 @@ describe("workflow assertion contract", () => {
     type: "assertion",
   });
 
-  it("accepts visible and bounded text-containment assertions in schema 1.3", () => {
+  const groupTarget: RepeatedGroupTemplate = {
+    version: 1,
+    algorithm: "structural-token-v1",
+    frameUrl: "https://example.com/frame",
+    root: { tagName: "article", role: "article", sharedClasses: ["profile-card"] },
+    structureTokens: ["0:article:article", "1:header:", "1:section:", "1:footer:"],
+    capturedMatchCount: 2,
+  };
+
+  const groupAssertion: GroupExistsAssertionStep = {
+    id: "assertion-profile-group",
+    order: 0,
+    name: "Profile card group exists",
+    enabled: true,
+    page: { id: "page-1", url: "https://example.com" },
+    groupTarget,
+    expectation: { kind: "group_exists" },
+    metadata: { recordedAt: timestamp, origin: "manual", sensitive: false },
+    type: "assertion",
+  };
+
+  it("accepts element and group-exists assertions in schema 1.4", () => {
     for (const step of [
       assertion({ kind: "visible" }),
       assertion({ kind: "text_contains", expected: "ready for review" }),
+      groupAssertion,
     ]) {
-      expect(WorkflowSchema.safeParse(workflow("1.3", step)).success).toBe(true);
+      expect(WorkflowSchema.safeParse(workflow("1.4", step)).success).toBe(true);
     }
   });
 
+  it("keeps group templates structural and requires a repeated capture", () => {
+    expect(WorkflowSchema.safeParse(workflow("1.4", {
+      ...groupAssertion,
+      groupTarget: { ...groupTarget, capturedMatchCount: 1 },
+    })).success).toBe(false);
+    expect(WorkflowSchema.safeParse(workflow("1.4", {
+      ...groupAssertion,
+      groupTarget: { ...groupTarget, identity: "Ian Howard Bednowitz" },
+    })).success).toBe(false);
+    expect(WorkflowSchema.safeParse(workflow("1.4", {
+      ...groupAssertion,
+      expectation: { kind: "visible" },
+    })).success).toBe(false);
+  });
+
   it("rejects blank, oversized, and wait-after assertion expectations", () => {
-    const canonical = (step: unknown) => workflow("1.3", step);
+    const canonical = (step: unknown) => workflow("1.4", step);
     expect(WorkflowSchema.safeParse(canonical(assertion({ kind: "text_contains", expected: "   " }))).success).toBe(false);
     expect(WorkflowSchema.safeParse(canonical(assertion({ kind: "text_contains", expected: "a".repeat(1_001) }))).success).toBe(false);
     expect(WorkflowSchema.safeParse(canonical({ ...assertion({ kind: "visible" }), waitAfter: { delayMs: 100 } })).success).toBe(false);
   });
 
-  it("normalizes non-fill legacy workflows and schema 1.2 fills to canonical schema 1.3", () => {
+  it("normalizes schema 1.3 and earlier workflows to canonical schema 1.4", () => {
     for (const schemaVersion of ["1.0", "1.1"] as const) {
-      expect(CompatibleWorkflowSchema.parse(workflow(schemaVersion, navigateStep())).schemaVersion).toBe("1.3");
+      expect(CompatibleWorkflowSchema.parse(workflow(schemaVersion, navigateStep())).schemaVersion).toBe("1.4");
     }
-    expect(CompatibleWorkflowSchema.parse(workflow("1.2")).schemaVersion).toBe("1.3");
+    expect(CompatibleWorkflowSchema.parse(workflow("1.2")).schemaVersion).toBe("1.4");
+    expect(CompatibleWorkflowSchema.parse(workflow("1.3", assertion({ kind: "visible" }))).schemaVersion).toBe("1.4");
   });
 
   it("keeps assertions outside the recorded-action boundary", () => {
@@ -186,5 +225,35 @@ describe("workflow assertion contract", () => {
       page: { id: "page-1", url: "https://example.com" },
       recordedAt: timestamp,
     }).success).toBe(false);
+  });
+});
+
+describe("repeated group structural matching", () => {
+  const template = (tokens: string[], overrides: Partial<RepeatedGroupTemplate> = {}): RepeatedGroupTemplate => ({
+    version: 1,
+    algorithm: "structural-token-v1",
+    root: { tagName: "article", role: "article", sharedClasses: ["profile-card"] },
+    structureTokens: tokens,
+    capturedMatchCount: 2,
+    ...overrides,
+  });
+
+  it("matches the same root at the fixed seventy-percent token threshold", () => {
+    const recorded = template(["a", "b", "c", "d", "e", "f", "g"]);
+    const seventyPercent = template(["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"]);
+    const belowThreshold = template(["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k"]);
+
+    expect(repeatedGroupSimilarity(recorded, seventyPercent)).toEqual({ score: 0.7, matches: true });
+    expect(repeatedGroupSimilarity(recorded, belowThreshold)).toEqual({ score: 7 / 11, matches: false });
+  });
+
+  it("rejects different root tags or explicit roles regardless of token overlap", () => {
+    const recorded = template(["a", "b", "c"]);
+    expect(repeatedGroupSimilarity(recorded, template(["a", "b", "c"], {
+      root: { tagName: "section", role: "article", sharedClasses: [] },
+    })).matches).toBe(false);
+    expect(repeatedGroupSimilarity(recorded, template(["a", "b", "c"], {
+      root: { tagName: "article", role: "listitem", sharedClasses: [] },
+    })).matches).toBe(false);
   });
 });

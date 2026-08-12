@@ -33,6 +33,7 @@ The following capabilities are already shipped:
 - Full or selected-step interactive replay.
 - Replay settling, element waits, and Retry, Skip, Take Control, and Stop recovery.
 - Manually authored element-visibility and text-containment assertions selected in the live browser.
+- Replayable repeated-group existence assertions selected through a structural matching panel.
 - Local profile creation, editing, readiness status, and deletion.
 - Versioned workflow and profile contracts with compatibility handling.
 
@@ -42,7 +43,7 @@ Current constraints remain:
 - Desktop-first, linear, single-tab workflows.
 - Explicit saving rather than autosave.
 - Profile values and sensitive workflow values are stored locally in plain text.
-- Assertions are currently limited to immediate element visibility and normalized text containment.
+- Assertions are currently limited to immediate element visibility, normalized text containment, and repeated-group existence.
 - No run history, scheduling, remote execution, or collaboration.
 
 ## Roadmap Overview

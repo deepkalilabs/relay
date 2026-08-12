@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { ElementTarget, PageDescriptor, ViewportPosition } from "@/shared/contracts/workflow/domain";
+import type { ElementTarget, PageDescriptor, RepeatedGroupTemplate, ViewportPosition } from "@/shared/contracts/workflow/domain";
 
 export const PickerRequestIdSchema = z.string().uuid();
 
@@ -91,10 +91,20 @@ export type AssertionPickState =
   | { status: "picking"; requestId: string }
   | {
       status: "selected";
+      kind: "element";
       requestId: string;
       name: string;
       text: string;
       target: ElementTarget;
+      position: ViewportPosition;
+      page: PageDescriptor;
+    }
+  | {
+      status: "selected";
+      kind: "group";
+      requestId: string;
+      name: string;
+      groupTarget: RepeatedGroupTemplate;
       position: ViewportPosition;
       page: PageDescriptor;
     };

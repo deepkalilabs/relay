@@ -274,7 +274,6 @@ Users can:
 * Delete a step
 * Disable a step
 * Drag to reorder
-* Insert a manual step
 
 These actions modify only local application state in the MVP.
 

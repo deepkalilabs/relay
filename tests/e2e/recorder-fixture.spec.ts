@@ -1,8 +1,8 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Frame } from "@playwright/test";
 import { RECORDER_SCRIPT } from "../../src/server/recording/injected";
 import { applyPositionBefore, preflightReplay, ReplayEngine } from "../../src/server/replay/engine";
 import type { ServerMessage } from "../../src/shared/contracts/protocol";
-import type { WorkflowStep } from "../../src/shared/contracts/workflow/domain";
+import type { ElementAssertionStep, GroupExistsAssertionStep, RepeatedGroupTemplate, WorkflowStep } from "../../src/shared/contracts/workflow/domain";
 import { createWorkflow } from "../../src/shared/contracts/workflow/schema";
 
 test("records Enter after a completed fill without recording its synthetic submit click", async ({ page }) => {
@@ -67,6 +67,172 @@ test("assertion picking captures target evidence without activating or recording
   expect(events.some((event) => event.type === "click")).toBe(false);
 });
 
+test("assertion picker is one viewport-safe floating overlay", async ({ page }) => {
+  await page.exposeFunction("__browserMemoryEmit", () => undefined);
+  await page.addInitScript({ content: RECORDER_SCRIPT });
+  await page.setViewportSize({ width: 360, height: 480 });
+  await page.goto("/fixture");
+
+  const layoutWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+  await page.evaluate(() => {
+    (window as Window & { __browserMemorySetAssertionPicker?: (requestId: string | null) => void })
+      .__browserMemorySetAssertionPicker?.("c7daf0b9-d92a-44db-9967-db33d1516976");
+  });
+
+  const panel = page.locator("[data-browser-memory-assertion-ui]");
+  await expect(panel).toBeVisible();
+  await expect(panel).toHaveCount(1);
+  await expect(panel).toHaveCSS("position", "fixed");
+  await expect(panel).toHaveCSS("top", "16px");
+  await expect(panel).toHaveCSS("right", "16px");
+  await expect(panel.getByRole("heading", { name: "Select an element" })).toBeVisible();
+  await expect(panel.getByText("Hover to preview repeated structural groups, or click an unmatched element to select it exactly.")).toBeVisible();
+
+  const bounds = await panel.boundingBox();
+  expect(bounds).not.toBeNull();
+  expect(bounds!.x).toBeGreaterThanOrEqual(0);
+  expect(bounds!.y).toBeGreaterThanOrEqual(0);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(360);
+  expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(480);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(layoutWidth);
+});
+
+test("assertion picker lets the user choose a repeated structural group", async ({ page }) => {
+  const events: Array<Record<string, unknown>> = [];
+  await page.exposeFunction("__browserMemoryEmit", (event: Record<string, unknown>) => { events.push(event); });
+  await page.addInitScript({ content: RECORDER_SCRIPT });
+  await page.goto("/fixture");
+  await page.evaluate(() => {
+    const host = document.createElement("div");
+    host.innerHTML = `
+      <article role="article" class="profile-card result"><header>Alice</header><section>Seattle</section><footer><button type="button">Open Alice</button></footer></article>
+      <article role="article" class="profile-card result"><header>Bob</header><section>Portland</section><section>Optional detail</section><footer><button type="button">Open Bob</button></footer></article>
+      <aside><header>Unrelated</header><p>Different structure</p></aside>
+    `;
+    document.body.append(host);
+    document.body.addEventListener("click", () => document.body.dataset.siteClicks = String(Number(document.body.dataset.siteClicks ?? 0) + 1));
+  });
+
+  const requestId = "c7daf0b9-d92a-44db-9967-db33d1516976";
+  await page.evaluate((id) => {
+    (window as Window & { __browserMemorySetAssertionPicker?: (requestId: string | null) => void })
+      .__browserMemorySetAssertionPicker?.(id);
+  }, requestId);
+
+  await page.locator(".profile-card header").first().hover();
+  const panel = page.locator("[data-browser-memory-assertion-ui]");
+  await expect(panel).toBeVisible();
+  await expect(panel).toHaveCSS("width", "320px");
+  await expect(panel.getByRole("heading", { name: "Repeated group found" })).toBeVisible();
+  await expect(panel.getByText("2 matching containers")).toBeVisible();
+  await expect(panel.getByRole("button", { name: /article group, 2 matches/i })).toBeVisible();
+  await expect(panel.getByRole("button", { name: "Use matched group" })).toBeDisabled();
+  await expect(panel.locator("details")).not.toHaveAttribute("open", "");
+  await expect(page.locator(".profile-card")).toHaveCount(2);
+  for (const card of await page.locator(".profile-card").all()) {
+    await expect(card).toHaveCSS("outline-style", "solid");
+    await expect(card).toHaveCSS("outline-color", "rgb(40, 91, 214)");
+  }
+
+  await panel.getByRole("button", { name: /article group, 2 matches/i }).focus();
+  await page.keyboard.press("Enter");
+  await expect(panel.getByText(/group selected/i)).toBeVisible();
+  await expect.poll(() => events).toHaveLength(0);
+  await panel.getByRole("button", { name: "Continue picking" }).click();
+  await expect(panel.getByRole("heading", { name: "Select an element" })).toBeVisible();
+  await expect(panel.getByRole("button", { name: "Use matched group" })).toHaveCount(0);
+  await page.locator("aside header").hover();
+  await expect(panel.getByRole("button", { name: /article group/i })).toHaveCount(0);
+
+  await page.locator(".profile-card header").first().hover();
+  await page.locator(".profile-card header").first().click();
+  await expect.poll(() => events).toHaveLength(0);
+  await expect(panel.getByText(/group selected/i)).toBeVisible();
+  await expect(panel.getByRole("button", { name: "Use matched group" })).toBeEnabled();
+
+  await page.locator("aside header").hover();
+  await expect(panel.getByRole("button", { name: /article group, 2 matches/i })).toBeVisible();
+  await expect(panel.getByText(/group selected/i)).toBeVisible();
+
+  await page.locator(".profile-card").last().evaluate((element) => element.remove());
+  await expect(panel.getByRole("button", { name: "Use matched group" })).toBeDisabled();
+  await expect(panel.getByText(/fewer than two visible members/i)).toBeVisible();
+
+  await page.evaluate(() => {
+    for (const name of ["Restored", "Inserted"]) {
+      const card = document.createElement("article");
+      card.className = "profile-card result";
+      card.setAttribute("role", "article");
+      card.innerHTML = `<header>${name}</header><section>Different place</section><footer><button type="button">Different action</button></footer>`;
+      document.querySelector(".profile-card")?.parentElement?.append(card);
+    }
+  });
+  await expect(panel.getByRole("button", { name: /article group, 3 matches/i })).toBeVisible();
+  await page.locator(".profile-card").last().evaluate((element) => element.remove());
+  await expect(panel.getByRole("button", { name: /article group, 2 matches/i })).toBeVisible();
+
+  await panel.getByText("Template JSON").click();
+  const templateJson = await panel.locator("pre").textContent();
+  expect(templateJson).not.toMatch(/Alice|Bob|Seattle|Portland|identity|member/i);
+  await panel.getByRole("button", { name: "Use matched group" }).focus();
+  await page.keyboard.press("Enter");
+
+  await expect.poll(() => events).toHaveLength(1);
+  expect(events[0]).toMatchObject({
+    type: "assertion-picker.group-selected",
+    requestId,
+    groupTarget: {
+      version: 1,
+      algorithm: "structural-token-v1",
+      root: { tagName: "article", role: "article", sharedClasses: ["profile-card", "result"] },
+      capturedMatchCount: 2,
+    },
+  });
+  expect(events[0]).not.toHaveProperty("target");
+  expect(await page.locator("body").getAttribute("data-site-clicks")).toBeNull();
+  await expect(panel).toHaveCount(0);
+  for (const card of await page.locator(".profile-card").all()) await expect(card).not.toHaveCSS("outline-style", "solid");
+});
+
+test("a frozen group can deliberately fall back to the exact seed element", async ({ page }) => {
+  const events: Array<Record<string, unknown>> = [];
+  await page.exposeFunction("__browserMemoryEmit", (event: Record<string, unknown>) => { events.push(event); });
+  await page.addInitScript({ content: RECORDER_SCRIPT });
+  await page.goto("/fixture");
+  await page.evaluate(() => {
+    const host = document.createElement("div");
+    host.innerHTML = `
+      <article class="result"><header>Alice</header><section>One</section></article>
+      <article class="result"><header>Bob</header><section>Two</section></article>
+    `;
+    document.body.append(host);
+    document.body.addEventListener("click", () => document.body.dataset.siteClicks = "activated");
+  });
+  const requestId = "c7daf0b9-d92a-44db-9967-db33d1516976";
+  await page.evaluate((id) => {
+    (window as Window & { __browserMemorySetAssertionPicker?: (requestId: string | null) => void })
+      .__browserMemorySetAssertionPicker?.(id);
+  }, requestId);
+
+  const seed = page.locator(".result header").first();
+  await seed.hover();
+  await seed.click();
+  const panel = page.locator("[data-browser-memory-assertion-ui]");
+  await expect(panel.getByText(/group selected/i)).toBeVisible();
+  await panel.getByRole("button", { name: "Use exact element instead" }).click();
+
+  await expect.poll(() => events).toHaveLength(1);
+  expect(events[0]).toMatchObject({
+    type: "assertion-picker.selected",
+    requestId,
+    name: "Alice",
+    text: "Alice",
+    target: { tagName: "header" },
+  });
+  expect(await page.locator("body").getAttribute("data-site-clicks")).toBeNull();
+  await expect(panel).toHaveCount(0);
+});
+
 test("assertion picking captures visible text only", async ({ page }) => {
   const events: Array<Record<string, unknown>> = [];
   await page.exposeFunction("__browserMemoryEmit", (event: Record<string, unknown>) => { events.push(event); });
@@ -114,6 +280,7 @@ test("assertion picking cancels with Escape and restores the hovered element", a
 
   await expect.poll(() => events).toEqual([{ type: "assertion-picker.cancelled", requestId }]);
   await expect(button).not.toHaveCSS("outline-style", "solid");
+  await expect(page.locator("[data-browser-memory-assertion-ui]")).toHaveCount(0);
 });
 
 test("assertion picking captures child-frame target and viewport context", async ({ page }) => {
@@ -127,7 +294,18 @@ test("assertion picking captures child-frame target and viewport context", async
     (window as Window & { __browserMemorySetAssertionPicker?: (requestId: string | null) => void })
       .__browserMemorySetAssertionPicker?.(id);
   }, requestId)));
-  await page.frameLocator('iframe[title="Payment frame"]').getByRole("button", { name: "Pay" }).click();
+  const panelIsVisible = (frame: Frame) => frame.locator("[data-browser-memory-assertion-ui]").isVisible().catch(() => false);
+  expect((await Promise.all(page.frames().map(panelIsVisible))).filter(Boolean)).toHaveLength(1);
+
+  const paymentFrame = page.frames().find((frame) => frame.url().includes("/fixture/frame"));
+  expect(paymentFrame).toBeDefined();
+  const pay = page.frameLocator('iframe[title="Payment frame"]').getByRole("button", { name: "Pay" });
+  await pay.hover();
+  await expect.poll(async () => ({
+    main: await panelIsVisible(page.mainFrame()),
+    child: paymentFrame ? await panelIsVisible(paymentFrame) : false,
+  })).toEqual({ main: false, child: true });
+  await pay.click();
 
   await expect.poll(() => events).toHaveLength(1);
   expect(events[0]).toMatchObject({
@@ -142,7 +320,7 @@ test("assertion picking captures child-frame target and viewport context", async
 test("assertion replay passes both checks and exposes mismatch recovery", async ({ page }) => {
   await page.goto("/fixture");
   const recordedAt = new Date().toISOString();
-  const assertion = (expectation: Extract<WorkflowStep, { type: "assertion" }>["expectation"]): Extract<WorkflowStep, { type: "assertion" }> => ({
+  const assertion = (expectation: ElementAssertionStep["expectation"]): ElementAssertionStep => ({
     id: crypto.randomUUID(),
     order: 0,
     name: "Open details assertion",
@@ -182,6 +360,112 @@ test("assertion replay passes both checks and exposes mismatch recovery", async 
     diagnostic: expect.objectContaining({
       message: 'Expected text to contain "unavailable", but observed "open details".',
     }),
+  }));
+});
+
+test("repeated-group assertion follows structural matches instead of a particular card", async ({ page }) => {
+  await page.goto("/fixture");
+  await page.addInitScript(() => {
+    document.addEventListener("DOMContentLoaded", () => {
+      const state = sessionStorage.getItem("repeated-group-test-state") ?? "two";
+      const host = document.createElement("div");
+      host.id = "dynamic-results";
+      const card = (name: string, optional = "") => `<article role="article" class="profile-card"><header>${name}</header><section>Changed place</section>${optional}<footer>Open</footer></article>`;
+      if (state === "broad") host.innerHTML = Array.from({ length: 501 }, (_, index) => card(String(index))).join("");
+      else if (state === "changed") host.innerHTML = `<article role="article" class="profile-card"><div><nav><button>New shape</button></nav></div></article>`;
+      else if (state === "two" || state === "three") host.innerHTML = [card("Alice"), card("Bob", "<section>Optional detail</section>"), ...(state === "three" ? [card("Inserted")] : [])].join("");
+      else host.innerHTML = `<article role="article" class="profile-card" ${state === "hidden" ? "style=\"display:none\"" : ""}><header>Completely different person</header><section>Portland</section><footer>Open</footer></article>`;
+      document.body.append(host);
+    });
+  });
+
+  const groupTarget: RepeatedGroupTemplate = {
+    version: 1,
+    algorithm: "structural-token-v1",
+    root: { tagName: "article", role: "article", sharedClasses: ["profile-card"] },
+    structureTokens: ["0:article:article", "1:footer:", "1:header:", "1:section:"],
+    capturedMatchCount: 2,
+  };
+  const assertion = (): GroupExistsAssertionStep => ({
+    id: crypto.randomUUID(),
+    order: 0,
+    name: "Profile card group exists",
+    enabled: true,
+    page: { id: "page", url: page.url() },
+    groupTarget,
+    expectation: { kind: "group_exists" },
+    metadata: { recordedAt: new Date().toISOString(), origin: "manual", sensitive: false },
+    type: "assertion",
+  });
+
+  const run = async (step = assertion()) => {
+    const workflow = createWorkflow();
+    workflow.steps = [step];
+    const messages: ServerMessage[] = [];
+    const engine = new ReplayEngine(crypto.randomUUID(), page, preflightReplay(workflow), (message) => messages.push(message));
+    const running = engine.run();
+    return { engine, messages, running };
+  };
+
+  const first = await run();
+  await first.running;
+  expect(first.messages).toContainEqual(expect.objectContaining({
+    type: "replay.step",
+    status: "passed",
+    locatorKind: "structural-group",
+  }));
+
+  await page.evaluate(() => sessionStorage.setItem("repeated-group-test-state", "three"));
+  const inserted = await run();
+  await inserted.running;
+  expect(inserted.messages).toContainEqual(expect.objectContaining({ type: "replay.step", status: "passed" }));
+
+  await page.evaluate(() => sessionStorage.setItem("repeated-group-test-state", "one"));
+  const dynamic = await run();
+  await dynamic.running;
+  expect(dynamic.messages).toContainEqual(expect.objectContaining({ type: "replay.step", status: "passed" }));
+
+  await page.evaluate(() => sessionStorage.setItem("repeated-group-test-state", "hidden"));
+  const missing = await run();
+  await expect.poll(() => missing.messages.some((message) => message.type === "replay.step" && message.status === "failed")).toBe(true);
+  missing.engine.skip();
+  await missing.running;
+  expect(missing.messages).toContainEqual(expect.objectContaining({
+    type: "replay.step",
+    status: "failed",
+    phase: "asserting",
+    diagnostic: expect.objectContaining({
+      message: expect.stringMatching(/no visible structural group matched/i),
+      attemptedLocators: expect.arrayContaining([
+        expect.objectContaining({ kind: "structural-group", reason: expect.stringMatching(/captured 2/i) }),
+      ]),
+    }),
+  }));
+
+  await page.evaluate(() => sessionStorage.setItem("repeated-group-test-state", "changed"));
+  const changed = await run();
+  await expect.poll(() => changed.messages.some((message) => message.type === "replay.step" && message.status === "failed")).toBe(true);
+  changed.engine.skip();
+  await changed.running;
+
+  await page.evaluate(() => sessionStorage.setItem("repeated-group-test-state", "one"));
+  const wrongFrame = await run({ ...assertion(), groupTarget: { ...groupTarget, frameUrl: "https://example.com/missing-frame" } });
+  await expect.poll(() => wrongFrame.messages.some((message) => message.type === "replay.step" && message.status === "failed")).toBe(true);
+  wrongFrame.engine.skip();
+  await wrongFrame.running;
+  expect(wrongFrame.messages).toContainEqual(expect.objectContaining({
+    type: "replay.step",
+    diagnostic: expect.objectContaining({ attemptedLocators: [{ kind: "structural-group", reason: expect.stringMatching(/zero matches.*captured 2.*highest similarities: none.*frame/im) }] }),
+  }));
+
+  await page.evaluate(() => sessionStorage.setItem("repeated-group-test-state", "broad"));
+  const broad = await run();
+  await expect.poll(() => broad.messages.some((message) => message.type === "replay.step" && message.status === "failed")).toBe(true);
+  broad.engine.skip();
+  await broad.running;
+  expect(broad.messages).toContainEqual(expect.objectContaining({
+    type: "replay.step",
+    diagnostic: expect.objectContaining({ message: expect.stringMatching(/excessively broad/i) }),
   }));
 });
 

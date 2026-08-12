@@ -140,6 +140,29 @@ describe("browser navigation", () => {
       page: { url: currentUrl, title: "Status" },
     });
 
+    const groupRequestId = crypto.randomUUID();
+    await runtime.startAssertionPick(groupRequestId);
+    await binding?.({ page, frame: mainFrame }, {
+      type: "assertion-picker.group-selected",
+      requestId: groupRequestId,
+      name: "Profile card group",
+      groupTarget: {
+        version: 1,
+        algorithm: "structural-token-v1",
+        root: { tagName: "article", role: "article", sharedClasses: ["profile-card"] },
+        structureTokens: ["0:article:article", "1:header:", "1:section:", "1:footer:"],
+        capturedMatchCount: 2,
+      },
+      position: { x: 10, y: 320 },
+    });
+    expect(runtime.buffer.findLast((item) => item.message.type === "assertion.pick.groupSelected")?.message).toMatchObject({
+      type: "assertion.pick.groupSelected",
+      requestId: groupRequestId,
+      name: "Profile card group",
+      groupTarget: { capturedMatchCount: 2 },
+      page: { url: currentUrl, title: "Status" },
+    });
+
     const captchaRequestId = crypto.randomUUID();
     await runtime.startAssertionPick(captchaRequestId);
     handlers.get("console")?.({ text: () => "browserbase-solving-started" });
