@@ -1,4 +1,5 @@
 import type { WorkflowLibraryResponse } from "@/shared/contracts/workflow/library";
+import { workspaceFetch } from "@/shared/api/workspaceClient";
 
 export interface WorkflowListClient {
   list(): Promise<WorkflowLibraryResponse>;
@@ -16,7 +17,7 @@ export class WorkflowListRequestError extends Error {
 
 export const workflowListClient: WorkflowListClient = {
   async list() {
-    const response = await fetch("/api/workflows");
+    const response = await workspaceFetch("/api/workflows");
     const body = await response.json().catch(() => ({})) as unknown;
     if (!response.ok) {
       const message = typeof body === "object" && body !== null

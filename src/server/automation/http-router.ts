@@ -2,10 +2,13 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { z } from "zod";
 import type { Workflow } from "@/shared/contracts/workflow/domain";
 import {
+  WorkspaceSelectionError,
+  type WorkflowRepositoryResolver,
+} from "@/server/infrastructure/storage/repository-factory";
+import {
   WorkflowNotFoundError,
   WorkflowUnavailableError,
   WorkflowValidationError,
-  type WorkflowRepository,
 } from "@/server/workflows/repository";
 
 const CreateRequest = z.object({
@@ -245,6 +248,7 @@ function assertRunnable(workflow: Workflow): void {
 
 function safeError(error: unknown): SafeBatchError {
   if (error instanceof SafeBatchError) return error;
+  if (error instanceof WorkspaceSelectionError) return new SafeBatchError(400, error.message);
   if (error instanceof WorkflowNotFoundError || error instanceof WorkflowValidationError || error instanceof z.ZodError) {
     return new SafeBatchError(400, "The background run request is invalid.");
   }
@@ -257,7 +261,7 @@ function safeError(error: unknown): SafeBatchError {
 export async function handleAutomationBatchApi(
   request: IncomingMessage,
   response: ServerResponse,
-  repository: WorkflowRepository,
+  resolver: WorkflowRepositoryResolver,
   service: AutomationBatchService | null,
 ): Promise<boolean> {
   const segments = new URL(request.url ?? "/", "http://localhost").pathname.split("/").filter(Boolean);
@@ -280,6 +284,10 @@ export async function handleAutomationBatchApi(
       return true;
     }
     if (segments.length === 2 && request.method === "POST") {
+      const workspaceKey = request.headers["x-workspace-key"];
+      const repository = await resolver.resolve(
+        typeof workspaceKey === "string" ? workspaceKey : undefined,
+      );
       const { workflowIds } = CreateRequest.parse(await readJson(request));
       const workflows = await Promise.all(workflowIds.map((id) => repository.get(id)));
       workflows.forEach(assertRunnable);

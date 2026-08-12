@@ -1,6 +1,7 @@
 import type { Workflow } from "@/shared/contracts/workflow/domain";
 import type { WorkflowLibraryResponse } from "@/shared/contracts/workflow/library";
 import { WorkflowSchema } from "@/shared/contracts/workflow/schema";
+import { workspaceFetch } from "@/shared/api/workspaceClient";
 import {
   WorkflowListRequestError,
   workflowListClient,
@@ -47,15 +48,15 @@ export const workflowLibraryClient: WorkflowLibraryClient = {
     }
   },
   async create() {
-    return WorkflowSchema.parse(await readResponse(await fetch("/api/workflows", { method: "POST" })));
+    return WorkflowSchema.parse(await readResponse(await workspaceFetch("/api/workflows", { method: "POST" })));
   },
   async get(id) {
     return WorkflowSchema.parse(await readResponse(
-      await fetch(`/api/workflows/${encodeURIComponent(id)}`),
+      await workspaceFetch(`/api/workflows/${encodeURIComponent(id)}`),
     ));
   },
   async save(id, workflow, expectedRevision) {
-    return WorkflowSchema.parse(await readResponse(await fetch(
+    return WorkflowSchema.parse(await readResponse(await workspaceFetch(
       `/api/workflows/${encodeURIComponent(id)}`,
       {
         method: "PUT",

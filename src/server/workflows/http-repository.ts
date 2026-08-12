@@ -33,31 +33,40 @@ const WorkflowListResponseSchema = z.object({
 
 export class RemoteWorkflowRepository implements WorkflowRepository {
   private readonly client: RemoteHttpClient;
+  private readonly collectionPath: string;
 
-  constructor(baseUrl: string, bearerToken: string, options: RemoteHttpClientOptions = {}) {
+  constructor(
+    baseUrl: string,
+    bearerToken: string,
+    options: RemoteHttpClientOptions = {},
+    readonly namespaceId?: string,
+  ) {
     this.client = new RemoteHttpClient(baseUrl, bearerToken, options);
+    this.collectionPath = namespaceId
+      ? `v1/namespaces/${encodeURIComponent(namespaceId)}/workflows`
+      : "v1/workflows";
   }
 
   async list(): Promise<WorkflowListResult> {
-    const response = await this.request("v1/workflows");
+    const response = await this.request(this.collectionPath);
     const result = await this.parse(response, 200, WorkflowListResponseSchema);
     return { workflows: result.workflows, skippedRecordCount: 0 };
   }
 
   async create(): Promise<Workflow> {
-    return this.parse(await this.request("v1/workflows", {
+    return this.parse(await this.request(this.collectionPath, {
       method: "POST",
       headers: { "idempotency-key": randomUUID() },
     }), 201, WorkflowSchema);
   }
 
   async get(id: string): Promise<Workflow> {
-    return this.parse(await this.request(`v1/workflows/${encodeURIComponent(id)}`), 200, WorkflowSchema);
+    return this.parse(await this.request(`${this.collectionPath}/${encodeURIComponent(id)}`), 200, WorkflowSchema);
   }
 
   async save(id: string, workflow: Workflow, expectedRevision: number): Promise<Workflow> {
     const snapshot = this.parseSnapshot(id, workflow);
-    return this.parse(await this.request(`v1/workflows/${encodeURIComponent(id)}`, {
+    return this.parse(await this.request(`${this.collectionPath}/${encodeURIComponent(id)}`, {
       method: "PUT",
       headers: this.mutationHeaders(),
       body: JSON.stringify({ workflow: snapshot, expectedRevision }),
@@ -66,7 +75,7 @@ export class RemoteWorkflowRepository implements WorkflowRepository {
 
   async finish(id: string, workflow: Workflow, expectedRevision: number): Promise<Workflow> {
     const snapshot = this.parseSnapshot(id, workflow);
-    return this.parse(await this.request(`v1/workflows/${encodeURIComponent(id)}/finish`, {
+    return this.parse(await this.request(`${this.collectionPath}/${encodeURIComponent(id)}/finish`, {
       method: "POST",
       headers: this.mutationHeaders(),
       body: JSON.stringify({ workflow: snapshot, expectedRevision }),

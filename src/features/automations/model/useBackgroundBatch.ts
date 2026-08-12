@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
+import { workspaceFetch } from "@/shared/api/workspaceClient";
 
 const CreateResponse = z.object({ batchId: z.uuid(), runCount: z.number().int().min(1).max(10) }).strict();
 const Screenshot = z.object({
@@ -29,7 +30,7 @@ export type BackgroundRun = z.infer<typeof Run>;
 async function request<T>(url: string, init: RequestInit, status: number, schema: z.ZodType<T>): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(url, { ...init, cache: "no-store" });
+    response = await workspaceFetch(url, { ...init, cache: "no-store" });
   } catch {
     throw new Error("The background run service could not be reached.");
   }

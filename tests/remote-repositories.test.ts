@@ -122,7 +122,7 @@ describe("RemoteWorkflowRepository", () => {
     await expect(repository.create()).rejects.toBeInstanceOf(WorkflowUnavailableError);
   });
 
-  it("sends save and finish snapshots to their versioned mutation routes", async () => {
+  it("scopes every workflow operation to its namespace UUID", async () => {
     const workflow = createWorkflow();
     workflow.id = crypto.randomUUID();
     workflow.steps = [{
@@ -135,35 +135,57 @@ describe("RemoteWorkflowRepository", () => {
       payload: { url: "https://example.com" },
       metadata: { recordedAt: new Date().toISOString(), origin: "manual", sensitive: false },
     }];
-    const requests: Array<{ method: string; url: string; body: unknown; idempotencyKey: string | undefined }> = [];
+    const requests: Array<{ method: string; url: string; body?: unknown; idempotencyKey?: string }> = [];
     const baseUrl = await listen((request, response) => {
-      void readJson(request).then((body) => {
+      void (async () => {
+        const body = request.method === "PUT" || request.url?.endsWith("/finish")
+          ? await readJson(request)
+          : undefined;
         requests.push({
           method: request.method ?? "",
           url: request.url ?? "",
           body,
           idempotencyKey: request.headers["idempotency-key"] as string | undefined,
         });
-        sendJson(response, 200, {
+        if (request.method === "GET" && request.url?.endsWith("/workflows")) {
+          sendJson(response, 200, { workflows: [{
+            id: workflow.id,
+            name: workflow.name,
+            status: workflow.status,
+            updatedAt: workflow.updatedAt,
+            steps: workflow.steps.map(({ id, name, order }) => ({ id, name, order })),
+          }] });
+          return;
+        }
+        sendJson(response, request.method === "POST" && request.url?.endsWith("/workflows") ? 201 : 200, {
           ...workflow,
           status: request.url?.endsWith("/finish") ? "complete" : "draft",
           revision: request.url?.endsWith("/finish") ? 3 : 2,
           finishedAt: request.url?.endsWith("/finish") ? new Date().toISOString() : undefined,
         });
-      });
+      })();
     });
-    const repository = new RemoteWorkflowRepository(baseUrl, "token");
+    const namespaceId = crypto.randomUUID();
+    const repository = new RemoteWorkflowRepository(baseUrl, "token", {}, namespaceId);
 
+    await repository.list();
+    await repository.create();
+    await repository.get(workflow.id);
     const saved = await repository.save(workflow.id, workflow, 1);
     await repository.finish(workflow.id, saved, 2);
 
     expect(requests.map(({ method, url }) => ({ method, url }))).toEqual([
-      { method: "PUT", url: `/storage/v1/workflows/${workflow.id}` },
-      { method: "POST", url: `/storage/v1/workflows/${workflow.id}/finish` },
+      { method: "GET", url: `/storage/v1/namespaces/${namespaceId}/workflows` },
+      { method: "POST", url: `/storage/v1/namespaces/${namespaceId}/workflows` },
+      { method: "GET", url: `/storage/v1/namespaces/${namespaceId}/workflows/${workflow.id}` },
+      { method: "PUT", url: `/storage/v1/namespaces/${namespaceId}/workflows/${workflow.id}` },
+      { method: "POST", url: `/storage/v1/namespaces/${namespaceId}/workflows/${workflow.id}/finish` },
     ]);
-    expect(requests[0]?.body).toEqual({ workflow, expectedRevision: 1 });
-    expect(requests[1]?.body).toEqual({ workflow: saved, expectedRevision: 2 });
-    expect(requests.every(({ idempotencyKey }) => /^[0-9a-f-]{36}$/.test(idempotencyKey ?? ""))).toBe(true);
+    expect(requests[3]?.body).toEqual({ workflow, expectedRevision: 1 });
+    expect(requests[4]?.body).toEqual({ workflow: saved, expectedRevision: 2 });
+    expect([requests[1], requests[3], requests[4]].every(
+      (request) => /^[0-9a-f-]{36}$/.test(request?.idempotencyKey ?? ""),
+    )).toBe(true);
   });
 
   it("rejects invalid workflow snapshots before contacting remote storage", async () => {

@@ -14,6 +14,7 @@ import {
   WorkflowNotFoundError,
   type WorkflowRepository,
 } from "@/server/workflows/repository";
+import type { WorkflowRepositoryResolver } from "@/server/infrastructure/storage/repository-factory";
 import { createWorkflow } from "@/shared/contracts/workflow/schema";
 import type { Workflow } from "@/shared/contracts/workflow/domain";
 
@@ -82,9 +83,17 @@ function workflowRepository(workflows: Workflow[]): WorkflowRepository {
   };
 }
 
-async function api(repository: WorkflowRepository, service: AutomationBatchService | null) {
+async function api(
+  repository: WorkflowRepository,
+  service: AutomationBatchService | null,
+  resolverOverride?: WorkflowRepositoryResolver,
+) {
+  const resolver = resolverOverride ?? {
+    listWorkspaces: async () => ({ workspaces: [], defaultKey: "local" }),
+    resolve: async () => repository,
+  } satisfies WorkflowRepositoryResolver;
   const url = await listen((request, response) => {
-    void handleAutomationBatchApi(request, response, repository, service).then((handled) => {
+    void handleAutomationBatchApi(request, response, resolver, service).then((handled) => {
       if (!handled) {
         response.statusCode = 404;
         response.end();
@@ -414,6 +423,34 @@ describe("automation batch HTTP API", () => {
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect(await response.json()).toEqual({ batchId, runCount: 2 });
     expect(create).toHaveBeenCalledWith([second, first]);
+  });
+
+  it("loads initial batch workflows from the selected namespace repository", async () => {
+    const workflow = completeWorkflow();
+    const namespaceId = crypto.randomUUID();
+    const repository = workflowRepository([workflow]);
+    const resolve = vi.fn(async (key: string | undefined) => {
+      if (key !== namespaceId) throw new Error("Wrong workspace.");
+      return repository;
+    });
+    const create = vi.fn(async () => ({ batchId: crypto.randomUUID(), runCount: 1 }));
+    const url = await api(repository, { create, get: vi.fn(), getArtifact: vi.fn() }, {
+      listWorkspaces: vi.fn(),
+      resolve,
+    });
+
+    const response = await fetch(`${url}api/run-batches`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-workspace-key": namespaceId,
+      },
+      body: JSON.stringify({ workflowIds: [workflow.id] }),
+    });
+
+    expect(response.status).toBe(202);
+    expect(resolve).toHaveBeenCalledWith(namespaceId);
+    expect(create).toHaveBeenCalledWith([workflow]);
   });
 
   it.each([
