@@ -1,10 +1,3 @@
-[build]
-nixpacksVersion = "v1"
-
-[build.nixpacks]
-aptPkgs = []
-nixPkgs = ["nodejs_24"]
-
 [deploy]
 startCommand = "npm start"
 healthcheckPath = "/"
