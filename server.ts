@@ -20,7 +20,7 @@ loadEnvConfig(process.cwd());
 
 async function main() {
 const dev = process.env.NODE_ENV !== "production";
-const hostname = "127.0.0.1";
+const hostname = dev ? "127.0.0.1" : "0.0.0.0";
 const port = Number(process.env.PORT || 3000);
 let requestHandler: ((req: Parameters<typeof createServer>[0] extends never ? never : never) => void) | null = null;
 const profileRepository = new FileProfileRepository();
