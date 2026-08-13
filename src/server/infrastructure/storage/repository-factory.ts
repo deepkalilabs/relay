@@ -1,11 +1,10 @@
 import { FileProfileRepository } from "@/server/profiles/filesystem-repository";
-import { RemoteProfileRepository } from "@/server/profiles/http-repository";
 import type { ProfileRepository } from "@/server/profiles/repository";
 import { FileWorkflowRepository } from "@/server/workflows/filesystem-repository";
 import { RemoteWorkflowRepository } from "@/server/workflows/http-repository";
 import type { WorkflowRepository } from "@/server/workflows/repository";
 import { z } from "zod";
-import { RemoteHttpClient } from "./remote-http-client";
+import { RemoteHttpClient, type RemoteHttpCredentials } from "./remote-http-client";
 
 const NamespaceListResponse = z.object({
   namespaces: z.array(z.object({
@@ -51,34 +50,38 @@ interface ResolverOptions {
 
 interface RemoteStorageConfig {
   baseUrl: string;
-  bearerToken: string;
+  credentials: RemoteHttpCredentials;
 }
 
 function remoteStorageConfig(
   environment: Readonly<Record<string, string | undefined>>,
   required: boolean,
 ): RemoteStorageConfig | null {
-  const baseUrl = environment.REMOTE_STORAGE_BASE_URL?.trim();
-  const bearerToken = environment.REMOTE_STORAGE_BEARER_TOKEN?.trim();
-  if (!baseUrl && !bearerToken && !required) return null;
-  if (!baseUrl) throw new Error("REMOTE_STORAGE_BASE_URL is required for Relay workspaces.");
+  const baseUrl = environment.RELAY_API_BASE_URL?.trim();
+  const username = environment.RELAY_API_USERNAME?.trim();
+  const password = environment.RELAY_API_PASSWORD;
+  if (!baseUrl && !username && !password?.trim() && !required) return null;
+  if (!baseUrl) throw new Error("RELAY_API_BASE_URL is required for Relay workspaces.");
   let parsedBaseUrl: URL;
   try {
     parsedBaseUrl = new URL(baseUrl);
   } catch {
-    throw new Error("REMOTE_STORAGE_BASE_URL must be a valid HTTP or HTTPS URL.");
+    throw new Error("RELAY_API_BASE_URL must be a valid HTTP or HTTPS URL.");
   }
   if (parsedBaseUrl.protocol !== "http:" && parsedBaseUrl.protocol !== "https:") {
-    throw new Error("REMOTE_STORAGE_BASE_URL must be a valid HTTP or HTTPS URL.");
+    throw new Error("RELAY_API_BASE_URL must be a valid HTTP or HTTPS URL.");
   }
   if (parsedBaseUrl.username || parsedBaseUrl.password || parsedBaseUrl.search || parsedBaseUrl.hash) {
-    throw new Error("REMOTE_STORAGE_BASE_URL must not include credentials, query parameters, or a fragment.");
+    throw new Error("RELAY_API_BASE_URL must not include credentials, query parameters, or a fragment.");
   }
   if (!parsedBaseUrl.pathname.endsWith("/")) parsedBaseUrl.pathname += "/";
-  if (!bearerToken) {
-    throw new Error("REMOTE_STORAGE_BEARER_TOKEN is required for Relay workspaces.");
-  }
-  return { baseUrl: parsedBaseUrl.toString(), bearerToken };
+  if (!username) throw new Error("RELAY_API_USERNAME is required for Relay workspaces.");
+  if (username.includes(":")) throw new Error("RELAY_API_USERNAME must not include a colon.");
+  if (!password?.trim()) throw new Error("RELAY_API_PASSWORD is required for Relay workspaces.");
+  return {
+    baseUrl: parsedBaseUrl.toString(),
+    credentials: { username, password },
+  };
 }
 
 export function createWorkflowRepositoryResolver(
@@ -87,7 +90,7 @@ export function createWorkflowRepositoryResolver(
 ): WorkflowRepositoryResolver {
   const localRepository = development ? new FileWorkflowRepository() : null;
   const remote = remoteStorageConfig(environment, !development);
-  const namespaceClient = remote ? new RemoteHttpClient(remote.baseUrl, remote.bearerToken) : null;
+  const namespaceClient = remote ? new RemoteHttpClient(remote.baseUrl, remote.credentials) : null;
   const namespaceRepositories = new Map<string, RemoteWorkflowRepository>();
   let knownNamespaceIds = new Set<string>();
 
@@ -149,7 +152,7 @@ export function createWorkflowRepositoryResolver(
       if (existing) return existing;
       const repository = new RemoteWorkflowRepository(
         remote.baseUrl,
-        remote.bearerToken,
+        remote.credentials,
         {},
         namespaceId,
       );
@@ -176,7 +179,7 @@ export function createRepositories(
   const remote = remoteStorageConfig(environment, true)!;
 
   return {
-    profileRepository: new RemoteProfileRepository(remote.baseUrl, remote.bearerToken),
-    workflowRepository: new RemoteWorkflowRepository(remote.baseUrl, remote.bearerToken),
+    profileRepository: new FileProfileRepository(),
+    workflowRepository: new RemoteWorkflowRepository(remote.baseUrl, remote.credentials),
   };
 }

@@ -16,6 +16,7 @@ import { createWorkflow } from "@/shared/contracts/workflow/schema";
 import type { Profile, ProfileInput } from "@/shared/contracts/profile";
 
 const servers: Server[] = [];
+const credentials = { username: "relay", password: "secret" };
 
 async function listen(
   handler: (request: IncomingMessage, response: ServerResponse) => void,
@@ -64,7 +65,10 @@ describe("RemoteWorkflowRepository", () => {
       });
     });
 
-    const result = await new RemoteWorkflowRepository(baseUrl, "secret-token").list();
+    const result = await new RemoteWorkflowRepository(baseUrl, {
+      username: "relay",
+      password: "secret-token",
+    }).list();
 
     expect(result).toEqual({
       workflows: [{
@@ -78,7 +82,7 @@ describe("RemoteWorkflowRepository", () => {
     });
     expect(requests).toEqual([{
       url: "/storage/v1/workflows",
-      authorization: "Bearer secret-token",
+      authorization: "Basic cmVsYXk6c2VjcmV0LXRva2Vu",
     }]);
     expect(JSON.stringify(result)).not.toContain("sessionId");
   });
@@ -95,7 +99,7 @@ describe("RemoteWorkflowRepository", () => {
       else sendJson(response, 201, workflow);
     });
 
-    const created = await new RemoteWorkflowRepository(baseUrl, "token", { retryDelayMs: 0 }).create();
+    const created = await new RemoteWorkflowRepository(baseUrl, credentials, { retryDelayMs: 0 }).create();
 
     expect(created).toEqual(workflow);
     expect(idempotencyKeys).toHaveLength(2);
@@ -111,7 +115,7 @@ describe("RemoteWorkflowRepository", () => {
       else if (mode === "malformed") sendJson(response, 200, { schemaVersion: "not-a-workflow" });
       else sendJson(response, 200, workflow);
     });
-    const repository = new RemoteWorkflowRepository(baseUrl, "token", { retryDelayMs: 0 });
+    const repository = new RemoteWorkflowRepository(baseUrl, credentials, { retryDelayMs: 0 });
     const workflow = createWorkflow();
     workflow.id = crypto.randomUUID();
 
@@ -166,7 +170,7 @@ describe("RemoteWorkflowRepository", () => {
       })();
     });
     const namespaceId = crypto.randomUUID();
-    const repository = new RemoteWorkflowRepository(baseUrl, "token", {}, namespaceId);
+    const repository = new RemoteWorkflowRepository(baseUrl, credentials, {}, namespaceId);
 
     await repository.list();
     await repository.create();
@@ -198,7 +202,7 @@ describe("RemoteWorkflowRepository", () => {
     workflow.id = crypto.randomUUID();
     workflow.name = "";
 
-    await expect(new RemoteWorkflowRepository(baseUrl, "token").save(workflow.id, workflow, 1))
+    await expect(new RemoteWorkflowRepository(baseUrl, credentials).save(workflow.id, workflow, 1))
       .rejects.toBeInstanceOf(WorkflowValidationError);
     expect(requestCount).toBe(0);
   });

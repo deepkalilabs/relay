@@ -42,8 +42,9 @@ describe("workflow workspace resolution", () => {
       }));
     });
     const resolver = createWorkflowRepositoryResolver({
-      REMOTE_STORAGE_BASE_URL: baseUrl,
-      REMOTE_STORAGE_BEARER_TOKEN: "secret",
+      RELAY_API_BASE_URL: baseUrl,
+      RELAY_API_USERNAME: "relay",
+      RELAY_API_PASSWORD: "secret",
     }, { development: true });
 
     await expect(resolver.listWorkspaces()).resolves.toEqual({
@@ -62,7 +63,7 @@ describe("workflow workspace resolution", () => {
     expect(firstRepository).not.toBe(secondRepository);
     expect(requests).toEqual([{
       url: "/storage/v1/namespaces",
-      authorization: "Bearer secret",
+      authorization: "Basic cmVsYXk6c2VjcmV0",
     }]);
   });
 
@@ -81,8 +82,9 @@ describe("workflow workspace resolution", () => {
       }));
     });
     const resolver = createWorkflowRepositoryResolver({
-      REMOTE_STORAGE_BASE_URL: baseUrl,
-      REMOTE_STORAGE_BEARER_TOKEN: "secret",
+      RELAY_API_BASE_URL: baseUrl,
+      RELAY_API_USERNAME: "relay",
+      RELAY_API_PASSWORD: "secret",
     }, { development: false });
 
     await expect(resolver.listWorkspaces()).resolves.toEqual({
@@ -97,8 +99,9 @@ describe("workflow workspace resolution", () => {
       response.end();
     });
     const environment = {
-      REMOTE_STORAGE_BASE_URL: baseUrl,
-      REMOTE_STORAGE_BEARER_TOKEN: "secret",
+      RELAY_API_BASE_URL: baseUrl,
+      RELAY_API_USERNAME: "relay",
+      RELAY_API_PASSWORD: "secret",
     };
 
     await expect(createWorkflowRepositoryResolver(environment, { development: true }).listWorkspaces())
@@ -118,8 +121,9 @@ describe("workflow workspace resolution", () => {
       response.end(JSON.stringify({ namespaces: [] }));
     });
     const environment = {
-      REMOTE_STORAGE_BASE_URL: baseUrl,
-      REMOTE_STORAGE_BEARER_TOKEN: "secret",
+      RELAY_API_BASE_URL: baseUrl,
+      RELAY_API_USERNAME: "relay",
+      RELAY_API_PASSWORD: "secret",
     };
 
     await expect(createWorkflowRepositoryResolver(environment, { development: true }).listWorkspaces())
@@ -144,8 +148,9 @@ describe("workflow workspace resolution", () => {
       }] }));
     });
     const resolver = createWorkflowRepositoryResolver({
-      REMOTE_STORAGE_BASE_URL: baseUrl,
-      REMOTE_STORAGE_BEARER_TOKEN: "secret",
+      RELAY_API_BASE_URL: baseUrl,
+      RELAY_API_USERNAME: "relay",
+      RELAY_API_PASSWORD: "secret",
     }, { development: false });
     await resolver.listWorkspaces();
 

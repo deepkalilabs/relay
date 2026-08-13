@@ -1,4 +1,13 @@
+import { Buffer } from "node:buffer";
+
 const RETRYABLE_STATUSES = new Set([502, 503, 504]);
+
+export interface RemoteHttpCredentials {
+  username: string;
+  password: string;
+}
+
+export type RemoteHttpAuthentication = RemoteHttpCredentials | string;
 
 export interface RemoteHttpClientOptions {
   retryDelayMs?: number;
@@ -19,7 +28,7 @@ export class RemoteHttpClient {
 
   constructor(
     baseUrl: string,
-    private readonly bearerToken: string,
+    private readonly authentication: RemoteHttpAuthentication,
     options: RemoteHttpClientOptions = {},
   ) {
     this.baseUrl = new URL(baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`);
@@ -32,7 +41,15 @@ export class RemoteHttpClient {
       try {
         const headers = new Headers(init.headers);
         headers.set("accept", "application/json");
-        headers.set("authorization", `Bearer ${this.bearerToken}`);
+        if (typeof this.authentication === "string") {
+          headers.set("authorization", `Bearer ${this.authentication}`);
+        } else {
+          const encodedCredentials = Buffer.from(
+            `${this.authentication.username}:${this.authentication.password}`,
+            "utf8",
+          ).toString("base64");
+          headers.set("authorization", `Basic ${encodedCredentials}`);
+        }
         const response = await fetch(new URL(pathname.replace(/^\//, ""), this.baseUrl), {
           ...init,
           headers,

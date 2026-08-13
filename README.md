@@ -150,16 +150,17 @@ changed from the product sidebar. Profiles remain in the local profile repositor
 Configure Relay namespace discovery and namespace-scoped workflow persistence with:
 
 ```bash
-REMOTE_STORAGE_BASE_URL=https://storage.example.com/ \
-REMOTE_STORAGE_BEARER_TOKEN=server-secret \
+RELAY_API_BASE_URL=https://relay.example.com/ \
+RELAY_API_USERNAME=server-user \
+RELAY_API_PASSWORD=server-secret \
 npm run dev
 ```
 
 The remote service must implement namespace listing and the namespace-scoped operations in
 the versioned [workflow](./docs/specs/cloud-workflow-api.openapi.yaml) contract. The adapter
-sends the bearer token only from the Node server, validates all remote responses, and retries
-one transient failure with the same idempotency key. This repository
-does not implement the remote service or its database.
+sends HTTP Basic credentials only from the Node server, validates all remote responses, and
+retries one transient failure with the same idempotency key. Profiles remain in the local
+filesystem repository. This repository does not implement the remote service or its database.
 
 ## Requirements
 

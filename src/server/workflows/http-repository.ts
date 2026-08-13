@@ -4,6 +4,7 @@ import type { Workflow } from "@/shared/contracts/workflow/domain";
 import { WorkflowSchema } from "@/shared/contracts/workflow/schema";
 import {
   RemoteHttpClient,
+  type RemoteHttpCredentials,
   type RemoteHttpClientOptions,
 } from "@/server/infrastructure/storage/remote-http-client";
 import {
@@ -37,11 +38,11 @@ export class RemoteWorkflowRepository implements WorkflowRepository {
 
   constructor(
     baseUrl: string,
-    bearerToken: string,
+    credentials: RemoteHttpCredentials,
     options: RemoteHttpClientOptions = {},
     readonly namespaceId?: string,
   ) {
-    this.client = new RemoteHttpClient(baseUrl, bearerToken, options);
+    this.client = new RemoteHttpClient(baseUrl, credentials, options);
     this.collectionPath = namespaceId
       ? `v1/namespaces/${encodeURIComponent(namespaceId)}/workflows`
       : "v1/workflows";
