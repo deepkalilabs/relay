@@ -4,10 +4,14 @@ import {
   locatorCandidatesForTarget,
   type AssertionStep,
   type ElementTarget,
+  type GroupExistsAssertionStep,
   type LocatorCandidate,
+  type RepeatedGroupTemplate,
   type Workflow,
   type WorkflowStep,
+  isGroupExistsAssertion,
 } from "@/shared/contracts/workflow/domain";
+import { repeatedGroupSimilarity } from "@/shared/contracts/workflow/repeated-group";
 import {
   WorkflowSchema,
   orderLocatorCandidates,
@@ -250,6 +254,7 @@ interface StepExecutionResult {
 }
 
 async function evaluateAssertion(page: Page, step: AssertionStep): Promise<StepExecutionResult> {
+  if (isGroupExistsAssertion(step)) return evaluateGroupExistsAssertion(page, step);
   const resolved = await resolveTargetOnce(page, step.target, step.page.url);
   if (step.expectation.kind === "text_contains") {
     const expected = normalizeAssertionText(step.expectation.expected);
@@ -264,8 +269,121 @@ async function evaluateAssertion(page: Page, step: AssertionStep): Promise<StepE
   return { locatorKind: resolved.kind };
 }
 
+interface ObservedGroupCandidate {
+  visible: boolean;
+  root: RepeatedGroupTemplate["root"];
+  structureTokens: string[];
+}
+
+async function evaluateGroupExistsAssertion(page: Page, step: GroupExistsAssertionStep): Promise<StepExecutionResult> {
+  let frame: Frame;
+  try {
+    frame = resolveFrame(page, step.groupTarget.frameUrl, step.page.url);
+  } catch (error) {
+    throw Object.assign(
+      new Error("Repeated-group assertion failed: zero matches because the recorded frame is unavailable."),
+      { attempts: [{ kind: "structural-group", reason: `Zero matches. Captured ${step.groupTarget.capturedMatchCount}; algorithm structural-token-v1 (template v1); highest similarities: none; frame: ${errorMessage(error)}` }] },
+    );
+  }
+  const observed = await frame.evaluate(({ rootTagName, rootRole, maximumCandidates }) => {
+    const implicitRole = (element: Element): string | undefined => {
+      const explicit = element.getAttribute("role")?.trim().toLowerCase();
+      if (explicit) return explicit.split(/\s+/u)[0];
+      const tagName = element.tagName.toLowerCase();
+      if (tagName === "article") return "article";
+      if (tagName === "button") return "button";
+      if (tagName === "a" && element.hasAttribute("href")) return "link";
+      if (tagName === "nav") return "navigation";
+      if (tagName === "main") return "main";
+      if (tagName === "form") return "form";
+      if (tagName === "select") return element.hasAttribute("multiple") ? "listbox" : "combobox";
+      if (tagName === "textarea") return "textbox";
+      if (tagName === "input") {
+        const type = (element.getAttribute("type") ?? "text").toLowerCase();
+        if (["button", "submit", "reset", "image"].includes(type)) return "button";
+        if (type === "checkbox") return "checkbox";
+        if (type === "radio") return "radio";
+        if (type === "range") return "slider";
+        if (type === "number") return "spinbutton";
+        if (type !== "hidden") return "textbox";
+      }
+      return undefined;
+    };
+    const segment = (element: Element): string => `${element.tagName.toLowerCase()}:${implicitRole(element) ?? ""}`;
+    const describe = (root: Element) => {
+      const tokens = new Set<string>([`0:${segment(root)}`]);
+      let visitedDescendants = 0;
+      const visit = (element: Element, depth: number, path: string[]) => {
+        if (depth > 3 || visitedDescendants >= 150) return;
+        for (const child of Array.from(element.children)) {
+          if (visitedDescendants >= 150) break;
+          visitedDescendants += 1;
+          const childPath = [...path, segment(child)];
+          tokens.add(`${depth}:${childPath.join(">")}`);
+          visit(child, depth + 1, childPath);
+        }
+      };
+      visit(root, 1, []);
+      const styles = getComputedStyle(root);
+      const rect = root.getBoundingClientRect();
+      const role = implicitRole(root);
+      return {
+        visible: styles.display !== "none" && styles.visibility !== "hidden" && styles.visibility !== "collapse" && Number(styles.opacity) !== 0 && rect.width > 0 && rect.height > 0,
+        root: {
+          tagName: root.tagName.toLowerCase(),
+          ...(role ? { role } : {}),
+          sharedClasses: Array.from(root.classList).sort(),
+        },
+        structureTokens: Array.from(tokens).sort(),
+      };
+    };
+
+    const candidates = Array.from(document.getElementsByTagName(rootTagName)).filter((candidate) => (implicitRole(candidate) ?? "") === rootRole);
+    if (candidates.length > maximumCandidates) {
+      return { excessivelyBroad: true, candidateCount: candidates.length, candidates: [] };
+    }
+    return {
+      excessivelyBroad: false,
+      candidateCount: candidates.length,
+      candidates: candidates.map(describe),
+    };
+  }, { rootTagName: step.groupTarget.root.tagName, rootRole: step.groupTarget.root.role ?? "", maximumCandidates: 500 });
+
+  if (observed.excessivelyBroad) {
+    throw Object.assign(
+      new Error("Repeated-group assertion inspected zero matches because the root candidate set is excessively broad."),
+      { attempts: [{ kind: "structural-group", reason: `Found ${observed.candidateCount} root candidates; the structural-token-v1 limit is 500. Recorded count: ${step.groupTarget.capturedMatchCount}.` }] },
+    );
+  }
+
+  const similarities = (observed.candidates as ObservedGroupCandidate[]).map((candidate) => {
+    const compared = repeatedGroupSimilarity(step.groupTarget, {
+      version: 1,
+      algorithm: "structural-token-v1",
+      root: candidate.root,
+      structureTokens: candidate.structureTokens,
+      capturedMatchCount: 2,
+    });
+    return { ...compared, visible: candidate.visible };
+  });
+  if (similarities.some((candidate) => candidate.visible && candidate.matches)) {
+    return { locatorKind: "structural-group" };
+  }
+
+  const highest = similarities
+    .map((candidate) => candidate.score)
+    .sort((left, right) => right - left)
+    .slice(0, 3)
+    .map((score) => `${Math.round(score * 100)}%`)
+    .join(", ") || "none";
+  throw Object.assign(
+    new Error("Repeated-group assertion failed: no visible structural group matched."),
+    { attempts: [{ kind: "structural-group", reason: `Zero matches. Captured ${step.groupTarget.capturedMatchCount}; algorithm structural-token-v1 (template v1); highest similarities: ${highest}.` }] },
+  );
+}
+
 async function executeStep(page: Page, step: WorkflowStep): Promise<StepExecutionResult> {
-  await applyPositionBefore(page, step);
+  if (!isGroupExistsAssertion(step)) await applyPositionBefore(page, step);
   if (step.type === "navigate") {
     await page.goto(step.payload.url, { waitUntil: "domcontentloaded", timeout: REPLAY_STEP_TIMEOUT_MS });
     return {};

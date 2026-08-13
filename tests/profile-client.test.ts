@@ -23,6 +23,7 @@ const profile: Profile = {
 };
 
 afterEach(() => {
+  localStorage.clear();
   vi.unstubAllGlobals();
 });
 
@@ -45,6 +46,17 @@ describe("profile client", () => {
     await expect(profileClient.list()).resolves.toEqual(list);
     await expect(profileClient.get(profile.id)).resolves.toEqual(profile);
     expect(fetchMock).toHaveBeenLastCalledWith(`/api/profiles/${profile.id}`);
+  });
+
+  it("keeps profile requests independent of the selected workflow namespace", async () => {
+    localStorage.setItem("browser-replay.workspace", crypto.randomUUID());
+    const list = { profiles: [], invalidFileCount: 0 };
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(list), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(profileClient.list()).resolves.toEqual(list);
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/profiles");
   });
 
   it("uses POST for creation and revision-protected PUT and DELETE requests", async () => {

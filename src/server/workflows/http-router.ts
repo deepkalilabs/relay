@@ -2,11 +2,14 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { z } from "zod";
 import { WorkflowSchema } from "@/shared/contracts/workflow/schema";
 import {
+  WorkspaceSelectionError,
+  type WorkflowRepositoryResolver,
+} from "@/server/infrastructure/storage/repository-factory";
+import {
   WorkflowConflictError,
   WorkflowNotFoundError,
   WorkflowUnavailableError,
   WorkflowValidationError,
-  type WorkflowRepository,
 } from "./repository";
 
 const MAX_REQUEST_BYTES = 1_048_576;
@@ -43,6 +46,7 @@ function errorMessage(error: unknown): { status: number; message: string } {
       ? (error.issues[0]?.message ?? "The workflow request is invalid.")
       : error.message };
   }
+  if (error instanceof WorkspaceSelectionError) return { status: 400, message: error.message };
   if (error instanceof WorkflowNotFoundError) return { status: 404, message: error.message };
   if (error instanceof WorkflowConflictError) return { status: 409, message: error.message };
   if (error instanceof WorkflowUnavailableError) return { status: 503, message: error.message };
@@ -52,13 +56,17 @@ function errorMessage(error: unknown): { status: number; message: string } {
 export async function handleWorkflowApi(
   request: IncomingMessage,
   response: ServerResponse,
-  repository: WorkflowRepository,
+  resolver: WorkflowRepositoryResolver,
 ): Promise<boolean> {
   const url = new URL(request.url ?? "/", "http://localhost");
   const segments = url.pathname.split("/").filter(Boolean);
   if (segments[0] !== "api" || segments[1] !== "workflows") return false;
 
   try {
+    const workspaceKey = request.headers["x-workspace-key"];
+    const repository = await resolver.resolve(
+      typeof workspaceKey === "string" ? workspaceKey : undefined,
+    );
     if (segments.length === 2 && request.method === "GET") {
       const result = await repository.list();
       sendJson(response, 200, {

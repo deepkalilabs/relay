@@ -13,7 +13,18 @@ export const RECORDER_SCRIPT = String.raw`(() => {
   let suppressKeyboardClick = false;
   let suppressKeyboardClickTimer = null;
   let assertionPickerRequestId = null;
-  let assertionPickerHighlight = null;
+  let assertionPickerHighlights = [];
+  let assertionPickerPanelHost = null;
+  let assertionGroupCandidates = [];
+  let assertionSelectedGroupIndex = null;
+  let assertionPickerSeed = null;
+  let assertionGroupLocked = false;
+  let assertionFrozenGroup = null;
+  let assertionGroupObserver = null;
+  let assertionGroupRefreshFrame = null;
+  let assertionPickerPanelActive = false;
+  const assertionPickerFrameId = crypto.randomUUID();
+  const assertionPickerFrameChannel = "__browserMemoryAssertionPickerFrame";
   window.__browserMemorySuppressSelectChange = false;
   window.__browserMemoryNativeSelects = window.__browserMemoryNativeSelects === true;
   window.__browserMemoryCaptchaLocked = window.__browserMemoryCaptchaLocked === true;
@@ -22,30 +33,33 @@ export const RECORDER_SCRIPT = String.raw`(() => {
   const escapeCss = (value) => window.CSS?.escape ? CSS.escape(value) : value.replace(/[^a-zA-Z0-9_-]/g, "\\$&");
 
   const clearAssertionHighlight = () => {
-    if (!assertionPickerHighlight) return;
-    const { element, styles } = assertionPickerHighlight;
-    for (const [property, value, priority] of styles) {
-      if (value) element.style.setProperty(property, value, priority);
-      else element.style.removeProperty(property);
+    for (const { element, styles } of assertionPickerHighlights) {
+      for (const [property, value, priority] of styles) {
+        if (value) element.style.setProperty(property, value, priority);
+        else element.style.removeProperty(property);
+      }
     }
-    assertionPickerHighlight = null;
+    assertionPickerHighlights = [];
   };
 
-  const highlightAssertionTarget = (element) => {
-    if (assertionPickerHighlight?.element === element) return;
+  const highlightAssertionTargets = (elements, color, cursor = "crosshair") => {
     clearAssertionHighlight();
-    assertionPickerHighlight = {
+    assertionPickerHighlights = elements.map((element) => ({
       element,
       styles: ["outline", "outline-offset", "cursor"].map((property) => [
         property,
         element.style.getPropertyValue(property),
         element.style.getPropertyPriority(property),
       ]),
-    };
-    element.style.setProperty("outline", "2px solid #2f6feb", "important");
-    element.style.setProperty("outline-offset", "2px", "important");
-    element.style.setProperty("cursor", "crosshair", "important");
+    }));
+    for (const element of elements) {
+      element.style.setProperty("outline", "2px solid " + color, "important");
+      element.style.setProperty("outline-offset", "2px", "important");
+      element.style.setProperty("cursor", cursor, "important");
+    }
   };
+
+  const highlightAssertionTarget = (element) => highlightAssertionTargets([element], "#2f6feb");
 
   const emit = (payload) => {
     if (window.__browserMemoryCaptchaLocked) return;
@@ -54,13 +68,75 @@ export const RECORDER_SCRIPT = String.raw`(() => {
       if (result?.catch) result.catch(() => undefined);
     } catch {}
   };
+
+  const postAssertionPickerFrameState = (frameId) => {
+    const message = {
+      channel: assertionPickerFrameChannel,
+      kind: "active",
+      requestId: assertionPickerRequestId,
+      frameId,
+    };
+    for (let index = 0; index < window.frames.length; index += 1) {
+      try { window.frames[index].postMessage(message, "*"); } catch {}
+    }
+  };
+
+  const setAssertionPickerPanelActive = (active) => {
+    assertionPickerPanelActive = active === true;
+    if (!assertionPickerRequestId) return;
+    if (assertionPickerPanelActive && !assertionPickerPanelHost) mountAssertionPickerPanel();
+    if (!assertionPickerPanelHost) return;
+    assertionPickerPanelHost.style.setProperty("display", assertionPickerPanelActive ? "block" : "none", "important");
+    if (!assertionPickerPanelActive) {
+      clearAssertionHighlight();
+      return;
+    }
+    if (assertionPickerSeed) refreshAssertionGroups();
+  };
+
+  const broadcastActiveAssertionPickerFrame = (frameId) => {
+    setAssertionPickerPanelActive(frameId === assertionPickerFrameId);
+    postAssertionPickerFrameState(frameId);
+  };
+
+  const activateCurrentAssertionPickerFrame = () => {
+    if (!assertionPickerRequestId) return;
+    if (window === window.top) {
+      broadcastActiveAssertionPickerFrame(assertionPickerFrameId);
+      return;
+    }
+    setAssertionPickerPanelActive(true);
+    try {
+      window.top.postMessage({
+        channel: assertionPickerFrameChannel,
+        kind: "request",
+        requestId: assertionPickerRequestId,
+        frameId: assertionPickerFrameId,
+      }, "*");
+    } catch {}
+  };
+
+  window.addEventListener("message", (event) => {
+    const message = event.data;
+    if (!message || message.channel !== assertionPickerFrameChannel || message.requestId !== assertionPickerRequestId) return;
+    if (message.kind === "request") {
+      if (window === window.top) broadcastActiveAssertionPickerFrame(message.frameId);
+      return;
+    }
+    if (message.kind !== "active") return;
+    setAssertionPickerPanelActive(message.frameId === assertionPickerFrameId);
+    postAssertionPickerFrameState(message.frameId);
+  });
+
   window.__browserMemorySetNativeSelects = (enabled) => {
     window.__browserMemoryNativeSelects = enabled === true;
     if (window.__browserMemoryNativeSelects) selectPickerOpen = false;
   };
   window.__browserMemorySetAssertionPicker = (requestId) => {
     clearAssertionHighlight();
+    teardownAssertionPickerPanel();
     assertionPickerRequestId = typeof requestId === "string" && requestId ? requestId : null;
+    if (assertionPickerRequestId && window === window.top) activateCurrentAssertionPickerFrame();
   };
   window.__browserMemorySetCaptchaLocked = (locked) => {
     window.__browserMemoryCaptchaLocked = locked === true;
@@ -105,8 +181,12 @@ export const RECORDER_SCRIPT = String.raw`(() => {
   const implicitRole = (element) => {
     const tag = element.tagName.toLowerCase();
     const type = String(element.getAttribute("type") || "").toLowerCase();
+    if (tag === "article") return "article";
     if (tag === "button") return "button";
     if (tag === "a" && element.hasAttribute("href")) return "link";
+    if (tag === "nav") return "navigation";
+    if (tag === "main") return "main";
+    if (tag === "form") return "form";
     if (tag === "textarea") return "textbox";
     if (tag === "select") return element.multiple ? "listbox" : "combobox";
     if (tag === "input") {
@@ -153,7 +233,341 @@ export const RECORDER_SCRIPT = String.raw`(() => {
     if (!(element instanceof HTMLElement) || element.closest('[aria-hidden="true"]')) return false;
     const style = getComputedStyle(element);
     const rect = element.getBoundingClientRect();
-    return style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity) !== 0 && rect.width > 0 && rect.height > 0;
+    return style.display !== "none" && style.visibility !== "hidden" && style.visibility !== "collapse" && Number(style.opacity) !== 0 && rect.width > 0 && rect.height > 0;
+  };
+
+  const isAssertionPickerUiEvent = (event) => Boolean(
+    assertionPickerPanelHost && event.composedPath?.().includes(assertionPickerPanelHost)
+  );
+
+  const structuralRole = (element) => {
+    const explicit = normalize(element.getAttribute("role") || "").toLowerCase();
+    return explicit ? explicit.split(/\s+/)[0] : implicitRole(element);
+  };
+
+  const structuralSegment = (element) => element.tagName.toLowerCase() + ":" + structuralRole(element);
+
+  const describeStructuralGroup = (root) => {
+    const tokens = new Set(["0:" + structuralSegment(root)]);
+    let visitedDescendants = 0;
+    const visit = (element, depth, path) => {
+      if (depth > 3 || visitedDescendants >= 150) return;
+      for (const child of element.children) {
+        if (visitedDescendants >= 150) break;
+        visitedDescendants += 1;
+        const childPath = [...path, structuralSegment(child)];
+        tokens.add(depth + ":" + childPath.join(">"));
+        visit(child, depth + 1, childPath);
+      }
+    };
+    visit(root, 1, []);
+    const role = structuralRole(root);
+    return {
+      root: {
+        tagName: root.tagName.toLowerCase(),
+        ...(role ? { role } : {}),
+        sharedClasses: [...root.classList].sort(),
+      },
+      structureTokens: [...tokens].sort(),
+    };
+  };
+
+  const structuralSimilarity = (recorded, candidate) => {
+    if (recorded.root.tagName !== candidate.root.tagName || (recorded.root.role || "") !== (candidate.root.role || "")) return 0;
+    const recordedTokens = new Set(recorded.structureTokens);
+    const candidateTokens = new Set(candidate.structureTokens);
+    const union = new Set([...recordedTokens, ...candidateTokens]);
+    let shared = 0;
+    for (const token of recordedTokens) if (candidateTokens.has(token)) shared += 1;
+    return union.size ? shared / union.size : 1;
+  };
+
+  const repeatedGroupFor = (parent, templateDescription) => {
+    const members = [...parent.children].filter((candidate) =>
+        candidate !== assertionPickerPanelHost &&
+        isVisible(candidate) &&
+        candidate.tagName.toLowerCase() === templateDescription.root.tagName &&
+        structuralRole(candidate) === (templateDescription.root.role || "") &&
+        structuralSimilarity(templateDescription, describeStructuralGroup(candidate)) >= 0.7
+    );
+    const sharedClasses = templateDescription.root.sharedClasses.filter((className) =>
+      members.every((member) => member.classList.contains(className))
+    );
+    return {
+      parent,
+      templateDescription,
+      members,
+      template: {
+        version: 1,
+        algorithm: "structural-token-v1",
+        ...(window === window.top ? {} : { frameUrl: location.href }),
+        root: { ...templateDescription.root, sharedClasses },
+        structureTokens: templateDescription.structureTokens,
+        capturedMatchCount: members.length,
+      },
+    };
+  };
+
+  const discoverRepeatedGroups = (seed) => {
+    const groups = [];
+    let ancestor = seed;
+    for (let depth = 0; depth < 6 && ancestor; depth += 1) {
+      if (ancestor === document.body || ancestor === document.documentElement || ancestor === assertionPickerPanelHost) break;
+      const parent = ancestor.parentElement;
+      if (!parent) break;
+      const group = repeatedGroupFor(parent, describeStructuralGroup(ancestor));
+      const members = group.members;
+      if (members.length >= 2) {
+        groups.push(group);
+      }
+      ancestor = parent;
+    }
+    return groups;
+  };
+
+  const teardownAssertionPickerPanel = () => {
+    if (assertionGroupObserver) assertionGroupObserver.disconnect();
+    assertionGroupObserver = null;
+    if (assertionGroupRefreshFrame !== null) cancelAnimationFrame(assertionGroupRefreshFrame);
+    assertionGroupRefreshFrame = null;
+    assertionPickerPanelHost?.remove();
+    assertionPickerPanelHost = null;
+    assertionGroupCandidates = [];
+    assertionSelectedGroupIndex = null;
+    assertionPickerSeed = null;
+    assertionGroupLocked = false;
+    assertionFrozenGroup = null;
+    assertionPickerPanelActive = false;
+  };
+
+  const freezeAssertionGroup = (index) => {
+    if (!assertionGroupCandidates[index]) return;
+    assertionGroupLocked = true;
+    assertionFrozenGroup = assertionGroupCandidates[index];
+    assertionGroupCandidates = [assertionFrozenGroup];
+    assertionSelectedGroupIndex = 0;
+    highlightAssertionTargets(assertionFrozenGroup.members, "#285bd6");
+    renderAssertionPickerPanel();
+  };
+
+  const renderAssertionPickerPanel = () => {
+    const root = assertionPickerPanelHost?.shadowRoot;
+    if (!root) return;
+    const content = root.querySelector("[data-content]");
+    if (!content) return;
+    content.replaceChildren();
+
+    const selected = assertionSelectedGroupIndex === null ? null : assertionGroupCandidates[assertionSelectedGroupIndex];
+    const groupUsable = Boolean(assertionGroupLocked && selected && selected.members.length >= 2);
+
+    const heading = document.createElement("h2");
+    heading.textContent = selected ? "Repeated group found" : "Select an element";
+    content.append(heading);
+
+    if (selected) {
+      const summary = document.createElement("p");
+      summary.className = "match-summary";
+      summary.setAttribute("role", "status");
+      const marker = document.createElement("span");
+      marker.className = "match-marker";
+      marker.setAttribute("aria-hidden", "true");
+      marker.textContent = "✓";
+      const count = document.createElement("span");
+      count.textContent = selected.members.length + " matching containers";
+      summary.append(marker, count);
+      content.append(summary);
+    }
+
+    const guidance = document.createElement("p");
+    guidance.className = "guidance";
+    guidance.textContent = assertionGroupLocked && selected && selected.members.length < 2
+      ? "Group selected, but it now has fewer than two visible members. Restore another match or continue picking."
+      : assertionGroupLocked && selected
+        ? "Group selected. Moving the pointer will not change it."
+        : selected
+          ? "Click a highlighted result to freeze this group."
+      : assertionPickerSeed
+        ? "No repeated group found here. Click this element to select it exactly, or hover elsewhere."
+        : "Hover to preview repeated structural groups, or click an unmatched element to select it exactly.";
+    content.append(guidance);
+
+    const list = document.createElement("div");
+    list.className = "group-list";
+    for (const [index, group] of assertionGroupCandidates.entries()) {
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = "group-row" + (assertionSelectedGroupIndex === index ? " selected" : "");
+      row.setAttribute("aria-label", group.template.root.tagName + " group, " + group.members.length + " matches");
+      row.setAttribute("aria-pressed", assertionGroupLocked && assertionSelectedGroupIndex === index ? "true" : "false");
+      const title = document.createElement("strong");
+      title.textContent = group.template.root.tagName + (group.template.root.role ? " · " + group.template.root.role : "");
+      const meta = document.createElement("span");
+      meta.textContent = group.members.length + " matches · " + group.template.structureTokens.length + " structural tokens";
+      row.append(title, meta);
+      row.addEventListener("click", () => freezeAssertionGroup(index));
+      list.append(row);
+    }
+    content.append(list);
+
+    if (selected) {
+      const details = document.createElement("details");
+      const summary = document.createElement("summary");
+      summary.textContent = "Template JSON";
+      const pre = document.createElement("pre");
+      pre.textContent = JSON.stringify(selected.template, null, 2);
+      details.append(summary, pre);
+      content.append(details);
+    }
+
+    const actions = document.createElement("div");
+    actions.className = "actions";
+    const use = document.createElement("button");
+    use.type = "button";
+    use.className = "primary";
+    use.textContent = "Use matched group";
+    use.hidden = !selected;
+    use.disabled = !groupUsable;
+    use.addEventListener("click", () => {
+      if (!groupUsable || !selected || !assertionPickerRequestId) return;
+      const requestId = assertionPickerRequestId;
+      const groupTarget = selected.template;
+      const name = "Repeated " + groupTarget.root.tagName + " group";
+      window.__browserMemorySetAssertionPicker(null);
+      emit({ type: "assertion-picker.group-selected", requestId, name, groupTarget, position: viewportPosition() });
+    });
+    const exact = document.createElement("button");
+    exact.type = "button";
+    exact.className = "secondary";
+    exact.textContent = "Use exact element instead";
+    exact.hidden = !assertionGroupLocked;
+    exact.disabled = !assertionPickerSeed?.isConnected;
+    exact.addEventListener("click", () => {
+      if (!assertionGroupLocked || !assertionPickerSeed?.isConnected) return;
+      emitExactAssertionSelection(assertionPickerSeed);
+    });
+    const back = document.createElement("button");
+    back.type = "button";
+    back.className = "text-action";
+    back.textContent = "Continue picking";
+    back.hidden = !assertionGroupLocked;
+    back.addEventListener("click", () => {
+      assertionGroupLocked = false;
+      assertionFrozenGroup = null;
+      assertionPickerSeed = null;
+      assertionGroupCandidates = [];
+      assertionSelectedGroupIndex = null;
+      clearAssertionHighlight();
+      renderAssertionPickerPanel();
+    });
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.className = "text-action cancel";
+    cancel.textContent = "Cancel";
+    cancel.addEventListener("click", () => {
+      if (!assertionPickerRequestId) return;
+      const requestId = assertionPickerRequestId;
+      window.__browserMemorySetAssertionPicker(null);
+      emit({ type: "assertion-picker.cancelled", requestId });
+    });
+    actions.append(use, exact, back, cancel);
+    content.append(actions);
+  };
+
+  const refreshAssertionGroups = () => {
+    if (!assertionPickerRequestId) return;
+    if (assertionGroupLocked && assertionFrozenGroup) {
+      assertionFrozenGroup = repeatedGroupFor(assertionFrozenGroup.parent, assertionFrozenGroup.templateDescription);
+      assertionGroupCandidates = [assertionFrozenGroup];
+      assertionSelectedGroupIndex = 0;
+      if (assertionFrozenGroup.members.length) highlightAssertionTargets(assertionFrozenGroup.members, "#285bd6");
+      else clearAssertionHighlight();
+      renderAssertionPickerPanel();
+      return;
+    }
+    if (!assertionPickerSeed?.isConnected) {
+      assertionPickerSeed = null;
+      assertionGroupCandidates = [];
+      assertionSelectedGroupIndex = null;
+      clearAssertionHighlight();
+      renderAssertionPickerPanel();
+      return;
+    }
+    assertionGroupCandidates = discoverRepeatedGroups(assertionPickerSeed);
+    assertionSelectedGroupIndex = assertionGroupCandidates.length ? 0 : null;
+    if (assertionSelectedGroupIndex === null) highlightAssertionTarget(assertionPickerSeed);
+    else highlightAssertionTargets(assertionGroupCandidates[assertionSelectedGroupIndex].members, "#285bd6");
+    renderAssertionPickerPanel();
+  };
+
+  const mountAssertionPickerPanel = () => {
+    const host = document.createElement("div");
+    host.setAttribute("data-browser-memory-assertion-ui", "");
+    host.style.setProperty("position", "fixed", "important");
+    host.style.setProperty("top", "16px", "important");
+    host.style.setProperty("right", "16px", "important");
+    host.style.setProperty("width", "min(320px, calc(100vw - 32px))", "important");
+    host.style.setProperty("max-height", "calc(100vh - 32px)", "important");
+    host.style.setProperty("z-index", "2147483647", "important");
+    host.style.setProperty("pointer-events", "auto", "important");
+    host.style.setProperty("display", assertionPickerPanelActive ? "block" : "none", "important");
+    const root = host.attachShadow({ mode: "open", delegatesFocus: true });
+    const style = document.createElement("style");
+    style.textContent = [
+      ":host{all:initial}",
+      "*{box-sizing:border-box}",
+      ".panel{max-height:calc(100vh - 32px);padding:20px;background:#fff;color:#172033;border:1px solid #d8e1ef;border-radius:14px;box-shadow:0 18px 44px rgba(15,35,75,.20);font:14px/1.45 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif;overflow:auto}",
+      ".eyebrow{font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:#285bd6;margin:0 0 14px}",
+      "h2{font-size:20px;line-height:1.25;margin:0;color:#172033}",
+      ".match-summary{display:flex;align-items:center;gap:8px;margin:10px 0 0;color:#526079;font-size:13px}",
+      ".match-marker{width:22px;height:22px;display:grid;place-items:center;flex:0 0 auto;border-radius:999px;color:#fff;background:#285bd6;font-size:13px;font-weight:800}",
+      ".guidance{color:#5e6b82;margin:14px 0 16px;font-size:13px;line-height:1.5}",
+      ".group-list{display:grid;gap:8px}",
+      ".group-row{width:100%;display:grid;gap:3px;text-align:left;border:1px solid #d8e1ef;border-radius:10px;padding:12px;background:#fff;color:#172033;cursor:pointer}",
+      ".group-row span{font-size:12px;color:#647087}",
+      ".group-row:hover,.group-row:focus-visible{border-color:#285bd6;outline:3px solid rgba(40,91,214,.20);outline-offset:1px}",
+      ".group-row.selected{border-color:#8fb0f5;background:#eef4ff}",
+      "details{margin-top:14px;border-top:1px solid #e5ebf3;padding-top:12px;color:#354158}",
+      "summary{cursor:pointer;font-size:12px;font-weight:700}",
+      "summary:focus-visible{outline:3px solid rgba(40,91,214,.20);outline-offset:3px;border-radius:3px}",
+      "pre{max-height:180px;white-space:pre-wrap;overflow:auto;overflow-wrap:anywhere;padding:10px;border-radius:8px;background:#f4f7fb;color:#3f4b61;font:11px/1.45 ui-monospace,SFMono-Regular,monospace}",
+      ".actions{display:grid;gap:8px;margin-top:18px}",
+      ".actions button{min-height:40px;border:1px solid #cfd9e8;border-radius:8px;background:#fff;color:#26344d;font:700 13px/1 ui-sans-serif,system-ui,sans-serif;cursor:pointer}",
+      ".actions button:hover:not(:disabled){border-color:#9eb4d8;background:#f7f9fc}",
+      ".actions button:focus-visible{outline:3px solid rgba(40,91,214,.24);outline-offset:2px}",
+      ".actions .primary{border-color:#285bd6;background:#285bd6;color:#fff}",
+      ".actions .primary:hover:not(:disabled){border-color:#204db9;background:#204db9}",
+      ".actions .text-action{min-height:36px;border-color:transparent;background:transparent;color:#285bd6}",
+      ".actions .text-action:hover:not(:disabled){border-color:transparent;background:#eef4ff}",
+      ".actions .cancel{color:#526079}",
+      ".actions button:disabled{cursor:not-allowed;opacity:.45}",
+      "[hidden]{display:none!important}",
+    ].join("");
+    const panel = document.createElement("aside");
+    panel.className = "panel";
+    panel.setAttribute("aria-label", "Repeated group assertion picker");
+    const eyebrow = document.createElement("p");
+    eyebrow.className = "eyebrow";
+    eyebrow.textContent = "Assertion picker";
+    const content = document.createElement("div");
+    content.setAttribute("data-content", "");
+    panel.append(eyebrow, content);
+    root.append(style, panel);
+    document.documentElement.append(host);
+    assertionPickerPanelHost = host;
+    renderAssertionPickerPanel();
+    assertionGroupObserver = new MutationObserver(() => {
+      if (assertionGroupRefreshFrame !== null) return;
+      assertionGroupRefreshFrame = requestAnimationFrame(() => {
+        assertionGroupRefreshFrame = null;
+        refreshAssertionGroups();
+      });
+    });
+    if (document.body) assertionGroupObserver.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["class", "hidden", "aria-hidden", "role"],
+    });
   };
 
   const visibleLabelFor = (element) => {
@@ -358,6 +772,20 @@ export const RECORDER_SCRIPT = String.raw`(() => {
     return name || element.tagName.toLowerCase();
   };
 
+  const emitExactAssertionSelection = (element) => {
+    if (!assertionPickerRequestId || !(element instanceof HTMLElement)) return;
+    const requestId = assertionPickerRequestId;
+    window.__browserMemorySetAssertionPicker(null);
+    emit({
+      type: "assertion-picker.selected",
+      requestId,
+      name: targetName(element),
+      text: clip(element.innerText || "", ${MAX_ASSERTION_TEXT_LENGTH}),
+      target: describe(element),
+      position: viewportPosition(),
+    });
+  };
+
   const sensitive = (element) => {
     const type = element.getAttribute("type") || "";
     const autocomplete = element.getAttribute("autocomplete") || "";
@@ -522,35 +950,37 @@ export const RECORDER_SCRIPT = String.raw`(() => {
   }, true);
 
   window.addEventListener("pointerover", (event) => {
-    if (!assertionPickerRequestId) return;
+    if (!assertionPickerRequestId || assertionGroupLocked || isAssertionPickerUiEvent(event)) return;
+    if (!assertionPickerPanelActive) activateCurrentAssertionPickerFrame();
     const element = assertionEventElement(event);
-    if (element instanceof HTMLElement) highlightAssertionTarget(element);
+    if (!(element instanceof HTMLElement) || element === document.body || element === document.documentElement) return;
+    assertionPickerSeed = element;
+    refreshAssertionGroups();
   }, true);
 
   window.addEventListener("pointerout", (event) => {
-    if (!assertionPickerRequestId || assertionPickerHighlight?.element !== assertionEventElement(event)) return;
+    if (!assertionPickerRequestId || assertionGroupCandidates.length || assertionPickerHighlights[0]?.element !== assertionEventElement(event)) return;
     const next = event.relatedTarget;
-    if (next instanceof Node && assertionPickerHighlight.element.contains(next)) return;
+    if (next instanceof Node && assertionPickerHighlights[0].element.contains(next)) return;
     clearAssertionHighlight();
   }, true);
 
   window.addEventListener("click", (event) => {
-    if (!assertionPickerRequestId) return;
+    if (!assertionPickerRequestId || isAssertionPickerUiEvent(event)) return;
     const element = assertionEventElement(event);
     if (!(element instanceof HTMLElement)) return;
+    const previewedGroup = assertionSelectedGroupIndex === null ? null : assertionGroupCandidates[assertionSelectedGroupIndex];
+    const clickedPreviewedMember = previewedGroup?.members.some((member) => member === element || member.contains(element));
     event.preventDefault();
     event.stopPropagation();
     event.stopImmediatePropagation();
-    const requestId = assertionPickerRequestId;
-    window.__browserMemorySetAssertionPicker(null);
-    emit({
-      type: "assertion-picker.selected",
-      requestId,
-      name: targetName(element),
-      text: clip(element.innerText || "", ${MAX_ASSERTION_TEXT_LENGTH}),
-      target: describe(element),
-      position: viewportPosition(),
-    });
+    if (!assertionGroupLocked && clickedPreviewedMember) {
+      assertionPickerSeed = element;
+      freezeAssertionGroup(assertionSelectedGroupIndex);
+      return;
+    }
+    if (assertionGroupLocked) return;
+    emitExactAssertionSelection(element);
   }, true);
 
   window.addEventListener("keydown", (event) => {
@@ -564,7 +994,7 @@ export const RECORDER_SCRIPT = String.raw`(() => {
   }, true);
 
   window.addEventListener("click", (event) => {
-    if (window.__browserMemoryCaptchaLocked) return;
+    if (window.__browserMemoryCaptchaLocked || isAssertionPickerUiEvent(event)) return;
     if (suppressKeyboardClick && event.detail === 0) {
       suppressKeyboardClick = false;
       if (suppressKeyboardClickTimer) clearTimeout(suppressKeyboardClickTimer);
@@ -647,7 +1077,7 @@ export const RECORDER_SCRIPT = String.raw`(() => {
   }, true);
 
   window.addEventListener("keydown", (event) => {
-    if (window.__browserMemoryCaptchaLocked) return;
+    if (window.__browserMemoryCaptchaLocked || isAssertionPickerUiEvent(event)) return;
     if (event.key === "Escape" && datePickerOpen) {
       datePickerOpen = false;
       emit({ type: "date-picker.dismiss" });

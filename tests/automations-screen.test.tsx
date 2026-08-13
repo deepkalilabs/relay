@@ -6,6 +6,8 @@ import type { WorkflowLibraryResponse } from "@/shared/contracts/workflow/librar
 
 const DRAFT_ID = "36df661c-f159-47ac-bdf5-2afc0680cc4d";
 const COMPLETE_ID = "1d942a81-b2e4-4dc9-916d-8a761db5f75f";
+const ARTIFACT_ID = "3e23db5e-1683-4857-bfb7-a5c2eea6d41f";
+const SCREENSHOT = { url: `/api/run-artifacts/${ARTIFACT_ID}`, width: 480, height: 300 };
 
 const libraryData: WorkflowLibraryResponse = {
   workflows: [
@@ -65,6 +67,11 @@ describe("AutomationsScreen", () => {
     await userEvent.click(screen.getByRole("button", { name: "Select Inbox folder" }));
     expect(screen.getByRole("region", { name: "Inbox tasks" }).querySelectorAll("tbody tr")).toHaveLength(2);
     expect(screen.getByRole("region", { name: "Run activity" })).toHaveTextContent("No active runs");
+    const completedRuns = screen.getByRole("region", { name: "Completed runs" });
+    expect(within(completedRuns).getByText("Demo · Not a real run")).toBeInTheDocument();
+    expect(within(completedRuns).getByRole("img", { name: "Diffusion cat sample evidence" }))
+      .toBeInTheDocument();
+    expect(within(completedRuns).queryByRole("button", { name: /View details/ })).not.toBeInTheDocument();
     expect(screen.queryByText("Salesforce connection timed out")).not.toBeInTheDocument();
   });
 
@@ -95,7 +102,13 @@ describe("AutomationsScreen", () => {
       }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({
         batchId,
-        runs: [{ workflowId: COMPLETE_ID, status: "completed", currentStep: 2, totalSteps: 2 }],
+        runs: [{
+          workflowId: COMPLETE_ID,
+          status: "completed",
+          currentStep: 2,
+          totalSteps: 2,
+          screenshot: SCREENSHOT,
+        }],
       }), { status: 200 }));
     render(<AutomationsScreen client={libraryClient()} />);
     await screen.findByText("Create support ticket");
@@ -105,10 +118,38 @@ describe("AutomationsScreen", () => {
     fireEvent.click(screen.getByRole("button", { name: "Run folder" }));
 
     expect(await screen.findByText("Running · Step 1 of 2")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Hide evidence for Create support ticket" }))
+      .not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Running folder…" })).toBeDisabled();
     expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({ workflowIds: [COMPLETE_ID] });
 
     expect(await screen.findByText("Completed · 2 steps", {}, { timeout: 2_000 })).toBeInTheDocument();
+    const evidenceToggle = screen.getByRole("button", {
+      name: "Hide evidence for Create support ticket",
+    });
+    expect(evidenceToggle).toHaveAttribute("aria-expanded", "true");
+    const realRun = screen.getByRole("article", { name: /Create support ticket: Completed/ });
+    const realEvidence = within(realRun).getByRole("img", {
+      name: "Run evidence for Create support ticket",
+    });
+    expect(realEvidence.getAttribute("src")).toMatch(new RegExp(`${SCREENSHOT.url}$`));
+    expect(realEvidence).toHaveAttribute("width", "480");
+    expect(realEvidence).toHaveAttribute("height", "300");
+    expect(within(realRun).getByText("Captured just now")).toBeInTheDocument();
+    expect(within(realRun).getByText("Step 2 of 2")).toBeInTheDocument();
+
+    const demoRun = screen.getByRole("article", { name: "Cat evidence demo: Demo · Not a real run" });
+    const demoToggle = within(demoRun).getByRole("button", { name: "Hide evidence for Cat evidence demo" });
+    expect(within(demoRun).getByRole("img", { name: "Diffusion cat sample evidence" })).toBeInTheDocument();
+    expect(realRun.compareDocumentPosition(demoRun) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    await userEvent.click(evidenceToggle);
+    expect(evidenceToggle).toHaveAccessibleName("Show evidence for Create support ticket");
+    expect(evidenceToggle).toHaveAttribute("aria-expanded", "false");
+    expect(within(realRun).queryByRole("img", { name: "Run evidence for Create support ticket" }))
+      .not.toBeInTheDocument();
+    expect(demoToggle).toHaveAttribute("aria-expanded", "true");
+    expect(within(demoRun).getByRole("img", { name: "Diffusion cat sample evidence" })).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Verification run completed."));
     expect(fetchMock).toHaveBeenCalledTimes(3);
 
@@ -117,7 +158,13 @@ describe("AutomationsScreen", () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ batchId: nextBatchId, runCount: 1 }), { status: 202 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({
         batchId: nextBatchId,
-        runs: [{ workflowId: COMPLETE_ID, status: "completed", currentStep: 2, totalSteps: 2 }],
+        runs: [{
+          workflowId: COMPLETE_ID,
+          status: "completed",
+          currentStep: 2,
+          totalSteps: 2,
+          screenshot: SCREENSHOT,
+        }],
       }), { status: 200 }));
     fireEvent.click(screen.getByRole("button", { name: "Run folder" }));
 
@@ -136,6 +183,7 @@ describe("AutomationsScreen", () => {
           currentStep: 0,
           totalSteps: 0,
           error: "The page did not load.",
+          screenshot: SCREENSHOT,
         }],
       }), { status: 200 }));
     const user = userEvent.setup();
@@ -144,6 +192,12 @@ describe("AutomationsScreen", () => {
     await moveWorkflowToVerification("Create support ticket", COMPLETE_ID);
 
     await user.click(screen.getByRole("button", { name: "Run folder" }));
+    expect(await screen.findByRole("button", {
+      name: "Hide evidence for Create support ticket",
+    })).toHaveAttribute("aria-expanded", "true");
+    const realImage = screen.getByRole("img", { name: "Run evidence for Create support ticket" });
+    fireEvent.error(realImage);
+    expect(screen.getByText("Screenshot unavailable")).toBeInTheDocument();
     await user.click(await screen.findByRole("button", { name: "View details for Create support ticket" }));
 
     const dialog = screen.getByRole("dialog", { name: "Create support ticket run details" });
@@ -151,5 +205,24 @@ describe("AutomationsScreen", () => {
     expect(dialog).not.toHaveTextContent("step 0");
     expect(dialog).toHaveTextContent("The page did not load.");
     expect(dialog).not.toHaveTextContent("Mock run");
+  });
+
+  it("omits evidence controls for active and terminal runs without screenshots", async () => {
+    const batchId = "dc375e45-9624-4b7b-b9d0-32eae90d7868";
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify({ batchId, runCount: 1 }), { status: 202 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        batchId,
+        runs: [{ workflowId: COMPLETE_ID, status: "failed", currentStep: 1, totalSteps: 2 }],
+      }), { status: 200 }));
+    render(<AutomationsScreen client={libraryClient()} />);
+    await screen.findByText("Create support ticket");
+    await moveWorkflowToVerification("Create support ticket", COMPLETE_ID);
+
+    fireEvent.click(screen.getByRole("button", { name: "Run folder" }));
+    const failedRun = await screen.findByRole("article", { name: /Create support ticket: Failed/ });
+    expect(within(failedRun).queryByRole("button", { name: /evidence/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("article", { name: "Cat evidence demo: Demo · Not a real run" }))
+      .toBeInTheDocument();
   });
 });

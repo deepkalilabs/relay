@@ -5,7 +5,7 @@ import { BrowserPanel, type BrowserActions } from "@/features/browser";
 import { RecorderControls, stepFromRecordedAction } from "@/features/recorder";
 import { ReplayControls, ReplayFailurePanel } from "@/features/replay";
 import { WorkspaceNavbar } from "@/app/(product)/workflows/[workflowId]/edit/_components/WorkspaceNavbar";
-import { AddStepDialog, AssertionStepDialog, ManualStepDialog, StepEditor, WorkflowTimeline } from "@/features/workflow-editor";
+import { AssertionStepDialog, StepEditor, WorkflowTimeline } from "@/features/workflow-editor";
 import type { WorkflowStep } from "@/shared/contracts/workflow/domain";
 import { TestBrowserPanel } from "./helpers/TestBrowserPanel";
 
@@ -34,7 +34,8 @@ describe("WorkflowTimeline", () => {
         onToggle={vi.fn()}
         onDelete={vi.fn()}
         onReorder={vi.fn()}
-        onInsert={vi.fn()}
+        onAddAssertion={vi.fn()}
+        assertionAvailable
         onCollapse={vi.fn()}
         replayResults={{ [step.id]: { status: "passed" } }}
       />,
@@ -47,61 +48,56 @@ describe("WorkflowTimeline", () => {
     expect(screen.getByRole("button", { name: /disable continue/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /delete continue/i })).toBeInTheDocument();
   });
-});
 
-describe("ManualStepDialog", () => {
-  it("uses and restores a target-focused default across action types", async () => {
+  it("labels the add control and launches assertion picking directly", async () => {
     const user = userEvent.setup();
-    const onClose = vi.fn();
-    const rendered = render(
-      <ManualStepDialog
-        open
-        order={0}
-        page={{ id: "page", url: "https://example.com" }}
-        onClose={onClose}
-        onInsert={vi.fn()}
+    const onAddAssertion = vi.fn();
+    render(
+      <WorkflowTimeline
+        steps={[]}
+        selectedId={null}
+        onSelect={vi.fn()}
+        onToggle={vi.fn()}
+        onDelete={vi.fn()}
+        onReorder={vi.fn()}
+        onAddAssertion={onAddAssertion}
+        assertionAvailable
+        onCollapse={vi.fn()}
       />,
     );
 
-    const name = screen.getByLabelText("Step name");
-    expect(name).toHaveValue("Element");
-    await user.selectOptions(screen.getByLabelText("Action type"), "fill");
-    expect(name).toHaveValue("Element");
-    await user.clear(name);
-    await user.type(name, "Email address");
-    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    const addAssertion = screen.getByRole("button", { name: "Add assertion" });
+    expect(addAssertion).toBeEnabled();
+    await user.click(addAssertion);
+    expect(onAddAssertion).toHaveBeenCalledOnce();
+    expect(screen.queryByText(/add a step manually/i)).not.toBeInTheDocument();
+  });
 
-    expect(onClose).toHaveBeenCalled();
-    expect(screen.getByLabelText("Step name")).toHaveValue("Element");
-    expect(screen.getByLabelText("Action type")).toHaveValue("click");
-    rendered.unmount();
+  it("disables assertion picking without an eligible live session", async () => {
+    const user = userEvent.setup();
+    const onAddAssertion = vi.fn();
+    render(
+      <WorkflowTimeline
+        steps={[]}
+        selectedId={null}
+        onSelect={vi.fn()}
+        onToggle={vi.fn()}
+        onDelete={vi.fn()}
+        onReorder={vi.fn()}
+        onAddAssertion={onAddAssertion}
+        assertionAvailable={false}
+        onCollapse={vi.fn()}
+      />,
+    );
+
+    const addAssertion = screen.getByRole("button", { name: "Add assertion" });
+    expect(addAssertion).toBeDisabled();
+    await user.click(addAssertion);
+    expect(onAddAssertion).not.toHaveBeenCalled();
   });
 });
 
 describe("Assertion step creation", () => {
-  it("keeps assertions unavailable until a live recording session exists", async () => {
-    const user = userEvent.setup();
-    const onAction = vi.fn();
-    const onStartRecording = vi.fn();
-    render(
-      <AddStepDialog
-        open
-        assertionAvailable={false}
-        onAction={onAction}
-        onAssertion={vi.fn()}
-        onStartRecording={onStartRecording}
-        onClose={vi.fn()}
-      />,
-    );
-
-    expect(screen.getByRole("button", { name: /assertion/i })).toBeDisabled();
-    expect(screen.getByText(/start a live recording session/i)).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: /^Action/ }));
-    await user.click(screen.getByRole("button", { name: "Start recording" }));
-    expect(onAction).toHaveBeenCalledOnce();
-    expect(onStartRecording).toHaveBeenCalledOnce();
-  });
-
   it("infers a text-containment assertion from captured visible text", async () => {
     const user = userEvent.setup();
     const onInsert = vi.fn();
@@ -111,6 +107,7 @@ describe("Assertion step creation", () => {
         order={2}
         selection={{
           status: "selected",
+          kind: "element",
           requestId: "c7daf0b9-d92a-44db-9967-db33d1516976",
           name: "Ready status",
           text: "Ready for review",
@@ -142,6 +139,7 @@ describe("Assertion step creation", () => {
         order={0}
         selection={{
           status: "selected",
+          kind: "element",
           requestId: "c7daf0b9-d92a-44db-9967-db33d1516976",
           name: "Empty status",
           text: "",
@@ -160,6 +158,43 @@ describe("Assertion step creation", () => {
     await user.click(screen.getByRole("button", { name: "Add assertion" }));
     expect(screen.getByRole("alert")).toHaveTextContent("Enter text to match");
     expect(onInsert).not.toHaveBeenCalled();
+  });
+
+  it("creates a group-exists assertion from a repeated-group selection", async () => {
+    const user = userEvent.setup();
+    const onInsert = vi.fn();
+    render(
+      <AssertionStepDialog
+        open
+        order={3}
+        selection={{
+          status: "selected",
+          kind: "group",
+          requestId: crypto.randomUUID(),
+          name: "Profile card group",
+          groupTarget: {
+            version: 1,
+            algorithm: "structural-token-v1",
+            root: { tagName: "article", role: "article", sharedClasses: ["profile-card"] },
+            structureTokens: ["0:article:article", "1:header:", "1:section:", "1:footer:"],
+            capturedMatchCount: 2,
+          },
+          position: { x: 0, y: 320 },
+          page: { id: "page-1", url: "https://example.com" },
+        }}
+        onClose={vi.fn()}
+        onInsert={onInsert}
+      />,
+    );
+
+    expect(screen.getByLabelText("Expectation")).toHaveValue("Group exists");
+    expect(screen.getByText("2 matches captured")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Add assertion" }));
+    expect(onInsert).toHaveBeenCalledWith(expect.objectContaining({
+      type: "assertion",
+      groupTarget: expect.objectContaining({ algorithm: "structural-token-v1", capturedMatchCount: 2 }),
+      expectation: { kind: "group_exists" },
+    }));
   });
 });
 
@@ -389,6 +424,34 @@ describe("StepEditor", () => {
     expect(onUpdate).toHaveBeenCalled();
     expect(step).toMatchObject({ expectation: { kind: "text_contains", expected: "Approved" } });
     rendered.unmount();
+  });
+
+  it("shows group assertion structure as read-only instead of element locators", () => {
+    const step: WorkflowStep = {
+      id: "assertion-group",
+      order: 0,
+      name: "Profile cards exist",
+      enabled: true,
+      page: { id: "page", url: "https://example.com" },
+      groupTarget: {
+        version: 1,
+        algorithm: "structural-token-v1",
+        root: { tagName: "article", role: "article", sharedClasses: ["profile-card"] },
+        structureTokens: ["0:article:article", "1:header:", "1:section:"],
+        capturedMatchCount: 2,
+      },
+      expectation: { kind: "group_exists" },
+      metadata: { recordedAt: new Date().toISOString(), origin: "manual", sensitive: false },
+      type: "assertion",
+    };
+
+    render(<StepEditor step={step} onUpdate={vi.fn()} />);
+
+    expect(screen.getByLabelText("Expectation")).toHaveValue("Group exists");
+    expect(screen.getByLabelText("Captured matches")).toHaveValue("2");
+    expect(screen.getByLabelText("Structural tokens")).toHaveValue("0:article:article\n1:header:\n1:section:");
+    expect(screen.getByText(/read-only structural group template/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /add locator/i })).not.toBeInTheDocument();
   });
 
   it("shows inline validation when a required name is removed", async () => {

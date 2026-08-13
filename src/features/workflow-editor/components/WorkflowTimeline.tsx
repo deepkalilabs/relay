@@ -59,7 +59,8 @@ interface TimelineProps {
   onToggle: (step: WorkflowStep) => void;
   onDelete: (id: string) => void;
   onReorder: (activeId: string, overId: string) => void;
-  onInsert: () => void;
+  onAddAssertion: () => void;
+  assertionAvailable: boolean;
   onCollapse: () => void;
   replayResults?: Record<string, ReplayStepResultState>;
   locked?: boolean;
@@ -110,7 +111,7 @@ function SortableStep({ step, selected, result, locked, reviewLocked, onSelect, 
   );
 }
 
-export function WorkflowTimeline({ steps, selectedId, onSelect, onToggle, onDelete, onReorder, onInsert, onCollapse, replayResults = {}, locked = false, reviewLocked = false }: TimelineProps) {
+export function WorkflowTimeline({ steps, selectedId, onSelect, onToggle, onDelete, onReorder, onAddAssertion, assertionAvailable, onCollapse, replayResults = {}, locked = false, reviewLocked = false }: TimelineProps) {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -126,7 +127,7 @@ export function WorkflowTimeline({ steps, selectedId, onSelect, onToggle, onDele
           <h2 id="timeline-title">Workflow steps <span>{steps.length}</span></h2>
         </div>
         <div className="panel-heading-actions">
-          <button className="icon-button" type="button" disabled={locked} onClick={onInsert} aria-label="Insert a workflow step" title="Insert step">
+          <button className="icon-button" type="button" disabled={locked || !assertionAvailable} onClick={onAddAssertion} aria-label="Add assertion" title="Add assertion">
             <Plus size={18} aria-hidden="true" />
           </button>
           <button id="timeline-collapse" className="icon-button" type="button" disabled={reviewLocked} onClick={onCollapse} aria-label="Collapse workflow timeline" title="Collapse timeline">
@@ -158,8 +159,7 @@ export function WorkflowTimeline({ steps, selectedId, onSelect, onToggle, onDele
         <div className="timeline-empty">
           <span className="empty-illustration"><MousePointer2 size={22} aria-hidden="true" /></span>
           <h3>Your steps will appear here</h3>
-          <p>Start a recording, then use the browser naturally.</p>
-          <button type="button" className="text-button" disabled={locked} onClick={onInsert}>Or add a step manually</button>
+          <p>Start a recording and use the browser naturally. Your interactions become editable steps.</p>
         </div>
       )}
     </aside>

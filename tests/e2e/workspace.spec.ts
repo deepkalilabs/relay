@@ -52,19 +52,35 @@ test("loads a workflow route and keeps the editor accessible", async ({ page, re
 });
 
 test("creates, saves, refreshes, finishes, selects, and reopens a local workflow", async ({ page, request }) => {
-  const workflow = await openDraft(page, request, "Durable checkout");
+  const workflow = await createDraft(request, "Durable checkout");
+  workflow.steps = [{
+    id: crypto.randomUUID(),
+    order: 0,
+    name: "Confirm the order",
+    enabled: true,
+    page: { id: "page", url: "https://example.com/checkout" },
+    target: { candidates: [{ kind: "role", value: "button", name: "Confirm", exact: true }] },
+    metadata: { recordedAt: new Date().toISOString(), origin: "recorded", sensitive: false },
+    type: "click",
+  }];
+  const seeded = await request.put(`/api/workflows/${workflow.id}`, {
+    data: { workflow, expectedRevision: workflow.revision },
+  });
+  expect(seeded.status()).toBe(200);
 
-  await page.getByRole("button", { name: "Or add a step manually" }).click();
-  await page.getByRole("button", { name: /^Action/ }).click();
-  await page.getByLabel("Step name").fill("Confirm the order");
-  await page.getByRole("button", { name: "Insert step", exact: true }).click();
+  await page.goto(`/workflows/${workflow.id}/edit`);
+  await page.getByRole("button", { name: "Confirm the order 1 · click", exact: true }).click();
+  await page.getByLabel("Step name").fill("Confirm the purchase");
   await expect(page.getByText("Unsaved changes")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add assertion" })).toBeDisabled();
+  await expect(page.getByText(/add a step manually/i)).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /^Action$/ })).toHaveCount(0);
 
   await page.getByRole("button", { name: "Save workflow" }).click();
   await expect(page.getByText("Saved", { exact: true })).toBeVisible();
 
   await page.reload();
-  await expect(page.getByRole("button", { name: "Confirm the order 1 · click", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Confirm the purchase 1 · click", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Finish recording" }).click();
 
   await expect(page).toHaveURL(new RegExp(`/library\\?selected=${workflow.id}$`));

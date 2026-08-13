@@ -8,6 +8,7 @@ import {
   type ElementTarget,
   type LocatorCandidate,
   type ParameterBinding,
+  type RepeatedGroupTemplate,
   type ReplayWait,
   type ViewportPosition,
   type Workflow,
@@ -67,6 +68,19 @@ export const ViewportPositionSchema = z.object({
   y: z.number().finite(),
   frameUrl: z.string().optional(),
 }) satisfies z.ZodType<ViewportPosition>;
+
+export const RepeatedGroupTemplateSchema = z.object({
+  version: z.literal(1),
+  algorithm: z.literal("structural-token-v1"),
+  frameUrl: z.string().optional(),
+  root: z.object({
+    tagName: z.string().trim().min(1),
+    role: z.string().trim().min(1).optional(),
+    sharedClasses: z.array(z.string().trim().min(1)),
+  }).strict(),
+  structureTokens: z.array(z.string().min(1)).min(1),
+  capturedMatchCount: z.number().int().min(2),
+}).strict() satisfies z.ZodType<RepeatedGroupTemplate>;
 
 const StepBase = z.object({
   id: z.string().min(1),
@@ -156,18 +170,45 @@ const SubmitStepSchema = ElementActionStepBase.extend({
   payload: z.object({}).optional(),
 }).strict();
 
-const AssertionStepSchema = ElementStepBase.extend({
+const ElementAssertionExpectationSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("visible") }).strict(),
+  z.object({
+    kind: z.literal("text_contains"),
+    expected: z.string()
+      .max(MAX_ASSERTION_TEXT_LENGTH)
+      .refine((value) => value.trim().length > 0, "Enter text to match."),
+  }).strict(),
+]);
+
+const LegacyElementAssertionStepSchema = ElementStepBase.extend({
   type: z.literal("assertion"),
-  expectation: z.discriminatedUnion("kind", [
-    z.object({ kind: z.literal("visible") }).strict(),
-    z.object({
-      kind: z.literal("text_contains"),
-      expected: z.string()
-        .max(MAX_ASSERTION_TEXT_LENGTH)
-        .refine((value) => value.trim().length > 0, "Enter text to match."),
-    }).strict(),
-  ]),
+  expectation: ElementAssertionExpectationSchema,
 }).strict();
+
+const AssertionStepSchema = StepBase.extend({
+  type: z.literal("assertion"),
+  groupTarget: RepeatedGroupTemplateSchema.optional(),
+  expectation: z.discriminatedUnion("kind", [
+    ...ElementAssertionExpectationSchema.options,
+    z.object({ kind: z.literal("group_exists") }).strict(),
+  ]),
+}).strict().superRefine((step, context) => {
+  if (step.expectation.kind === "group_exists") {
+    if (!step.groupTarget) {
+      context.addIssue({ code: "custom", path: ["groupTarget"], message: "Group assertions need a structural template." });
+    }
+    if (step.target) {
+      context.addIssue({ code: "custom", path: ["target"], message: "Group assertions cannot use an element target." });
+    }
+    return;
+  }
+  if (!step.target || locatorCandidatesForTarget(step.target).length === 0) {
+    context.addIssue({ code: "custom", path: ["target"], message: "Element assertions need at least one locator." });
+  }
+  if (step.groupTarget) {
+    context.addIssue({ code: "custom", path: ["groupTarget"], message: "Element assertions cannot use a group template." });
+  }
+});
 
 export const WorkflowStepSchema = z.discriminatedUnion("type", [
   NavigateStepSchema,
@@ -180,7 +221,7 @@ export const WorkflowStepSchema = z.discriminatedUnion("type", [
   KeypressStepSchema,
   SubmitStepSchema,
   AssertionStepSchema,
-]) satisfies z.ZodType<WorkflowStep>;
+]) as unknown as z.ZodType<WorkflowStep>;
 
 const LegacyWorkflowStepSchema = z.discriminatedUnion("type", [
   NavigateStepSchema,
@@ -205,6 +246,19 @@ const SchemaV12WorkflowStepSchema = z.discriminatedUnion("type", [
   SubmitStepSchema,
 ]);
 
+const SchemaV13WorkflowStepSchema = z.discriminatedUnion("type", [
+  NavigateStepSchema,
+  ClickStepSchema,
+  FillStepSchema,
+  SetDateStepSchema,
+  SelectStepSchema,
+  CheckStepSchema,
+  UncheckStepSchema,
+  KeypressStepSchema,
+  SubmitStepSchema,
+  LegacyElementAssertionStepSchema,
+]);
+
 const WorkflowDocumentBase = z.object({
   id: z.string().min(1),
   name: z.string().trim().min(1, "Give this workflow a name."),
@@ -224,7 +278,7 @@ const RevisionedWorkflowDocumentBase = WorkflowDocumentBase.extend({
 });
 
 export const WorkflowSchema = RevisionedWorkflowDocumentBase.extend({
-  schemaVersion: z.literal("1.3"),
+  schemaVersion: z.literal("1.4"),
   steps: z.array(WorkflowStepSchema),
 }).strict() satisfies z.ZodType<Workflow>;
 
@@ -243,18 +297,23 @@ const SchemaV12WorkflowSchema = RevisionedWorkflowDocumentBase.extend({
   steps: z.array(SchemaV12WorkflowStepSchema),
 }).strict();
 
+const SchemaV13WorkflowSchema = RevisionedWorkflowDocumentBase.extend({
+  schemaVersion: z.literal("1.3"),
+  steps: z.array(SchemaV13WorkflowStepSchema),
+}).strict();
+
 export const CompatibleWorkflowSchema = z.discriminatedUnion(
   "schemaVersion",
-  [WorkflowSchema, SchemaV12WorkflowSchema, PreviousWorkflowSchema, LegacyWorkflowSchema],
+  [WorkflowSchema, SchemaV13WorkflowSchema, SchemaV12WorkflowSchema, PreviousWorkflowSchema, LegacyWorkflowSchema],
 ).transform(
   (workflow): Workflow => {
-    if (workflow.schemaVersion === "1.3") return workflow;
-    if (workflow.schemaVersion === "1.2" || workflow.schemaVersion === "1.1") {
-      return { ...workflow, schemaVersion: "1.3" };
+    if (workflow.schemaVersion === "1.4") return workflow;
+    if (workflow.schemaVersion === "1.3" || workflow.schemaVersion === "1.2" || workflow.schemaVersion === "1.1") {
+      return { ...workflow, schemaVersion: "1.4" };
     }
     return {
       ...workflow,
-      schemaVersion: "1.3",
+      schemaVersion: "1.4",
       status: "complete",
       revision: 1,
       finishedAt: workflow.updatedAt,
@@ -270,14 +329,10 @@ export function orderLocatorCandidates(candidates: LocatorCandidate[]): LocatorC
   );
 }
 
-export const emptyTarget = (): ElementTarget => ({
-  candidates: [{ kind: "css", value: "body", exact: true, unique: true }],
-});
-
 export function createWorkflow(sessionId = ""): Workflow {
   const now = new Date().toISOString();
   return {
-    schemaVersion: "1.3",
+    schemaVersion: "1.4",
     id: crypto.randomUUID(),
     name: "Untitled recording",
     status: "draft",

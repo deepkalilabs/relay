@@ -173,10 +173,24 @@ export function useRecorderSession({ onSessionStarted, onReplaySessionStarted, o
         setAssertionPick((current) => current?.requestId === message.requestId
           ? {
               status: "selected",
+              kind: "element",
               requestId: message.requestId,
               name: message.name,
               text: message.text,
               target: message.target,
+              position: message.position,
+              page: message.page,
+            }
+          : current);
+        break;
+      case "assertion.pick.groupSelected":
+        setAssertionPick((current) => current?.requestId === message.requestId
+          ? {
+              status: "selected",
+              kind: "group",
+              requestId: message.requestId,
+              name: message.name,
+              groupTarget: message.groupTarget,
               position: message.position,
               page: message.page,
             }

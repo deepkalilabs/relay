@@ -526,7 +526,7 @@
 
 .runTitle {
   display: flex;
-  align-items: baseline;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
 }
@@ -542,10 +542,37 @@
   white-space: nowrap;
 }
 
-.runTitle span {
+.runActions {
+  flex: 0 0 auto;
+  display: grid;
+  justify-items: end;
+  gap: 5px;
+}
+
+.runTimestamp {
   flex: 0 0 auto;
   color: var(--muted);
   font-size: 10px;
+}
+
+.evidenceToggle {
+  min-height: 26px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border: 0;
+  color: var(--primary);
+  background: transparent;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.evidenceToggle:focus-visible {
+  border-radius: 4px;
+  outline: 3px solid rgb(40 91 214 / 18%);
+  outline-offset: 2px;
 }
 
 .runningStatus,
@@ -581,6 +608,35 @@
   gap: 5px;
   color: #138052;
   font-weight: 700;
+}
+
+.demoRunCard {
+  border-style: dashed;
+  background: color-mix(in srgb, var(--surface-muted) 55%, white);
+}
+
+.demoRunTitle {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.demoRunBadge {
+  width: max-content;
+  max-width: 100%;
+  padding: 2px 5px;
+  border-radius: 999px;
+  color: #624b16;
+  background: #fff3c7;
+  font-size: 9px;
+  font-weight: 750;
+}
+
+.demoRunStatus {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
 }
 
 .runProgress {
@@ -628,6 +684,59 @@
   background: transparent;
   font-size: 11px;
   font-weight: 700;
+}
+
+.runEvidence {
+  min-width: 0;
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 8px;
+}
+
+.evidenceFrame {
+  min-height: 80px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--surface-muted);
+}
+
+.evidenceImage {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.failedEvidence {
+  border-color: color-mix(in srgb, var(--danger) 58%, white);
+}
+
+.completedEvidence {
+  border-color: #61b68d;
+}
+
+.demoEvidence {
+  border-color: #d9b95d;
+}
+
+.evidenceUnavailable {
+  margin: 0;
+  padding: 28px 12px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+  text-align: center;
+}
+
+.evidenceMeta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 10px;
 }
 
 .dialogField {

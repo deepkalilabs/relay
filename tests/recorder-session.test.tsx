@@ -139,6 +139,35 @@ describe("useRecorderSession", () => {
     expect(socket.send).toHaveBeenCalledWith({ type: "assertion.pick.cancel", requestId });
   });
 
+  it("receives a request-correlated repeated-group assertion selection", () => {
+    const { result } = renderHook(() => useRecorderSession({ onSessionStarted: vi.fn(), onReplaySessionStarted: vi.fn(), onStartUrl: vi.fn(), onStepRecorded: vi.fn() }));
+    const requestId = "c7daf0b9-d92a-44db-9967-db33d1516976";
+    act(() => result.current.startAssertionPick(requestId));
+
+    act(() => socket.onMessage?.({
+      type: "assertion.pick.groupSelected",
+      requestId,
+      name: "Profile card group",
+      groupTarget: {
+        version: 1,
+        algorithm: "structural-token-v1",
+        root: { tagName: "article", role: "article", sharedClasses: ["profile-card"] },
+        structureTokens: ["0:article:article", "1:header:", "1:section:", "1:footer:"],
+        capturedMatchCount: 2,
+      },
+      position: { x: 0, y: 320 },
+      page: { id: "page-1", url: "https://example.com", title: "Example" },
+    }));
+
+    expect(result.current.assertionPick).toMatchObject({
+      status: "selected",
+      kind: "group",
+      requestId,
+      name: "Profile card group",
+      groupTarget: { capturedMatchCount: 2 },
+    });
+  });
+
   it("keeps native dropdown mode for the task and includes it in new sessions", () => {
     const { result } = renderHook(() => useRecorderSession({ onSessionStarted: vi.fn(), onReplaySessionStarted: vi.fn(), onStartUrl: vi.fn(), onStepRecorded: vi.fn() }));
     const requestId = "c7daf0b9-d92a-44db-9967-db33d1516976";

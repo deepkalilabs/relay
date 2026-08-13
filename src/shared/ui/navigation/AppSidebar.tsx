@@ -1,5 +1,8 @@
-import { Folder, Radio, UserRound, Zap } from "lucide-react";
+"use client";
+
+import { Database, Folder, Radio, UserRound, Zap } from "lucide-react";
 import Link from "next/link";
+import { useOptionalWorkspace } from "@/shared/ui/workspace";
 import styles from "./AppSidebar.module.css";
 
 export type AppDestination = "library" | "automations" | "profiles";
@@ -15,6 +18,7 @@ const destinations = [
 ];
 
 export function AppSidebar({ activeDestination }: AppSidebarProps) {
+  const workspace = useOptionalWorkspace();
   return (
     <aside className={styles.sidebar} aria-label="Primary navigation">
       <Link
@@ -46,6 +50,21 @@ export function AppSidebar({ activeDestination }: AppSidebarProps) {
         })}
       </nav>
       <span className={styles.spacer} />
+      {workspace ? (
+        <button
+          className={styles.workspace}
+          type="button"
+          title={`Workspace: ${workspace.active.name}`}
+          aria-label={`Change workspace. Current workspace: ${workspace.active.name}`}
+          onClick={workspace.openSwitcher}
+        >
+          <Database size={16} aria-hidden="true" />
+          <span>
+            <small>Workspace</small>
+            <strong>{workspace.active.name}</strong>
+          </span>
+        </button>
+      ) : null}
       <span className={styles.avatar}>
         <span className="sr-only">Signed in as </span>
         N

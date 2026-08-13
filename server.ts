@@ -5,13 +5,15 @@ import { loadEnvConfig } from "@next/env";
 import { WebSocketServer, type WebSocket } from "ws";
 import { ClientMessageSchema } from "./src/shared/contracts/protocol";
 import { BrowserbaseProvider } from "./src/server/infrastructure/browser/browserbase";
-import { createRepositories } from "./src/server/infrastructure/storage/repository-factory";
+import { createWorkflowRepositoryResolver } from "./src/server/infrastructure/storage/repository-factory";
 import {
   createAutomationBatchService,
   handleAutomationBatchApi,
 } from "./src/server/automation/http-router";
 import { RecordingRuntime } from "./src/server/recording/runtime";
 import { handleProfileApi } from "./src/server/profiles/http-router";
+import { FileProfileRepository } from "./src/server/profiles/filesystem-repository";
+import { handleWorkspaceApi } from "./src/server/workspaces/http-router";
 import { handleWorkflowApi } from "./src/server/workflows/http-router";
 
 loadEnvConfig(process.cwd());
@@ -21,13 +23,15 @@ const dev = process.env.NODE_ENV !== "production";
 const hostname = "127.0.0.1";
 const port = Number(process.env.PORT || 3000);
 let requestHandler: ((req: Parameters<typeof createServer>[0] extends never ? never : never) => void) | null = null;
-const { profileRepository, workflowRepository } = createRepositories();
+const profileRepository = new FileProfileRepository();
+const workflowResolver = createWorkflowRepositoryResolver(process.env, { development: dev });
 const automationBatchClient = createAutomationBatchService();
 
 const server = createServer(async (req, res) => {
-  if (await handleAutomationBatchApi(req, res, workflowRepository, automationBatchClient)) return;
+  if (await handleWorkspaceApi(req, res, workflowResolver)) return;
+  if (await handleAutomationBatchApi(req, res, workflowResolver, automationBatchClient)) return;
   if (await handleProfileApi(req, res, profileRepository)) return;
-  if (await handleWorkflowApi(req, res, workflowRepository)) return;
+  if (await handleWorkflowApi(req, res, workflowResolver)) return;
   if (!requestHandler) {
     res.statusCode = 503;
     res.end("Starting…");

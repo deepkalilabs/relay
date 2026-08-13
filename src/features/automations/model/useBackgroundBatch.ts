@@ -2,15 +2,26 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
+import { workspaceFetch } from "@/shared/api/workspaceClient";
 
 const CreateResponse = z.object({ batchId: z.uuid(), runCount: z.number().int().min(1).max(10) }).strict();
+const Screenshot = z.object({
+  url: z.string().regex(/^\/api\/run-artifacts\/[0-9a-fA-F-]{36}$/).refine(
+    (url) => z.uuid().safeParse(url.slice("/api/run-artifacts/".length)).success,
+  ),
+  width: z.number().int().min(1).max(480),
+  height: z.number().int().min(1).max(300),
+}).strict();
 const Run = z.object({
   workflowId: z.uuid(),
   status: z.enum(["queued", "running", "completed", "failed"]),
   currentStep: z.number().int().nonnegative(),
   totalSteps: z.number().int().nonnegative(),
   error: z.string().optional(),
-}).strict();
+  screenshot: Screenshot.optional(),
+}).strict().refine((run) => (
+  !run.screenshot || run.status === "completed" || run.status === "failed"
+), "Only terminal runs may include screenshots.");
 const PollResponse = z.object({ batchId: z.uuid(), runs: z.array(Run).min(1).max(10) }).strict();
 const ErrorResponse = z.object({ error: z.string().min(1).max(200) }).strict();
 
@@ -19,7 +30,7 @@ export type BackgroundRun = z.infer<typeof Run>;
 async function request<T>(url: string, init: RequestInit, status: number, schema: z.ZodType<T>): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(url, { ...init, cache: "no-store" });
+    response = await workspaceFetch(url, { ...init, cache: "no-store" });
   } catch {
     throw new Error("The background run service could not be reached.");
   }

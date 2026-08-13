@@ -6,6 +6,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import { FileWorkflowRepository } from "@/server/workflows/filesystem-repository";
 import { handleWorkflowApi } from "@/server/workflows/http-router";
 import {
+  WorkspaceSelectionError,
+  type WorkflowRepositoryResolver,
+} from "@/server/infrastructure/storage/repository-factory";
+import {
   WorkflowUnavailableError,
   type WorkflowRepository,
 } from "@/server/workflows/repository";
@@ -13,12 +17,23 @@ import {
 const servers: Server[] = [];
 const directories: string[] = [];
 
-async function api(repositoryOverride?: WorkflowRepository) {
+async function api(repositoryOverride?: WorkflowRepository, requireExplicitSelection = false) {
   const rootDir = await mkdtemp(join(tmpdir(), "memory-recorder-api-"));
   directories.push(rootDir);
   const repository = repositoryOverride ?? new FileWorkflowRepository(rootDir);
+  const resolver: WorkflowRepositoryResolver = {
+    listWorkspaces: async () => ({
+      workspaces: [{ key: "local", name: "Local", source: "local" }],
+      defaultKey: "local",
+    }),
+    resolve: async (key) => {
+      if (key !== "local") throw new WorkspaceSelectionError();
+      return repository;
+    },
+  };
   const server = createServer((request, response) => {
-    void handleWorkflowApi(request, response, repository).then((handled) => {
+    if (!requireExplicitSelection) request.headers["x-workspace-key"] = "local";
+    void handleWorkflowApi(request, response, resolver).then((handled) => {
       if (!handled) {
         response.statusCode = 404;
         response.end();
@@ -169,5 +184,20 @@ describe("workflow HTTP API", () => {
 
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({ error: "Workflow storage is temporarily unavailable." });
+  });
+
+  it("requires a valid workspace selection before accessing workflows", async () => {
+    const { url } = await api(undefined, true);
+
+    const missing = await fetch(`${url}/api/workflows`);
+    const unknown = await fetch(`${url}/api/workflows`, {
+      headers: { "x-workspace-key": crypto.randomUUID() },
+    });
+
+    expect(missing.status).toBe(400);
+    expect(unknown.status).toBe(400);
+    await expect(missing.json()).resolves.toEqual({
+      error: "Select a valid workspace before using workflows.",
+    });
   });
 });

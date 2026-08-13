@@ -2,6 +2,7 @@
 
 import type { Workflow } from "@/shared/contracts/workflow/domain";
 import { WorkflowSchema } from "@/shared/contracts/workflow/schema";
+import { workspaceFetch } from "@/shared/api/workspaceClient";
 
 export class WorkflowRequestError extends Error {
   constructor(
@@ -36,17 +37,17 @@ function saveBody(workflow: Workflow, expectedRevision: number): string {
 
 export const workflowEditorClient: WorkflowEditorClient = {
   async get(id) {
-    return readWorkflow(await fetch(`/api/workflows/${encodeURIComponent(id)}`));
+    return readWorkflow(await workspaceFetch(`/api/workflows/${encodeURIComponent(id)}`));
   },
   async save(id, workflow, expectedRevision) {
-    return readWorkflow(await fetch(`/api/workflows/${encodeURIComponent(id)}`, {
+    return readWorkflow(await workspaceFetch(`/api/workflows/${encodeURIComponent(id)}`, {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: saveBody(workflow, expectedRevision),
     }));
   },
   async finish(id, workflow, expectedRevision) {
-    return readWorkflow(await fetch(`/api/workflows/${encodeURIComponent(id)}/finish`, {
+    return readWorkflow(await workspaceFetch(`/api/workflows/${encodeURIComponent(id)}/finish`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: saveBody(workflow, expectedRevision),

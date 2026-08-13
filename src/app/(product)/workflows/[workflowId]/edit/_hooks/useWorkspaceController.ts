@@ -26,8 +26,6 @@ export function useWorkspaceController(workflowId: string, profileId = "", autoR
   const router = useRouter();
   const [workflowState, dispatch] = useReducer(workflowReducer, undefined, initialWorkflowState);
   const workflowStateRef = useRef(workflowState);
-  const [manualOpen, setManualOpen] = useState(false);
-  const [addStepOpen, setAddStepOpen] = useState(false);
   const [runDialogOpen, setRunDialogOpen] = useState(false);
   const [confirmation, setConfirmation] = useState<Confirmation>(null);
   const [announcement, setAnnouncement] = useState("");
@@ -92,7 +90,7 @@ export function useWorkspaceController(workflowId: string, profileId = "", autoR
   const workflowLocked = replayLocked || captchaLocked || persistenceLocked || assertionPicking;
   const panels = useWorkspacePanels({
     selectedStepId: workflowState.selectedStepId,
-    overlayOpen: Boolean(confirmation || addStepOpen || manualOpen || runDialogOpen || assertionSelection),
+    overlayOpen: Boolean(confirmation || runDialogOpen || assertionSelection),
   });
 
   const loadSavedWorkflow = useCallback(async () => {
@@ -142,8 +140,6 @@ export function useWorkspaceController(workflowId: string, profileId = "", autoR
   useEffect(() => {
     if (!captchaLocked) return;
     const timeout = window.setTimeout(() => {
-      setManualOpen(false);
-      setAddStepOpen(false);
       setRunDialogOpen(false);
       setConfirmation(null);
       setPendingReplayStartId(undefined);
@@ -160,7 +156,6 @@ export function useWorkspaceController(workflowId: string, profileId = "", autoR
 
   const beginAssertionPick = () => {
     if (!assertionAvailable) return;
-    setAddStepOpen(false);
     const requestId = crypto.randomUUID();
     if (!session.startAssertionPick(requestId)) {
       setAnnouncement("The assertion picker could not start.");
@@ -369,9 +364,6 @@ export function useWorkspaceController(workflowId: string, profileId = "", autoR
     () => pendingReplayRange.some((step) => step.enabled && step.metadata.sensitive),
     [pendingReplayRange],
   );
-  const activePage = selectedStep?.page ?? (session.browserPage
-    ? { id: session.browserPage.pageId, url: session.browserPage.url, title: session.browserPage.title }
-    : { id: "manual", url: session.liveViewUrl ? "about:blank" : "", title: "Manual step" });
   const replayReadyCount = workflowState.workflow.steps.length;
   const browserModel: BrowserViewModel = {
     page: session.browserPage,
@@ -510,7 +502,6 @@ export function useWorkspaceController(workflowId: string, profileId = "", autoR
         updateStep: (step: WorkflowStep) => dispatch({ type: "update", step }),
       },
       model: {
-        activePage,
         locked: workflowLocked,
         loaded: workflowLoaded,
         persistenceError,
@@ -542,29 +533,17 @@ export function useWorkspaceController(workflowId: string, profileId = "", autoR
     },
     dialogs: {
       actions: {
-        chooseAction: () => {
-          setAddStepOpen(false);
-          setManualOpen(true);
-        },
-        chooseAssertion: beginAssertionPick,
-        closeAddStep: () => setAddStepOpen(false),
+        addAssertion: beginAssertionPick,
         closeAssertion: closeAssertionPick,
         closeConfirmation: () => setConfirmation(null),
-        closeManual: () => setManualOpen(false),
         closeRun: closeRunDialog,
         confirmSensitiveExport: exportNow,
-        openAddStep: () => setAddStepOpen(true),
-        startRecordingForAssertion: () => {
-          setAddStepOpen(false);
-          beginRecording();
-        },
         retryRunProfile: () => void loadRunProfile(),
         updateRuntimeValue: (stepId: string, value: string) => {
           setRuntimeValues((current) => ({ ...current, [stepId]: value }));
         },
       },
       model: {
-        addStepOpen,
         assertionAvailable,
         assertionPicking,
         assertionSelection,
@@ -574,7 +553,6 @@ export function useWorkspaceController(workflowId: string, profileId = "", autoR
         libraryHref: pendingNeedsProfile && !profileId
           ? `/library?selected=${encodeURIComponent(workflowId)}`
           : undefined,
-        manualOpen,
         pendingReplayStep,
         profileRetryAvailable: pendingNeedsProfile && runProfileStatus === "error",
         runDialogOpen,

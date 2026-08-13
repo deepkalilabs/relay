@@ -1,10 +1,10 @@
 "use client";
 
-import { AlertTriangle, ArrowRight, ChevronLeft, Crosshair, Play, RotateCcw, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, ChevronLeft, Play, RotateCcw, X } from "lucide-react";
 import { BrowserPanel } from "@/features/browser";
 import { RecorderControls } from "@/features/recorder";
 import { ReplayControls, ReplayFailurePanel, RunWorkflowDialog } from "@/features/replay";
-import { AddStepDialog, AssertionStepDialog, ManualStepDialog, StepEditor, WorkflowTimeline } from "@/features/workflow-editor";
+import { AssertionStepDialog, StepEditor, WorkflowTimeline } from "@/features/workflow-editor";
 import { Modal } from "@/shared/ui/modal";
 import { WorkspaceNavbar } from "./WorkspaceNavbar";
 import { useWorkspaceController } from "../_hooks/useWorkspaceController";
@@ -101,7 +101,8 @@ export function RecorderWorkspace({ workflowId, profileId, autoRun }: RecorderWo
                   onToggle={workflow.actions.toggleStep}
                   onDelete={workflow.actions.deleteStep}
                   onReorder={workflow.actions.reorderSteps}
-                  onInsert={dialogs.actions.openAddStep}
+                  onAddAssertion={dialogs.actions.addAssertion}
+                  assertionAvailable={dialogs.model.assertionAvailable}
                   onCollapse={layout.actions.collapseTimeline}
                   replayResults={replay.model.results}
                   locked={workflow.model.locked}
@@ -186,13 +187,7 @@ export function RecorderWorkspace({ workflowId, profileId, autoRun }: RecorderWo
                 </>
               )}
               contentOverlay={
-                dialogs.model.assertionPicking ? (
-                  <div className="assertion-picker-notice" role="status">
-                    <Crosshair size={18} aria-hidden="true" />
-                    <span><strong>Select an element</strong><small>Hover to highlight. Click to capture, or press Escape to cancel.</small></span>
-                    <button className="button button-secondary" type="button" onClick={dialogs.actions.closeAssertion}>Cancel</button>
-                  </div>
-                ) : replay.model.currentResult?.status === "failed" && replay.model.currentResult.diagnostic ? (
+                replay.model.currentResult?.status === "failed" && replay.model.currentResult.diagnostic ? (
                   <ReplayFailurePanel
                     message={replay.model.currentResult.diagnostic.message}
                     onRetry={replay.actions.retry}
@@ -297,21 +292,6 @@ export function RecorderWorkspace({ workflowId, profileId, autoRun }: RecorderWo
         ) : null}
         <div className="sr-only" aria-live="polite">{layout.model.announcement}</div>
       </div>
-      <AddStepDialog
-        open={dialogs.model.addStepOpen}
-        assertionAvailable={dialogs.model.assertionAvailable}
-        onAction={dialogs.actions.chooseAction}
-        onAssertion={dialogs.actions.chooseAssertion}
-        onStartRecording={dialogs.actions.startRecordingForAssertion}
-        onClose={dialogs.actions.closeAddStep}
-      />
-      <ManualStepDialog
-        open={dialogs.model.manualOpen}
-        order={workflowState.workflow.steps.length}
-        page={workflow.model.activePage}
-        onClose={dialogs.actions.closeManual}
-        onInsert={workflow.actions.insertStep}
-      />
       <AssertionStepDialog
         open={Boolean(dialogs.model.assertionSelection)}
         order={workflowState.workflow.steps.length}

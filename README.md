@@ -140,25 +140,27 @@ PROFILE_DATA_DIR=/path/to/profiles npm run dev
 
 The profile list API returns only names, Draft/Ready status, and update times. Identity and location values are loaded only for the selected profile. Incomplete profiles remain persistable drafts; Ready status is derived only when every field is present and the email is valid. Invalid files are skipped and surfaced as a non-sensitive count.
 
-## Remote storage adapter
+## Workflow workspaces
 
-The server can select HTTP-backed workflow and profile repositories at startup.
-Remote mode does not copy, mirror, or fall back to local files; each mode exposes
-its own independent dataset.
+At first launch, the app asks where workflows should be loaded and saved. Development
+offers local files plus every namespace returned by Relay and defaults to Local. Production
+offers Relay namespaces only. The confirmed choice is remembered in the browser and can be
+changed from the product sidebar. Profiles remain in the local profile repository.
+
+Configure Relay namespace discovery and namespace-scoped workflow persistence with:
 
 ```bash
-DATA_SOURCE=remote \
-REMOTE_STORAGE_BASE_URL=https://storage.example.com/ \
-REMOTE_STORAGE_BEARER_TOKEN=server-secret \
+RELAY_API_BASE_URL=https://relay.example.com/ \
+RELAY_API_USERNAME=server-user \
+RELAY_API_PASSWORD=server-secret \
 npm run dev
 ```
 
-The remote service must implement the versioned
-[workflow](./docs/specs/cloud-workflow-api.openapi.yaml) and
-[profile](./docs/specs/cloud-profile-api.openapi.yaml) contracts. The adapters
-send the bearer token only from the Node server, validate all remote responses,
-and retry one transient failure with the same idempotency key. This repository
-does not implement the remote service or its database.
+The remote service must implement namespace listing and the namespace-scoped operations in
+the versioned [workflow](./docs/specs/cloud-workflow-api.openapi.yaml) contract. The adapter
+sends HTTP Basic credentials only from the Node server, validates all remote responses, and
+retries one transient failure with the same idempotency key. Profiles remain in the local
+filesystem repository. This repository does not implement the remote service or its database.
 
 ## Requirements
 

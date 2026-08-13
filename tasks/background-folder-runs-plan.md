@@ -110,7 +110,7 @@ Error responses use `{ "error": "safe message" }`:
 ## Server Configuration
 
 ```env
-AUTOMATION_SERVICE_BASE_URL=http://127.0.0.1:8080
+AUTOMATION_SERVICE_BASE_URL=http://127.0.0.1:8000
 AUTOMATION_SERVICE_TOKEN=
 ```
 

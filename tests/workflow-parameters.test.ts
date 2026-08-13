@@ -220,13 +220,13 @@ describe("parameter binding conflict rebase", () => {
     local.steps[0] = {
       ...(local.steps[0] as FillStep),
       parameterBinding: { source: "profile", field: "identity.fullName" },
-    };
+    } as FillStep;
     latest.name = "Renamed remotely";
     latest.revision = 2;
     latest.steps[1] = {
       ...(latest.steps[1] as FillStep),
       parameterBinding: { source: "profile", field: "identity.email" },
-    };
+    } as FillStep;
 
     const rebased = rebaseParameterBindings(base, local, latest);
 
@@ -246,11 +246,11 @@ describe("parameter binding conflict rebase", () => {
     local.steps[0] = {
       ...(local.steps[0] as FillStep),
       parameterBinding: { source: "profile", field: "identity.email" },
-    };
+    } as FillStep;
     latest.steps[0] = {
       ...(latest.steps[0] as FillStep),
       parameterBinding: { source: "runtime" },
-    };
+    } as FillStep;
 
     const rebased = rebaseParameterBindings(base, local, latest);
 
@@ -270,7 +270,7 @@ describe("parameter binding conflict rebase", () => {
     local.steps[0] = {
       ...(local.steps[0] as FillStep),
       parameterBinding: { source: "profile", field: "identity.email" },
-    };
+    } as FillStep;
     const latest = { ...structuredClone(base), revision: 2, steps: [] };
 
     const rebased = rebaseParameterBindings(base, local, latest);

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { RecordedActionSchema } from "@/shared/contracts/recording/recorded-action";
 import { MAX_ASSERTION_TEXT_LENGTH } from "@/shared/contracts/workflow/domain";
-import { ElementTargetSchema, ViewportPositionSchema } from "@/shared/contracts/workflow/schema";
+import { ElementTargetSchema, RepeatedGroupTemplateSchema, ViewportPositionSchema } from "@/shared/contracts/workflow/schema";
 import {
   CaptchaStatusSchema,
   PickerRequestIdSchema,
@@ -91,6 +91,14 @@ export const SequencedServerMessageSchema = z.object({
       name: z.string().min(1),
       text: z.string().max(MAX_ASSERTION_TEXT_LENGTH),
       target: ElementTargetSchema,
+      position: ViewportPositionSchema,
+      page: z.object({ id: z.string().min(1), url: z.string(), title: z.string().optional() }),
+    }),
+    z.object({
+      type: z.literal("assertion.pick.groupSelected"),
+      requestId: PickerRequestIdSchema,
+      name: z.string().min(1),
+      groupTarget: RepeatedGroupTemplateSchema,
       position: ViewportPositionSchema,
       page: z.object({ id: z.string().min(1), url: z.string(), title: z.string().optional() }),
     }),
