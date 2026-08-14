@@ -304,7 +304,7 @@ const SchemaV13WorkflowSchema = RevisionedWorkflowDocumentBase.extend({
 
 export const CompatibleWorkflowSchema = z.discriminatedUnion(
   "schemaVersion",
-  [WorkflowSchema, SchemaV13WorkflowSchema, SchemaV12WorkflowSchema, PreviousWorkflowSchema, LegacyWorkflowSchema],
+  [WorkflowSchema, SchemaV13WorkflowSchema, PreviousWorkflowSchema, LegacyWorkflowSchema],
 ).transform(
   (workflow): Workflow => {
     if (workflow.schemaVersion === "1.2") return workflow;
