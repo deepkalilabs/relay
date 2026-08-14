@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { Workflow } from "@/shared/contracts/workflow/domain";
-import { CompatibleWorkflowSchema, WorkflowSchema } from "@/shared/contracts/workflow/schema";
+import { WorkflowSchema } from "@/shared/contracts/workflow/schema";
 import {
   RemoteHttpClient,
   type RemoteHttpCredentials,
@@ -58,11 +58,11 @@ export class RemoteWorkflowRepository implements WorkflowRepository {
     return this.parse(await this.request(this.collectionPath, {
       method: "POST",
       headers: { "idempotency-key": randomUUID() },
-    }), 201, CompatibleWorkflowSchema);
+    }), 201, WorkflowSchema);
   }
 
   async get(id: string): Promise<Workflow> {
-    return this.parse(await this.request(`${this.collectionPath}/${encodeURIComponent(id)}`), 200, CompatibleWorkflowSchema);
+    return this.parse(await this.request(`${this.collectionPath}/${encodeURIComponent(id)}`), 200, WorkflowSchema);
   }
 
   async save(id: string, workflow: Workflow, expectedRevision: number): Promise<Workflow> {
@@ -71,7 +71,7 @@ export class RemoteWorkflowRepository implements WorkflowRepository {
       method: "PUT",
       headers: this.mutationHeaders(),
       body: JSON.stringify({ workflow: snapshot, expectedRevision }),
-    }), 200, CompatibleWorkflowSchema);
+    }), 200, WorkflowSchema);
   }
 
   async finish(id: string, workflow: Workflow, expectedRevision: number): Promise<Workflow> {
@@ -80,7 +80,7 @@ export class RemoteWorkflowRepository implements WorkflowRepository {
       method: "POST",
       headers: this.mutationHeaders(),
       body: JSON.stringify({ workflow: snapshot, expectedRevision }),
-    }), 200, CompatibleWorkflowSchema);
+    }), 200, WorkflowSchema);
   }
 
   private mutationHeaders(): Record<string, string> {

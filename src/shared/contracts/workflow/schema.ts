@@ -278,7 +278,7 @@ const RevisionedWorkflowDocumentBase = WorkflowDocumentBase.extend({
 });
 
 export const WorkflowSchema = RevisionedWorkflowDocumentBase.extend({
-  schemaVersion: z.literal("1.4"),
+  schemaVersion: z.literal("1.2"),
   steps: z.array(WorkflowStepSchema),
 }).strict() satisfies z.ZodType<Workflow>;
 
@@ -307,13 +307,13 @@ export const CompatibleWorkflowSchema = z.discriminatedUnion(
   [WorkflowSchema, SchemaV13WorkflowSchema, SchemaV12WorkflowSchema, PreviousWorkflowSchema, LegacyWorkflowSchema],
 ).transform(
   (workflow): Workflow => {
-    if (workflow.schemaVersion === "1.4") return workflow;
-    if (workflow.schemaVersion === "1.3" || workflow.schemaVersion === "1.2" || workflow.schemaVersion === "1.1") {
-      return { ...workflow, schemaVersion: "1.4" };
+    if (workflow.schemaVersion === "1.2") return workflow;
+    if (workflow.schemaVersion === "1.3" || workflow.schemaVersion === "1.1") {
+      return { ...workflow, schemaVersion: "1.2" };
     }
     return {
       ...workflow,
-      schemaVersion: "1.4",
+      schemaVersion: "1.2",
       status: "complete",
       revision: 1,
       finishedAt: workflow.updatedAt,
@@ -332,7 +332,7 @@ export function orderLocatorCandidates(candidates: LocatorCandidate[]): LocatorC
 export function createWorkflow(sessionId = ""): Workflow {
   const now = new Date().toISOString();
   return {
-    schemaVersion: "1.4",
+    schemaVersion: "1.2",
     id: crypto.randomUUID(),
     name: "Untitled recording",
     status: "draft",

@@ -245,7 +245,7 @@ export type WorkflowActionType = ActionStep["type"];
 export type WorkflowStatus = "draft" | "complete";
 
 export type Workflow = {
-  schemaVersion: "1.4";
+  schemaVersion: "1.2";
   id: string;
   name: string;
   status: WorkflowStatus;
