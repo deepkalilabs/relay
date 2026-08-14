@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { Workflow } from "@/shared/contracts/workflow/domain";
-import { WorkflowSchema } from "@/shared/contracts/workflow/schema";
+import {
+  CompatibleWorkflowSchema,
+  WorkflowSchema,
+} from "@/shared/contracts/workflow/schema";
 import {
   RemoteHttpClient,
   type RemoteHttpCredentials,
@@ -62,7 +65,11 @@ export class RemoteWorkflowRepository implements WorkflowRepository {
   }
 
   async get(id: string): Promise<Workflow> {
-    return this.parse(await this.request(`${this.collectionPath}/${encodeURIComponent(id)}`), 200, WorkflowSchema);
+    return this.parse(
+      await this.request(`${this.collectionPath}/${encodeURIComponent(id)}`),
+      200,
+      CompatibleWorkflowSchema,
+    );
   }
 
   async save(id: string, workflow: Workflow, expectedRevision: number): Promise<Workflow> {

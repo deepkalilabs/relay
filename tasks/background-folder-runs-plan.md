@@ -25,7 +25,7 @@ workflow become queued, running, completed, or failed.
 ```text
 Automations UI
   -> POST workflow IDs to Browser Replay
-  -> Browser Replay loads full workflows and calls Relay with its server token
+  -> Browser Replay loads full workflows and calls the public Relay API with HTTP Basic auth
   -> UI polls Browser Replay once per second
   -> UI shows each run and derives the final result
 ```
@@ -110,13 +110,14 @@ Error responses use `{ "error": "safe message" }`:
 ## Server Configuration
 
 ```env
-AUTOMATION_SERVICE_BASE_URL=http://127.0.0.1:8000
-AUTOMATION_SERVICE_TOKEN=
+RELAY_API_BASE_URL=https://relay.example.com/
+RELAY_API_USERNAME=server-user
+RELAY_API_PASSWORD=server-secret
 ```
 
-The token stays server-side. Missing configuration must not stop Browser Replay from
-starting; the batch routes return `503`. Relay calls use a timeout and no automatic
-retry.
+The credentials stay server-side and are shared with Relay workflow workspaces. Missing
+configuration must not stop Browser Replay from starting; the batch routes return `503`.
+Relay calls use a timeout, and batch creation has no automatic retry.
 
 ## Implementation
 

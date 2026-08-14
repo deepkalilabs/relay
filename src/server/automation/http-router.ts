@@ -37,6 +37,13 @@ const RelayRunSnapshot = z.object({
   status: z.enum(["queued", "running", "completed", "failed"]),
   currentStep: z.number().int().nonnegative().optional(),
   totalSteps: z.number().int().nonnegative().optional(),
+  passedSteps: z.number().int().nonnegative().optional(),
+  skippedSteps: z.number().int().nonnegative().optional(),
+  durationMs: z.number().int().nonnegative().optional(),
+  failedStepId: z.string().optional(),
+  failedStepIndex: z.number().int().nonnegative().optional(),
+  phase: z.enum(["acting", "asserting", "settling", "waiting"]).optional(),
+  code: z.string().optional(),
   thumbnail: RelayThumbnail.optional(),
 }).refine((run) => {
   if (run.currentStep === undefined || run.totalSteps === undefined) {
@@ -90,11 +97,11 @@ function parseBaseUrl(value: string): URL {
   try {
     url = new URL(value);
   } catch {
-    throw new Error("AUTOMATION_SERVICE_BASE_URL must be a valid HTTP or HTTPS URL.");
+    throw new Error("RELAY_API_BASE_URL must be a valid HTTP or HTTPS URL.");
   }
   if (!(["http:", "https:"] as string[]).includes(url.protocol)
     || url.username || url.password || url.search || url.hash) {
-    throw new Error("AUTOMATION_SERVICE_BASE_URL must be a safe HTTP or HTTPS URL.");
+    throw new Error("RELAY_API_BASE_URL must be a safe HTTP or HTTPS URL.");
   }
   if (!url.pathname.endsWith("/")) url.pathname += "/";
   return url;
@@ -104,10 +111,16 @@ export function createAutomationBatchService(
   environment: Readonly<Record<string, string | undefined>> = process.env,
   fetchRelay: typeof fetch = globalThis.fetch,
 ): AutomationBatchService | null {
-  const baseUrlValue = environment.AUTOMATION_SERVICE_BASE_URL?.trim();
-  const token = environment.AUTOMATION_SERVICE_TOKEN?.trim();
-  if (!baseUrlValue || !token) return null;
+  const baseUrlValue = environment.RELAY_API_BASE_URL?.trim();
+  const username = environment.RELAY_API_USERNAME?.trim();
+  const password = environment.RELAY_API_PASSWORD;
+  if (!baseUrlValue && !username && !password?.trim()) return null;
+  if (!baseUrlValue) throw new Error("RELAY_API_BASE_URL is required for background runs.");
+  if (!username) throw new Error("RELAY_API_USERNAME is required for background runs.");
+  if (username.includes(":")) throw new Error("RELAY_API_USERNAME must not include a colon.");
+  if (!password?.trim()) throw new Error("RELAY_API_PASSWORD is required for background runs.");
   const baseUrl = parseBaseUrl(baseUrlValue);
+  const authorization = `Basic ${Buffer.from(`${username}:${password}`, "utf8").toString("base64")}`;
   const maxArtifactBytes = 100 * 1024;
 
   const request = async <T>(
@@ -123,7 +136,7 @@ export function createAutomationBatchService(
         ...init,
         headers: {
           accept: "application/json",
-          authorization: `Bearer ${token}`,
+          authorization,
           ...init.headers,
         },
         signal: AbortSignal.timeout(10_000),
@@ -145,7 +158,7 @@ export function createAutomationBatchService(
         method: "GET",
         headers: {
           accept: "image/webp",
-          authorization: `Bearer ${token}`,
+          authorization,
         },
         signal: AbortSignal.timeout(10_000),
       });

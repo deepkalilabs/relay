@@ -162,6 +162,11 @@ sends HTTP Basic credentials only from the Node server, validates all remote res
 retries one transient failure with the same idempotency key. Profiles remain in the local
 filesystem repository. This repository does not implement the remote service or its database.
 
+The same three Relay variables enable background folder runs through the public
+`/v1/batches` and `/v1/artifacts` routes. Batch creation is attempted exactly once; polling
+and terminal screenshots are proxied through Browser Replay so Relay credentials never need
+to be configured separately.
+
 ## Requirements
 
 - Node.js 24 LTS (`nvm use` reads `.nvmrc`)

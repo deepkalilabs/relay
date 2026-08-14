@@ -138,8 +138,9 @@ describe("Relay batch service", () => {
       });
     });
     const client = createAutomationBatchService({
-      AUTOMATION_SERVICE_BASE_URL: baseUrl,
-      AUTOMATION_SERVICE_TOKEN: "relay-secret",
+      RELAY_API_BASE_URL: baseUrl,
+      RELAY_API_USERNAME: "relay-user",
+      RELAY_API_PASSWORD: "relay-secret",
     })!;
 
     const created = await client.create([workflow]);
@@ -151,14 +152,29 @@ describe("Relay batch service", () => {
     expect(requests[0]).toMatchObject({
       method: "POST",
       url: "/v1/batches",
-      authorization: "Bearer relay-secret",
+      authorization: `Basic ${Buffer.from("relay-user:relay-secret").toString("base64")}`,
       body: { runs: [{ workflow }] },
     });
     expect(requests[1]).toMatchObject({
       method: "GET",
       url: `/v1/batches/${created.batchId}`,
-      authorization: "Bearer relay-secret",
+      authorization: `Basic ${Buffer.from("relay-user:relay-secret").toString("base64")}`,
     });
+  });
+
+  it("does not retry batch creation after an ambiguous transport failure", async () => {
+    const fetchRelay = vi.fn(async () => {
+      throw new TypeError("connection closed after upload");
+    });
+    const client = createAutomationBatchService({
+      RELAY_API_BASE_URL: "https://relay.example.test/",
+      RELAY_API_USERNAME: "relay-user",
+      RELAY_API_PASSWORD: "relay-secret",
+    }, fetchRelay)!;
+
+    await expect(client.create([completeWorkflow()]))
+      .rejects.toMatchObject({ status: 503, message: "The automation service is unavailable." });
+    expect(fetchRelay).toHaveBeenCalledOnce();
   });
 
   it("rejects malformed success responses without exposing their contents", async () => {
@@ -169,8 +185,9 @@ describe("Relay batch service", () => {
     });
 
     const client = createAutomationBatchService({
-      AUTOMATION_SERVICE_BASE_URL: baseUrl,
-      AUTOMATION_SERVICE_TOKEN: "token",
+      RELAY_API_BASE_URL: baseUrl,
+      RELAY_API_USERNAME: "relay-user",
+      RELAY_API_PASSWORD: "token",
     })!;
     await expect(client.create([completeWorkflow()]))
       .rejects.toMatchObject({ status: 502, message: "The automation service returned an invalid response." });
@@ -183,8 +200,9 @@ describe("Relay batch service", () => {
       response.end(JSON.stringify({ detail: "Not Found" }));
     });
     const client = createAutomationBatchService({
-      AUTOMATION_SERVICE_BASE_URL: baseUrl,
-      AUTOMATION_SERVICE_TOKEN: "relay-secret",
+      RELAY_API_BASE_URL: baseUrl,
+      RELAY_API_USERNAME: "relay-user",
+      RELAY_API_PASSWORD: "relay-secret",
     })!;
 
     await expect(client.create([completeWorkflow()]))
@@ -229,8 +247,9 @@ describe("Relay batch service", () => {
       }));
     });
     const client = createAutomationBatchService({
-      AUTOMATION_SERVICE_BASE_URL: baseUrl,
-      AUTOMATION_SERVICE_TOKEN: "relay-secret",
+      RELAY_API_BASE_URL: baseUrl,
+      RELAY_API_USERNAME: "relay-user",
+      RELAY_API_PASSWORD: "relay-secret",
     })!;
 
     await expect(client.get(batchId)).resolves.toEqual({
@@ -299,8 +318,9 @@ describe("Relay batch service", () => {
       response.end(body);
     });
     const client = createAutomationBatchService({
-      AUTOMATION_SERVICE_BASE_URL: baseUrl,
-      AUTOMATION_SERVICE_TOKEN: "relay-secret",
+      RELAY_API_BASE_URL: baseUrl,
+      RELAY_API_USERNAME: "relay-user",
+      RELAY_API_PASSWORD: "relay-secret",
     })!;
 
     await expect(client.getArtifact(artifactId))
@@ -386,8 +406,9 @@ describe("Relay batch service", () => {
       response.end(JSON.stringify(body(batchId, workflowId)));
     });
     const client = createAutomationBatchService({
-      AUTOMATION_SERVICE_BASE_URL: baseUrl,
-      AUTOMATION_SERVICE_TOKEN: "relay-secret",
+      RELAY_API_BASE_URL: baseUrl,
+      RELAY_API_USERNAME: "relay-user",
+      RELAY_API_PASSWORD: "relay-secret",
     })!;
 
     await expect(client.get(batchId))
@@ -396,11 +417,18 @@ describe("Relay batch service", () => {
 
   it("returns no client for missing configuration and validates configured URLs", () => {
     expect(createAutomationBatchService({})).toBeNull();
-    expect(createAutomationBatchService({ AUTOMATION_SERVICE_BASE_URL: "https://relay.example.test" })).toBeNull();
     expect(() => createAutomationBatchService({
-      AUTOMATION_SERVICE_BASE_URL: "file:///tmp/relay",
-      AUTOMATION_SERVICE_TOKEN: "secret",
-    })).toThrow("AUTOMATION_SERVICE_BASE_URL");
+      RELAY_API_BASE_URL: "https://relay.example.test",
+    })).toThrow("RELAY_API_USERNAME");
+    expect(() => createAutomationBatchService({
+      RELAY_API_BASE_URL: "https://relay.example.test",
+      RELAY_API_USERNAME: "relay-user",
+    })).toThrow("RELAY_API_PASSWORD");
+    expect(() => createAutomationBatchService({
+      RELAY_API_BASE_URL: "file:///tmp/relay",
+      RELAY_API_USERNAME: "relay-user",
+      RELAY_API_PASSWORD: "secret",
+    })).toThrow("RELAY_API_BASE_URL");
   });
 });
 
@@ -544,8 +572,9 @@ describe("automation batch HTTP API", () => {
       response.end(screenshot);
     });
     const service = createAutomationBatchService({
-      AUTOMATION_SERVICE_BASE_URL: baseUrl,
-      AUTOMATION_SERVICE_TOKEN: "relay-secret",
+      RELAY_API_BASE_URL: baseUrl,
+      RELAY_API_USERNAME: "relay-user",
+      RELAY_API_PASSWORD: "relay-secret",
     })!;
     const url = await api(workflowRepository([]), service);
 
@@ -558,7 +587,7 @@ describe("automation batch HTTP API", () => {
     expect(Buffer.from(await response.arrayBuffer())).toEqual(screenshot);
     expect(requests).toEqual([{
       url: `/v1/artifacts/${artifactId}`,
-      authorization: "Bearer relay-secret",
+      authorization: `Basic ${Buffer.from("relay-user:relay-secret").toString("base64")}`,
       accept: "image/webp",
     }]);
   });
